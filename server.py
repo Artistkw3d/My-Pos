@@ -88,10 +88,10 @@ def migrate_database():
             conn.commit()
 
         # إضافة إعدادات الولاء الافتراضية
-        cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_kd'")
+        cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
         if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_kd', '10')")
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_redemption_rate', '100')")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_invoice', '10')")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '0.1')")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')")
             conn.commit()
 

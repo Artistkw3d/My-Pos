@@ -675,8 +675,12 @@ function updateTotals() {
         discount = discountValue;
     }
     const couponDiscount = appliedCouponDiscount || 0;
+    // حساب خصم الولاء
+    const pointsToRedeem = parseInt(document.getElementById('pointsToRedeem')?.value) || 0;
+    const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
+    const loyaltyDiscount = pointsToRedeem * pointValue;
     const deliveryFee = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const total = subtotal - discount - couponDiscount + deliveryFee;
+    const total = subtotal - discount - couponDiscount - loyaltyDiscount + deliveryFee;
     document.getElementById('subtotal').textContent = `${subtotal.toFixed(3)} د.ك`;
     document.getElementById('total').textContent = `${Math.max(0, total).toFixed(3)} د.ك`;
     saveUserCart(); // حفظ السلة
@@ -749,8 +753,11 @@ async function completeSale() {
         discount = discountValue;
     }
     const couponDiscount = appliedCouponDiscount || 0;
+    const loyaltyPointsInput = parseInt(document.getElementById('pointsToRedeem')?.value) || 0;
+    const loyaltyPV = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
+    const loyaltyDiscountPre = loyaltyPointsInput * loyaltyPV;
     const deliveryFee = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const total = subtotal - discount - couponDiscount + deliveryFee;
+    const total = subtotal - discount - couponDiscount - loyaltyDiscountPre + deliveryFee;
 
     if (total <= 0) {
         alert('الإجمالي يجب أن يكون أكبر من صفر');
@@ -803,10 +810,10 @@ async function completeSale() {
     
     // بيانات الولاء
     const pointsToRedeem = parseInt(document.getElementById('pointsToRedeem').value) || 0;
-    const redemptionRate = (window.loyaltyConfig && window.loyaltyConfig.redemptionRate) || 100;
-    const pointsPerKd = (window.loyaltyConfig && window.loyaltyConfig.pointsPerKd) || 10;
-    const loyaltyDiscount = pointsToRedeem / redemptionRate;
-    const pointsEarned = customerId ? Math.floor(total * pointsPerKd) : 0;
+    const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
+    const pointsPerInvoice = (window.loyaltyConfig && window.loyaltyConfig.pointsPerInvoice) || 10;
+    const loyaltyDiscount = pointsToRedeem * pointValue;
+    const pointsEarned = customerId ? pointsPerInvoice : 0;
     
     const invoiceData = {
         invoice_number: invoiceNumber,
@@ -1921,18 +1928,22 @@ async function loadSettings() {
             // إعدادات الولاء
             window.loyaltyConfig = {
                 enabled: data.settings.loyalty_enabled !== 'false',
-                pointsPerKd: parseInt(data.settings.loyalty_points_per_kd) || 10,
-                redemptionRate: parseInt(data.settings.loyalty_redemption_rate) || 100
+                pointsPerInvoice: parseInt(data.settings.loyalty_points_per_invoice) || 10,
+                pointValue: parseFloat(data.settings.loyalty_point_value) || 0.1
             };
             if (document.getElementById('loyaltyEnabled')) {
                 document.getElementById('loyaltyEnabled').value = data.settings.loyalty_enabled || 'true';
             }
-            if (document.getElementById('loyaltyPointsPerKd')) {
-                document.getElementById('loyaltyPointsPerKd').value = window.loyaltyConfig.pointsPerKd;
+            if (document.getElementById('loyaltyPointsPerInvoice')) {
+                document.getElementById('loyaltyPointsPerInvoice').value = window.loyaltyConfig.pointsPerInvoice;
             }
-            if (document.getElementById('loyaltyRedemptionRate')) {
-                document.getElementById('loyaltyRedemptionRate').value = window.loyaltyConfig.redemptionRate;
+            if (document.getElementById('loyaltyPointValue')) {
+                document.getElementById('loyaltyPointValue').value = window.loyaltyConfig.pointValue.toFixed(3);
             }
+            if (document.getElementById('pointValueHint')) {
+                document.getElementById('pointValueHint').textContent = window.loyaltyConfig.pointValue.toFixed(3);
+            }
+            updateLoyaltyPreview();
         }
         
     } catch (error) {
@@ -2027,8 +2038,8 @@ async function saveSettings() {
 async function saveLoyaltySettings() {
     const settings = {
         loyalty_enabled: document.getElementById('loyaltyEnabled').value,
-        loyalty_points_per_kd: document.getElementById('loyaltyPointsPerKd').value,
-        loyalty_redemption_rate: document.getElementById('loyaltyRedemptionRate').value
+        loyalty_points_per_invoice: document.getElementById('loyaltyPointsPerInvoice').value,
+        loyalty_point_value: document.getElementById('loyaltyPointValue').value
     };
     try {
         const response = await fetch(`${API_URL}/api/settings`, {
@@ -2040,15 +2051,30 @@ async function saveLoyaltySettings() {
         if (data.success) {
             window.loyaltyConfig = {
                 enabled: settings.loyalty_enabled !== 'false',
-                pointsPerKd: parseInt(settings.loyalty_points_per_kd) || 10,
-                redemptionRate: parseInt(settings.loyalty_redemption_rate) || 100
+                pointsPerInvoice: parseInt(settings.loyalty_points_per_invoice) || 10,
+                pointValue: parseFloat(settings.loyalty_point_value) || 0.1
             };
+            if (document.getElementById('pointValueHint')) {
+                document.getElementById('pointValueHint').textContent = window.loyaltyConfig.pointValue.toFixed(3);
+            }
             alert('✅ تم حفظ إعدادات الولاء');
         }
     } catch (error) {
         console.error('Error:', error);
         alert('❌ فشل الحفظ');
     }
+}
+
+function updateLoyaltyPreview() {
+    const el = document.getElementById('loyaltyPreviewText');
+    if (!el) return;
+    const cfg = window.loyaltyConfig || { pointsPerInvoice: 10, pointValue: 0.1 };
+    el.innerHTML = `
+        <div>🎯 كل فاتورة يحصل العميل على: <strong style="color: #0ea5e9;">${cfg.pointsPerInvoice} نقطة</strong></div>
+        <div>💰 قيمة كل نقطة: <strong style="color: #38a169;">${cfg.pointValue.toFixed(3)} د.ك</strong></div>
+        <div>📊 يعني كل فاتورة قيمة النقاط: <strong style="color: #667eea;">${(cfg.pointsPerInvoice * cfg.pointValue).toFixed(3)} د.ك</strong></div>
+        <div>📌 مثال: عميل عنده ${cfg.pointsPerInvoice * 5} نقطة = <strong style="color: #e53e3e;">${(cfg.pointsPerInvoice * 5 * cfg.pointValue).toFixed(3)} د.ك</strong> خصم</div>
+    `;
 }
 
 // ===== نظام الفروع =====
@@ -4791,11 +4817,17 @@ function displayCustomersTable(customers) {
     
     customers.forEach(c => {
         const lastVisit = c.last_visit ? new Date(c.last_visit).toLocaleDateString('ar-EG') : 'لا يوجد';
+        const points = c.loyalty_points || c.points || 0;
+        const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
+        const pointsValueKd = (points * pointValue).toFixed(3);
         html += `
             <tr>
                 <td>${c.name}</td>
                 <td>${c.phone}</td>
-                <td><span style="font-weight: bold; color: #0ea5e9;">${c.points || 0}</span></td>
+                <td>
+                    <span style="font-weight: bold; color: #0ea5e9; font-size: 16px;">${points}</span>
+                    <div style="font-size: 10px; color: #64748b;">= ${pointsValueKd} د.ك</div>
+                </td>
                 <td>${(c.total_spent || 0).toFixed(3)} د.ك</td>
                 <td>${lastVisit}</td>
                 <td>
@@ -5053,10 +5085,8 @@ async function searchCustomerByPhone() {
 
 // تحديث النقاط التي سيربحها العميل
 function updatePointsToEarn() {
-    const total = calculateSubtotal();
-    const pointsPerKd = (window.loyaltyConfig && window.loyaltyConfig.pointsPerKd) || 10;
-    const pointsToEarn = Math.floor(total * pointsPerKd);
-    document.getElementById('pointsToEarn').textContent = pointsToEarn;
+    const pointsPerInvoice = (window.loyaltyConfig && window.loyaltyConfig.pointsPerInvoice) || 10;
+    document.getElementById('pointsToEarn').textContent = pointsPerInvoice;
 }
 
 // حساب خصم الولاء
@@ -5070,8 +5100,8 @@ function calculateLoyaltyDiscount() {
         return;
     }
 
-    const redemptionRate = (window.loyaltyConfig && window.loyaltyConfig.redemptionRate) || 100;
-    const discount = pointsToRedeem / redemptionRate;
+    const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
+    const discount = pointsToRedeem * pointValue;
 
     // عرض الخصم
     if (discount > 0) {
@@ -5089,14 +5119,13 @@ function applyMaxPoints() {
     if (!currentCustomerData) return;
 
     const availablePoints = currentCustomerData.loyalty_points || currentCustomerData.points || 0;
-    const total = calculateSubtotal();
-    const redemptionRate = (window.loyaltyConfig && window.loyaltyConfig.redemptionRate) || 100;
-    const maxPointsToUse = Math.min(availablePoints, Math.floor(total * redemptionRate));
+    const subtotal = calculateSubtotal();
+    const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
+    // أقصى نقاط = أقل من (نقاطه المتاحة، نقاط تعادل المجموع)
+    const maxPointsForTotal = Math.floor(subtotal / pointValue);
+    const maxPointsToUse = Math.min(availablePoints, maxPointsForTotal);
 
-    // تقريب لأقرب redemptionRate
-    const roundedPoints = Math.floor(maxPointsToUse / redemptionRate) * redemptionRate;
-
-    document.getElementById('pointsToRedeem').value = roundedPoints;
+    document.getElementById('pointsToRedeem').value = maxPointsToUse;
     calculateLoyaltyDiscount();
 }
 

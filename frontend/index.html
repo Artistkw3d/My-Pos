@@ -125,11 +125,11 @@
                                 💰 سيربح: <span id="pointsToEarn" style="font-weight: bold; color: #38a169;">0</span> نقطة
                             </div>
                             <div style="display: flex; gap: 5px; align-items: center;">
-                                <input type="number" id="pointsToRedeem" placeholder="استخدم نقاط" min="0" step="100" style="flex: 1; padding: 6px; font-size: 12px;" oninput="calculateLoyaltyDiscount()">
+                                <input type="number" id="pointsToRedeem" placeholder="استخدم نقاط" min="0" step="1" style="flex: 1; padding: 6px; font-size: 12px;" oninput="calculateLoyaltyDiscount()">
                                 <button onclick="applyMaxPoints()" class="btn-sm" style="background: #f59e0b; padding: 6px 10px; font-size: 11px;">استخدم الكل</button>
                             </div>
-                            <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">
-                                💡 100 نقطة = 1 د.ك خصم
+                            <div id="loyaltyHint" style="font-size: 10px; color: #94a3b8; margin-top: 5px;">
+                                💡 كل نقطة = <span id="pointValueHint">0.100</span> د.ك خصم
                             </div>
                         </div>
                         <input type="hidden" id="selectedCustomerId">
@@ -553,14 +553,18 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>النقاط لكل 1 د.ك مصروف:</label>
-                            <input type="number" id="loyaltyPointsPerKd" min="1" value="10" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
-                            <p style="font-size: 12px; color: #666; margin-top: 5px;">مثال: 10 يعني كل 1 د.ك = 10 نقاط</p>
+                            <label>عدد النقاط لكل فاتورة:</label>
+                            <input type="number" id="loyaltyPointsPerInvoice" min="1" value="10" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            <p style="font-size: 12px; color: #666; margin-top: 5px;">مثال: 10 يعني كل فاتورة يحصل العميل على 10 نقاط</p>
                         </div>
                         <div class="form-group">
-                            <label>عدد النقاط لخصم 1 د.ك:</label>
-                            <input type="number" id="loyaltyRedemptionRate" min="1" value="100" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
-                            <p style="font-size: 12px; color: #666; margin-top: 5px;">مثال: 100 يعني كل 100 نقطة = 1 د.ك خصم</p>
+                            <label>قيمة النقطة الواحدة بالدينار:</label>
+                            <input type="number" id="loyaltyPointValue" min="0.001" step="0.001" value="0.100" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            <p style="font-size: 12px; color: #666; margin-top: 5px;">مثال: 0.100 يعني كل نقطة = 0.100 د.ك خصم</p>
+                        </div>
+                        <div id="loyaltyPreview" style="background: #fff; padding: 15px; border-radius: 8px; margin: 15px 0; border: 2px solid #e2e8f0;">
+                            <h4 style="margin: 0 0 10px; color: #0369a1;">📊 معاينة النظام:</h4>
+                            <div id="loyaltyPreviewText" style="font-size: 14px; line-height: 2;"></div>
                         </div>
                         <button onclick="saveLoyaltySettings()" class="btn" style="background: #0ea5e9;">💾 حفظ إعدادات الولاء</button>
                     </div>
