@@ -47,6 +47,7 @@
                 <button class="header-btn" onclick="showTab('expenses')" data-tab="expenses" id="expensesBtn" style="display: none;">💰 التكاليف</button>
                 <button class="header-btn" onclick="showTab('advancedreports')" data-tab="advancedreports" id="advancedReportsBtn" style="display: none;">📈 تقارير متقدمة</button>
                 <button class="header-btn" onclick="showTab('systemlogs')" data-tab="systemlogs" id="systemLogsBtn" style="display: none;">📋 سجل النظام</button>
+                <button class="header-btn" onclick="showTab('coupons')" data-tab="coupons" id="couponsBtn" style="display: none;">🎟️ الكوبونات</button>
                 <button class="header-btn" onclick="showTab('suppliers')" data-tab="suppliers" id="suppliersBtn" style="display: none;">🏭 الموردين</button>
                 <button class="header-btn" onclick="showTab('accounting')" data-tab="accounting">💰 المحاسبة</button>
                 <button class="header-btn" onclick="showTab('dcf')" data-tab="dcf" id="dcfBtn" style="display: none;">📈 تقييم DCF</button>
@@ -134,6 +135,16 @@
                         <input type="hidden" id="selectedCustomerId">
                     </div>
 
+                    <!-- كوبون الخصم -->
+                    <div id="couponSection" style="background: #fefce8; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 2px solid #eab308;">
+                        <div style="font-weight: bold; color: #854d0e; margin-bottom: 8px;">🎟️ كوبون خصم</div>
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="couponCodeInput" placeholder="أدخل كود الكوبون" style="flex: 1; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px; text-transform: uppercase;">
+                            <button onclick="applyCouponCode()" class="btn-sm" style="background: #eab308; color: #fff; padding: 8px 14px; white-space: nowrap;">تطبيق</button>
+                        </div>
+                        <div id="couponResult" style="display: none; margin-top: 8px; padding: 8px; border-radius: 6px;"></div>
+                    </div>
+
                     <!-- الدفع -->
                     <div class="payment-section">
                         <h3>💳 الدفع</h3>
@@ -162,6 +173,10 @@
                         <div class="summary-row" id="loyaltyDiscountRow" style="display: none;">
                             <span>💎 خصم الولاء:</span>
                             <span id="loyaltyDiscountAmount" style="color: #38a169; font-weight: bold;">0.000 د.ك</span>
+                        </div>
+                        <div class="summary-row" id="couponDiscountRow" style="display: none;">
+                            <span>🎟️ خصم الكوبون:</span>
+                            <span id="couponDiscountDisplay" style="color: #eab308; font-weight: bold;">0.000 د.ك</span>
                         </div>
                         <div class="summary-row"><span>رسوم التوصيل:</span><input type="number" id="deliveryFee" value="0" min="0" step="0.001" style="width: 100px;" onchange="updateTotals()"></div>
                         <div class="summary-row total"><span>الإجمالي:</span><span id="total">0.000 د.ك</span></div>
@@ -585,6 +600,59 @@
                 
                 <div id="advancedReportContent"></div>
             </div>
+        </div>
+    </div>
+
+        <!-- Coupons Tab -->
+        <div class="tab-content" id="couponsTab" style="display: none;">
+            <div style="padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>🎟️ الكوبونات</h2>
+                    <button onclick="showAddCoupon()" class="add-btn">➕ إضافة كوبون</button>
+                </div>
+                <div id="couponsStatsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;"></div>
+                <div id="couponsContainer"></div>
+            </div>
+        </div>
+
+    <!-- Add/Edit Coupon Modal -->
+    <div class="modal" id="addCouponModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="couponModalTitle">➕ إضافة كوبون</h2>
+                <button onclick="closeAddCoupon()" class="close-btn">&times;</button>
+            </div>
+            <form id="couponForm">
+                <input type="hidden" id="couponId">
+                <div class="form-group">
+                    <label>كود الكوبون:</label>
+                    <input type="text" id="couponCode" required style="text-transform: uppercase;" placeholder="مثال: SALE20">
+                </div>
+                <div class="form-group">
+                    <label>نوع الخصم:</label>
+                    <select id="couponDiscountType" required>
+                        <option value="percent">نسبة مئوية (%)</option>
+                        <option value="fixed">مبلغ ثابت (د.ك)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>قيمة الخصم:</label>
+                    <input type="number" id="couponDiscountValue" step="0.001" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>الحد الأدنى للطلب (د.ك):</label>
+                    <input type="number" id="couponMinAmount" step="0.001" min="0" value="0">
+                </div>
+                <div class="form-group">
+                    <label>الحد الأقصى للاستخدام (0 = غير محدود):</label>
+                    <input type="number" id="couponMaxUses" min="0" value="0">
+                </div>
+                <div class="form-group">
+                    <label>تاريخ الانتهاء:</label>
+                    <input type="date" id="couponExpiryDate">
+                </div>
+                <button type="submit" class="btn" style="width: 100%; padding: 12px;">💾 حفظ</button>
+            </form>
         </div>
     </div>
 
