@@ -1327,10 +1327,11 @@ async function loadInvoicesTable() {
         // إضافة badge للفواتير offline
         container.innerHTML = `
             <table class="data-table">
-                <thead><tr><th>رقم الفاتورة</th><th>العميل</th><th>الموظف</th><th>الإجمالي</th><th>التاريخ</th><th>عرض</th></tr></thead>
+                <thead><tr><th>رقم الفاتورة</th><th>العميل</th><th>الموظف</th><th>الإجمالي</th><th>حالة الطلب</th><th>التاريخ</th><th>عرض</th></tr></thead>
                 <tbody>
                     ${invoices.map(inv => {
                         const isOffline = inv.id && inv.id.toString().startsWith('offline_');
+                        const status = inv.order_status || 'قيد التنفيذ';
                         return `
                         <tr>
                             <td>
@@ -1340,6 +1341,14 @@ async function loadInvoicesTable() {
                             <td>${inv.customer_name || 'عميل'}</td>
                             <td>${inv.employee_name}</td>
                             <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
+                            <td>
+                                <select class="order-status-select status-${status === 'قيد التنفيذ' ? 'processing' : status === 'قيد التوصيل' ? 'delivering' : 'completed'}"
+                                        onchange="updateOrderStatus(${inv.id}, this.value)" ${isOffline ? 'disabled' : ''}>
+                                    <option value="قيد التنفيذ" ${status === 'قيد التنفيذ' ? 'selected' : ''}>⏳ قيد التنفيذ</option>
+                                    <option value="قيد التوصيل" ${status === 'قيد التوصيل' ? 'selected' : ''}>🚚 قيد التوصيل</option>
+                                    <option value="منجز" ${status === 'منجز' ? 'selected' : ''}>✅ منجز</option>
+                                </select>
+                            </td>
                             <td>${formatKuwaitTime(inv.created_at)}</td>
                             <td><button onclick="viewLocalInvoice('${inv.id}')" class="btn-sm">👁️</button></td>
                         </tr>
@@ -1359,23 +1368,55 @@ async function loadInvoicesTable() {
                 const container = document.getElementById('invoicesListContainer');
                 container.innerHTML = `
                     <table class="data-table">
-                        <thead><tr><th>رقم الفاتورة</th><th>العميل</th><th>الموظف</th><th>الإجمالي</th><th>التاريخ</th><th>عرض</th></tr></thead>
+                        <thead><tr><th>رقم الفاتورة</th><th>العميل</th><th>الموظف</th><th>الإجمالي</th><th>حالة الطلب</th><th>التاريخ</th><th>عرض</th></tr></thead>
                         <tbody>
-                            ${allInvoices.map(inv => `
+                            ${allInvoices.map(inv => {
+                                const status = inv.order_status || 'قيد التنفيذ';
+                                return `
                                 <tr>
                                     <td><strong>${inv.invoice_number}</strong> <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span></td>
                                     <td>${inv.customer_name || 'عميل'}</td>
                                     <td>${inv.employee_name}</td>
                                     <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
+                                    <td>
+                                        <span class="order-status-badge status-processing">⏳ ${status}</span>
+                                    </td>
                                     <td>${formatKuwaitTime(inv.created_at)}</td>
                                     <td><button onclick="viewLocalInvoice('${inv.id}')" class="btn-sm">👁️</button></td>
                                 </tr>
-                            `).join('')}
+                            `;
+                            }).join('')}
                         </tbody>
                     </table>
                 `;
             }
         }
+    }
+}
+
+// تحديث حالة الطلب
+async function updateOrderStatus(invoiceId, newStatus) {
+    try {
+        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/status`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ order_status: newStatus })
+        });
+        const data = await response.json();
+        if (data.success) {
+            // تحديث لون القائمة المنسدلة
+            const select = event.target;
+            select.className = 'order-status-select ' +
+                (newStatus === 'قيد التنفيذ' ? 'status-processing' :
+                 newStatus === 'قيد التوصيل' ? 'status-delivering' : 'status-completed');
+        } else {
+            alert('خطأ في تحديث الحالة: ' + data.error);
+            loadInvoicesTable();
+        }
+    } catch (error) {
+        console.error('خطأ:', error);
+        alert('فشل تحديث حالة الطلب');
+        loadInvoicesTable();
     }
 }
 
