@@ -71,7 +71,8 @@ async function initializeUI() {
     document.getElementById('expensesBtn').style.display = isAdmin ? 'inline-block' : 'none';
     document.getElementById('dcfBtn').style.display = isAdmin ? 'inline-block' : 'none';
     document.getElementById('advancedReportsBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    
+    document.getElementById('suppliersBtn').style.display = isAdmin ? 'inline-block' : 'none';
+
     // التبويبات
     const customersTab = document.querySelector('[data-tab="customers"]');
     if (customersTab) customersTab.style.display = window.userPermissions.canViewCustomers ? 'inline-block' : 'none';
@@ -194,7 +195,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('expensesBtn').style.display = isAdmin ? 'inline-block' : 'none';
             document.getElementById('dcfBtn').style.display = isAdmin ? 'inline-block' : 'none';
             document.getElementById('advancedReportsBtn').style.display = isAdmin ? 'inline-block' : 'none';
-            
+            document.getElementById('suppliersBtn').style.display = isAdmin ? 'inline-block' : 'none';
+
             // التبويبات
             const customersTab = document.querySelector('[data-tab="customers"]');
             if (customersTab) customersTab.style.display = window.userPermissions.canViewCustomers ? 'inline-block' : 'none';
@@ -328,6 +330,7 @@ function showTab(tabName) {
         'users': 'usersTab',
         'branches': 'branchesTab',
         'attendance': 'attendanceTab',
+        'suppliers': 'suppliersTab',
         'settings': 'settingsTab'
     };
     
@@ -387,6 +390,7 @@ function showTab(tabName) {
             document.getElementById('advReportEndDate').valueAsDate = today;
         }
         if (tabName === 'systemlogs') loadSystemLogs();
+        if (tabName === 'suppliers') loadSuppliers();
         if (tabName === 'users') loadUsersTable();
         if (tabName === 'branches') loadBranchesTable();
         if (tabName === 'attendance') loadAttendanceLog();
@@ -5503,12 +5507,12 @@ console.log('[Order Status] Loaded ✅');
 // ===============================================
 
 let allSuppliers = [];
+let currentSupplierId = null;
 
 async function loadSuppliers() {
     try {
         const response = await fetch(`${API_URL}/api/suppliers`);
         const data = await response.json();
-        
         if (data.success) {
             allSuppliers = data.suppliers;
             displaySuppliersTable(allSuppliers);
@@ -5519,48 +5523,306 @@ async function loadSuppliers() {
 }
 
 function displaySuppliersTable(suppliers) {
-    // TODO: عرض جدول الموردين
-    console.log('Suppliers:', suppliers);
+    const container = document.getElementById('suppliersContainer');
+    if (!container) return;
+
+    if (!suppliers || suppliers.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">لا يوجد موردين</div>';
+        return;
+    }
+
+    const totalSuppliers = suppliers.length;
+    const totalAmount = suppliers.reduce((sum, s) => sum + (s.total_amount || 0), 0);
+    const totalInvoices = suppliers.reduce((sum, s) => sum + (s.invoice_count || 0), 0);
+
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px;">
+                <div style="opacity: 0.9; font-size: 13px;">إجمالي الموردين</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalSuppliers}</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 12px;">
+                <div style="opacity: 0.9; font-size: 13px;">إجمالي الفواتير</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalInvoices}</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 12px;">
+                <div style="opacity: 0.9; font-size: 13px;">إجمالي المبالغ</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalAmount.toFixed(3)} د.ك</div>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>المورد</th>
+                    <th>الشركة</th>
+                    <th>الهاتف</th>
+                    <th>عدد الفواتير</th>
+                    <th>إجمالي المبالغ</th>
+                    <th>إجراءات</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${suppliers.map(s => `
+                    <tr>
+                        <td><strong>${s.name}</strong></td>
+                        <td>${s.company || '-'}</td>
+                        <td>${s.phone || '-'}</td>
+                        <td><span style="background: #667eea; color: white; padding: 3px 10px; border-radius: 12px; font-weight: bold;">${s.invoice_count || 0}</span></td>
+                        <td style="color: #e53e3e; font-weight: bold;">${(s.total_amount || 0).toFixed(3)} د.ك</td>
+                        <td>
+                            <button onclick="viewSupplierInvoices(${s.id}, '${(s.name || '').replace(/'/g, "\\'")}')" class="btn-sm" style="background: #667eea;">📄</button>
+                            <button onclick="editSupplier(${s.id})" class="btn-sm">✏️</button>
+                            <button onclick="deleteSupplier(${s.id})" class="btn-sm btn-danger">🗑️</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
-async function addSupplier(supplierData) {
+function showAddSupplier() {
+    document.getElementById('supplierModalTitle').textContent = '➕ إضافة مورد';
+    document.getElementById('supplierForm').reset();
+    document.getElementById('supplierId').value = '';
+    document.getElementById('addSupplierModal').classList.add('active');
+}
+
+function closeAddSupplier() {
+    document.getElementById('addSupplierModal').classList.remove('active');
+}
+
+async function editSupplier(id) {
+    const s = allSuppliers.find(s => s.id === id);
+    if (!s) return;
+    document.getElementById('supplierModalTitle').textContent = '✏️ تعديل مورد';
+    document.getElementById('supplierId').value = s.id;
+    document.getElementById('supplierName').value = s.name || '';
+    document.getElementById('supplierCompany').value = s.company || '';
+    document.getElementById('supplierPhone').value = s.phone || '';
+    document.getElementById('supplierEmail').value = s.email || '';
+    document.getElementById('supplierAddress').value = s.address || '';
+    document.getElementById('supplierNotes').value = s.notes || '';
+    document.getElementById('addSupplierModal').classList.add('active');
+}
+
+document.getElementById('supplierForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const supplierId = document.getElementById('supplierId').value;
+    const supplierData = {
+        name: document.getElementById('supplierName').value,
+        company: document.getElementById('supplierCompany').value,
+        phone: document.getElementById('supplierPhone').value,
+        email: document.getElementById('supplierEmail').value,
+        address: document.getElementById('supplierAddress').value,
+        notes: document.getElementById('supplierNotes').value
+    };
     try {
-        const response = await fetch(`${API_URL}/api/suppliers`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(supplierData)
-        });
-        
+        const url = supplierId ? `${API_URL}/api/suppliers/${supplierId}` : `${API_URL}/api/suppliers`;
+        const method = supplierId ? 'PUT' : 'POST';
+        const response = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(supplierData) });
         const data = await response.json();
         if (data.success) {
-            alert('✅ تم إضافة المورد');
+            alert('✅ تم الحفظ');
+            closeAddSupplier();
             loadSuppliers();
         } else {
             alert('❌ خطأ: ' + data.error);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('❌ فشل الإضافة');
+        alert('❌ فشل الحفظ');
     }
-}
+});
 
-async function createPurchaseOrder(poData) {
+async function deleteSupplier(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا المورد وجميع فواتيره؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/purchase-orders`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(poData)
-        });
-        
+        const response = await fetch(`${API_URL}/api/suppliers/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
-            alert('✅ تم إنشاء طلب الشراء');
+            alert('✅ تم الحذف');
+            loadSuppliers();
         } else {
             alert('❌ خطأ: ' + data.error);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('❌ فشل الإنشاء');
+    }
+}
+
+// ===== فواتير الموردين =====
+
+async function viewSupplierInvoices(supplierId, supplierName) {
+    currentSupplierId = supplierId;
+    document.getElementById('supplierInvoicesTitle').textContent = `📄 فواتير: ${supplierName}`;
+    document.getElementById('supplierInvoiceSupplierId').value = supplierId;
+
+    try {
+        const response = await fetch(`${API_URL}/api/suppliers/${supplierId}/invoices`);
+        const data = await response.json();
+        const container = document.getElementById('supplierInvoicesList');
+
+        if (data.success && data.invoices.length > 0) {
+            container.innerHTML = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>رقم الفاتورة</th>
+                            <th>المبلغ</th>
+                            <th>التاريخ</th>
+                            <th>الملف</th>
+                            <th>ملاحظات</th>
+                            <th>إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.invoices.map(inv => `
+                            <tr>
+                                <td><strong>${inv.invoice_number || '-'}</strong></td>
+                                <td style="color: #e53e3e; font-weight: bold;">${(inv.amount || 0).toFixed(3)} د.ك</td>
+                                <td>${inv.invoice_date || new Date(inv.created_at).toLocaleDateString('ar')}</td>
+                                <td>
+                                    ${inv.file_name ? `<button onclick="viewSupplierFile(${inv.id})" class="btn-sm" style="background: #0ea5e9;">👁️ ${inv.file_type === 'application/pdf' ? 'PDF' : 'صورة'}</button>` : '<span style="color:#999;">لا يوجد</span>'}
+                                </td>
+                                <td>${inv.notes || '-'}</td>
+                                <td><button onclick="deleteSupplierInvoice(${inv.id})" class="btn-sm btn-danger">🗑️</button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } else {
+            container.innerHTML = '<div style="text-align: center; padding: 30px; color: #666;">لا توجد فواتير لهذا المورد</div>';
+        }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+
+    document.getElementById('supplierInvoicesModal').classList.add('active');
+}
+
+function closeSupplierInvoices() {
+    document.getElementById('supplierInvoicesModal').classList.remove('active');
+}
+
+function showAddSupplierInvoice() {
+    document.getElementById('supplierInvoiceForm').reset();
+    document.getElementById('supplierInvoiceSupplierId').value = currentSupplierId;
+    document.getElementById('supplierFileInfo').textContent = '';
+    document.getElementById('addSupplierInvoiceModal').classList.add('active');
+}
+
+function closeAddSupplierInvoice() {
+    document.getElementById('addSupplierInvoiceModal').classList.remove('active');
+}
+
+function validateSupplierFile(input) {
+    const file = input.files[0];
+    const info = document.getElementById('supplierFileInfo');
+    if (!file) { info.textContent = ''; return; }
+
+    const maxSize = 1 * 1024 * 1024; // 1 MB
+    if (file.size > maxSize) {
+        info.innerHTML = '<span style="color: #dc3545;">❌ حجم الملف يتجاوز 1 MB! الحد الأقصى 1 ميجابايت</span>';
+        input.value = '';
+        return;
+    }
+
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+    info.innerHTML = `<span style="color: #28a745;">✅ ${file.name} (${sizeMB} MB)</span>`;
+}
+
+document.getElementById('supplierInvoiceForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const fileInput = document.getElementById('supplierInvoiceFile');
+    const file = fileInput.files[0];
+
+    // التحقق من الحجم
+    if (file && file.size > 1 * 1024 * 1024) {
+        alert('❌ حجم الملف يتجاوز 1 ميجابايت');
+        return;
+    }
+
+    let fileData = '';
+    let fileName = '';
+    let fileType = '';
+
+    if (file) {
+        fileData = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(file);
+        });
+        fileName = file.name;
+        fileType = file.type;
+    }
+
+    const invoiceData = {
+        supplier_id: document.getElementById('supplierInvoiceSupplierId').value,
+        invoice_number: document.getElementById('supplierInvoiceNumber').value,
+        amount: parseFloat(document.getElementById('supplierInvoiceAmount').value) || 0,
+        invoice_date: document.getElementById('supplierInvoiceDate').value,
+        notes: document.getElementById('supplierInvoiceNotes').value,
+        file_data: fileData,
+        file_name: fileName,
+        file_type: fileType
+    };
+
+    try {
+        const response = await fetch(`${API_URL}/api/suppliers/invoices`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(invoiceData)
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم حفظ الفاتورة');
+            closeAddSupplierInvoice();
+            viewSupplierInvoices(currentSupplierId, document.getElementById('supplierInvoicesTitle').textContent.replace('📄 فواتير: ', ''));
+            loadSuppliers();
+        } else {
+            alert('❌ خطأ: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل الحفظ');
+    }
+});
+
+async function viewSupplierFile(invoiceId) {
+    try {
+        const response = await fetch(`${API_URL}/api/suppliers/invoices/${invoiceId}/file`);
+        const data = await response.json();
+        if (data.success && data.file_data) {
+            const viewer = document.getElementById('supplierFileViewer');
+            if (data.file_type === 'application/pdf') {
+                viewer.innerHTML = `<iframe src="${data.file_data}" style="width:100%; height:600px; border:none; border-radius:8px;"></iframe>`;
+            } else {
+                viewer.innerHTML = `<img src="${data.file_data}" style="max-width:100%; max-height:600px; border-radius:8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">`;
+            }
+            document.getElementById('viewSupplierFileModal').classList.add('active');
+        } else {
+            alert('❌ الملف غير موجود');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+
+async function deleteSupplierInvoice(invoiceId) {
+    if (!confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/suppliers/invoices/${invoiceId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم الحذف');
+            viewSupplierInvoices(currentSupplierId, document.getElementById('supplierInvoicesTitle').textContent.replace('📄 فواتير: ', ''));
+            loadSuppliers();
+        }
+    } catch (error) {
+        console.error('Error:', error);
     }
 }
 

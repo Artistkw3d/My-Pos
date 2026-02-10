@@ -29,6 +29,38 @@ def migrate_database():
         if 'order_status' not in columns:
             cursor.execute("ALTER TABLE invoices ADD COLUMN order_status TEXT DEFAULT 'قيد التنفيذ'")
             conn.commit()
+
+        # جدول الموردين
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS suppliers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT,
+                email TEXT,
+                address TEXT,
+                company TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # جدول فواتير الموردين
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS supplier_invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                supplier_id INTEGER NOT NULL,
+                invoice_number TEXT,
+                amount REAL DEFAULT 0,
+                file_name TEXT,
+                file_data TEXT,
+                file_type TEXT,
+                notes TEXT,
+                invoice_date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
+            )
+        ''')
+        conn.commit()
     except Exception as e:
         print(f"Migration note: {e}")
     finally:
@@ -2067,6 +2099,136 @@ def delete_return(return_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ===== تشغيل الخادم =====
+
+# ===== API الموردين =====
+
+@app.route('/api/suppliers', methods=['GET'])
+def get_suppliers():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.*,
+                   (SELECT COUNT(*) FROM supplier_invoices WHERE supplier_id = s.id) as invoice_count,
+                   (SELECT SUM(amount) FROM supplier_invoices WHERE supplier_id = s.id) as total_amount
+            FROM suppliers s ORDER BY s.created_at DESC
+        ''')
+        suppliers = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'suppliers': suppliers})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers', methods=['POST'])
+def add_supplier():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO suppliers (name, phone, email, address, company, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (data.get('name'), data.get('phone', ''), data.get('email', ''),
+              data.get('address', ''), data.get('company', ''), data.get('notes', '')))
+        conn.commit()
+        supplier_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': supplier_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers/<int:supplier_id>', methods=['PUT'])
+def update_supplier(supplier_id):
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE suppliers SET name=?, phone=?, email=?, address=?, company=?, notes=?
+            WHERE id=?
+        ''', (data.get('name'), data.get('phone', ''), data.get('email', ''),
+              data.get('address', ''), data.get('company', ''), data.get('notes', ''), supplier_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers/<int:supplier_id>', methods=['DELETE'])
+def delete_supplier(supplier_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM supplier_invoices WHERE supplier_id = ?', (supplier_id,))
+        cursor.execute('DELETE FROM suppliers WHERE id = ?', (supplier_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers/<int:supplier_id>/invoices', methods=['GET'])
+def get_supplier_invoices(supplier_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, supplier_id, invoice_number, amount, file_name, file_type, notes, invoice_date, created_at FROM supplier_invoices WHERE supplier_id = ? ORDER BY created_at DESC', (supplier_id,))
+        invoices = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'invoices': invoices})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers/invoices', methods=['POST'])
+def add_supplier_invoice():
+    try:
+        data = request.json
+        file_data = data.get('file_data', '')
+
+        # التحقق من حجم الملف (1 MB = ~1.37 MB base64)
+        if file_data and len(file_data) > 1400000:
+            return jsonify({'success': False, 'error': 'حجم الملف يتجاوز 1 ميجابايت'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO supplier_invoices (supplier_id, invoice_number, amount, file_name, file_data, file_type, notes, invoice_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (data.get('supplier_id'), data.get('invoice_number', ''), data.get('amount', 0),
+              data.get('file_name', ''), file_data, data.get('file_type', ''),
+              data.get('notes', ''), data.get('invoice_date', '')))
+        conn.commit()
+        invoice_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': invoice_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers/invoices/<int:invoice_id>', methods=['DELETE'])
+def delete_supplier_invoice(invoice_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM supplier_invoices WHERE id = ?', (invoice_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suppliers/invoices/<int:invoice_id>/file', methods=['GET'])
+def get_supplier_invoice_file(invoice_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT file_data, file_name, file_type FROM supplier_invoices WHERE id = ?', (invoice_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return jsonify({'success': True, 'file_data': row['file_data'], 'file_name': row['file_name'], 'file_type': row['file_type']})
+        return jsonify({'success': False, 'error': 'الملف غير موجود'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("🚀 تشغيل خادم POS...")
