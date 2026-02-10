@@ -4742,6 +4742,39 @@ async function editCustomer(id) {
     }
 }
 
+// عرض تفاصيل عميل
+async function viewCustomerDetails(id) {
+    try {
+        const response = await fetch(`${API_URL}/api/customers/${id}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const c = data.customer;
+            const html = `
+                <div style="padding: 20px;">
+                    <h3 style="margin-bottom: 20px;">👤 تفاصيل العميل</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                        <div><strong>الاسم:</strong> ${c.name || '-'}</div>
+                        <div><strong>الهاتف:</strong> ${c.phone || '-'}</div>
+                        <div><strong>البريد:</strong> ${c.email || '-'}</div>
+                        <div><strong>العنوان:</strong> ${c.address || '-'}</div>
+                        <div><strong>النقاط:</strong> <span style="color: #0ea5e9; font-weight: bold;">${c.points || 0}</span></div>
+                        <div><strong>إجمالي المشتريات:</strong> <span style="color: #28a745; font-weight: bold;">${(c.total_spent || 0).toFixed(3)} د.ك</span></div>
+                        <div><strong>عدد الطلبات:</strong> ${c.total_orders || 0}</div>
+                        <div><strong>تاريخ التسجيل:</strong> ${c.created_at ? new Date(c.created_at).toLocaleDateString('ar') : '-'}</div>
+                    </div>
+                    ${c.notes ? `<div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;"><strong>ملاحظات:</strong> ${c.notes}</div>` : ''}
+                </div>
+            `;
+            document.getElementById('invoiceViewContent').innerHTML = html;
+            document.getElementById('invoiceViewModal').classList.add('active');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل تحميل بيانات العميل');
+    }
+}
+
 // حذف عميل
 async function deleteCustomer(id) {
     if (!confirm('هل أنت متأكد من حذف هذا العميل؟')) return;
