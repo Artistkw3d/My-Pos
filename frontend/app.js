@@ -5054,7 +5054,21 @@ async function searchCustomerByPhone() {
         currentCustomerData = null;
         return;
     }
-    
+
+    if (!navigator.onLine) {
+        // أوفلاين: البحث في القائمة المحملة مسبقاً
+        const found = allCustomersDropdown.find(c => c.phone === phone);
+        if (found) {
+            currentCustomerData = found;
+            document.getElementById('customerName').value = found.name;
+            document.getElementById('selectedCustomerId').value = found.id;
+            document.getElementById('loyaltySection').style.display = 'block';
+            document.getElementById('customerLoyaltyPoints').textContent = found.loyalty_points || found.points || 0;
+            updatePointsToEarn();
+        }
+        return;
+    }
+
     try {
         const response = await fetch(`${API_URL}/api/customers/search?phone=${encodeURIComponent(phone)}`);
         const data = await response.json();
@@ -5192,47 +5206,6 @@ console.log('[Loyalty System] Loaded ✅');
 // ===============================================
 
 // التحقق من الاتصال
-async function checkConnection() {
-    try {
-        const response = await fetch(`${API_URL}/api/ping`, {
-            method: 'GET',
-            cache: 'no-cache'
-        });
-        return response.ok;
-    } catch {
-        return false;
-    }
-}
-
-// تسجيل الخروج المحدث
-async function logout() {
-    try {
-        // التحقق من الاتصال أولاً
-        const isOnline = await checkConnection();
-        
-        if (!isOnline) {
-            alert('⚠️ لا يمكن تسجيل الخروج بدون اتصال بالإنترنت\n' +
-                  'الرجاء التحقق من الاتصال والمحاولة مرة أخرى');
-            return;
-        }
-        
-        // تسجيل الخروج من الخادم
-        const response = await fetch(`${API_URL}/api/logout`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
-        
-        if (response.ok) {
-            // مسح البيانات المحلية
-            localStorage.removeItem('pos_current_user');
-            window.location.href = '/login.html';
-        }
-    } catch (error) {
-        console.error('Logout error:', error);
-        alert('⚠️ خطأ في تسجيل الخروج. تحقق من الاتصال.');
-    }
-}
-
 console.log('[Logout Protection] Loaded ✅');
 
 
@@ -5702,6 +5675,11 @@ let allSuppliers = [];
 let currentSupplierId = null;
 
 async function loadSuppliers() {
+    if (!navigator.onLine) {
+        const container = document.getElementById('suppliersContainer');
+        if (container) container.innerHTML = '<div style="text-align:center; padding:40px; color:#92400e;"><div style="font-size:48px; margin-bottom:10px;">📴</div><p>غير متصل - لا يمكن تحميل الموردين</p></div>';
+        return;
+    }
     try {
         const response = await fetch(`${API_URL}/api/suppliers`);
         const data = await response.json();
@@ -6029,6 +6007,11 @@ let appliedCouponDiscount = 0;
 let appliedCouponId = null;
 
 async function loadCoupons() {
+    if (!navigator.onLine) {
+        const container = document.getElementById('couponsContainer');
+        if (container) container.innerHTML = '<div style="text-align:center; padding:40px; color:#92400e;"><div style="font-size:48px; margin-bottom:10px;">📴</div><p>غير متصل - لا يمكن تحميل الكوبونات</p></div>';
+        return;
+    }
     try {
         const response = await fetch(`${API_URL}/api/coupons`);
         const data = await response.json();
@@ -6229,6 +6212,14 @@ async function applyCouponCode() {
         resultDiv.style.background = '#fee2e2';
         resultDiv.style.color = '#991b1b';
         resultDiv.innerHTML = '⚠️ الرجاء إدخال كود الكوبون';
+        return;
+    }
+
+    if (!navigator.onLine) {
+        resultDiv.style.display = 'block';
+        resultDiv.style.background = '#fef3c7';
+        resultDiv.style.color = '#92400e';
+        resultDiv.innerHTML = '📴 لا يمكن التحقق من الكوبون بدون إنترنت';
         return;
     }
 
