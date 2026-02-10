@@ -608,7 +608,22 @@ function clearSaleForm() {
     document.getElementById('deliveryFee').value = '0';
     document.getElementById('paymentMethod').value = 'cash';
     document.getElementById('transactionNumber').value = '';
-    toggleTransactionNumber();
+    // إعادة تعيين عمليات الدفع
+    const pmList = document.getElementById('paymentMethodsList');
+    if (pmList) {
+        pmList.innerHTML = `
+            <div class="payment-entry" data-index="0" style="display: flex; gap: 5px; align-items: center; margin-bottom: 8px;">
+                <select class="pm-method" onchange="togglePaymentTxn(this)" style="flex: 1; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    <option value="cash">💵 نقداً</option>
+                    <option value="knet">💳 كي نت</option>
+                    <option value="visa">💳 فيزا</option>
+                    <option value="other">💰 أخرى</option>
+                </select>
+                <input type="number" class="pm-amount" placeholder="المبلغ" step="0.001" min="0" style="width: 100px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                <input type="text" class="pm-txn" placeholder="رقم العملية" style="display: none; width: 110px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+            </div>
+        `;
+    }
     
     // مسح بيانات الولاء
     document.getElementById('selectedCustomerId').value = '';
@@ -668,16 +683,52 @@ function updateTotals() {
 }
 
 function toggleTransactionNumber() {
-    const method = document.getElementById('paymentMethod').value;
-    const transInput = document.getElementById('transactionNumber');
+    // backward compat - no-op now, handled by togglePaymentTxn
+}
+
+function togglePaymentTxn(selectEl) {
+    const entry = selectEl.closest('.payment-entry');
+    const txnInput = entry.querySelector('.pm-txn');
+    const method = selectEl.value;
     if (method === 'knet' || method === 'visa') {
-        transInput.style.display = 'block';
-        transInput.required = true;
+        txnInput.style.display = 'block';
     } else {
-        transInput.style.display = 'none';
-        transInput.required = false;
-        transInput.value = '';
+        txnInput.style.display = 'none';
+        txnInput.value = '';
     }
+}
+
+function addPaymentMethod() {
+    const list = document.getElementById('paymentMethodsList');
+    const index = list.querySelectorAll('.payment-entry').length;
+    const div = document.createElement('div');
+    div.className = 'payment-entry';
+    div.dataset.index = index;
+    div.style.cssText = 'display: flex; gap: 5px; align-items: center; margin-bottom: 8px;';
+    div.innerHTML = `
+        <select class="pm-method" onchange="togglePaymentTxn(this)" style="flex: 1; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+            <option value="cash">💵 نقداً</option>
+            <option value="knet">💳 كي نت</option>
+            <option value="visa">💳 فيزا</option>
+            <option value="other">💰 أخرى</option>
+        </select>
+        <input type="number" class="pm-amount" placeholder="المبلغ" step="0.001" min="0" style="width: 100px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+        <input type="text" class="pm-txn" placeholder="رقم العملية" style="display: none; width: 110px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+        <button onclick="this.parentElement.remove()" type="button" style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer;">✖</button>
+    `;
+    list.appendChild(div);
+}
+
+function getPaymentMethods() {
+    const entries = document.querySelectorAll('#paymentMethodsList .payment-entry');
+    const payments = [];
+    entries.forEach(entry => {
+        const method = entry.querySelector('.pm-method').value;
+        const amount = parseFloat(entry.querySelector('.pm-amount').value) || 0;
+        const txn = entry.querySelector('.pm-txn').value || '';
+        payments.push({ method, amount, transaction_number: txn });
+    });
+    return payments;
 }
 
 // Complete Sale
@@ -706,12 +757,20 @@ async function completeSale() {
         return;
     }
 
-    const paymentMethod = document.getElementById('paymentMethod').value;
-    const transactionNumber = document.getElementById('transactionNumber').value;
-    if ((paymentMethod === 'knet' || paymentMethod === 'visa') && !transactionNumber) {
-        alert('الرجاء إدخال رقم العملية');
-        return;
+    // جمع عمليات الدفع المتعددة
+    const payments = getPaymentMethods();
+    // التحقق من أرقام العمليات للعمليات غير النقدية
+    for (const p of payments) {
+        if ((p.method === 'knet' || p.method === 'visa') && !p.transaction_number) {
+            alert('الرجاء إدخال رقم العملية لكل عملية كي نت أو فيزا');
+            return;
+        }
     }
+    // تحديث الحقول المخفية للتوافق
+    const paymentMethod = payments.length > 0 ? payments[0].method : 'cash';
+    const transactionNumber = payments.length > 0 ? payments[0].transaction_number : '';
+    document.getElementById('paymentMethod').value = paymentMethod;
+    document.getElementById('transactionNumber').value = transactionNumber;
 
     const timestamp = Date.now().toString().slice(-6);
     const invoiceNumber = `${currentUser.invoice_prefix || 'INV'}-${timestamp}`;
@@ -744,8 +803,10 @@ async function completeSale() {
     
     // بيانات الولاء
     const pointsToRedeem = parseInt(document.getElementById('pointsToRedeem').value) || 0;
-    const loyaltyDiscount = pointsToRedeem / 100;
-    const pointsEarned = customerId ? Math.floor(total) : 0;
+    const redemptionRate = (window.loyaltyConfig && window.loyaltyConfig.redemptionRate) || 100;
+    const pointsPerKd = (window.loyaltyConfig && window.loyaltyConfig.pointsPerKd) || 10;
+    const loyaltyDiscount = pointsToRedeem / redemptionRate;
+    const pointsEarned = customerId ? Math.floor(total * pointsPerKd) : 0;
     
     const invoiceData = {
         invoice_number: invoiceNumber,
@@ -766,6 +827,7 @@ async function completeSale() {
         loyalty_discount: loyaltyDiscount,
         coupon_discount: couponDiscount,
         coupon_code: appliedCouponId ? document.getElementById('couponCodeInput').value : null,
+        payments: payments,
         items: cart.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -932,6 +994,13 @@ async function viewInvoiceDetails(invoiceId) {
 
 function displayInvoiceView(inv) {
     const paymentMethods = {'cash':'💵 نقداً','knet':'💳 كي نت','visa':'💳 فيزا','other':'💰 أخرى'};
+    // محاولة تحليل عمليات الدفع المتعددة من حقل transaction_number
+    if (!inv.payments && inv.transaction_number) {
+        try {
+            const parsed = JSON.parse(inv.transaction_number);
+            if (Array.isArray(parsed)) { inv.payments = parsed; }
+        } catch(e) { /* not JSON, single payment */ }
+    }
     const content = document.getElementById('invoiceViewContent');
     content.innerHTML = `
         <div style="padding: 20px;">
@@ -945,8 +1014,8 @@ function displayInvoiceView(inv) {
                 <div><strong>العميل:</strong> ${inv.customer_name || '-'}</div>
                 <div><strong>الهاتف:</strong> ${inv.customer_phone || '-'}</div>
                 <div><strong>العنوان:</strong> ${inv.customer_address || '-'}</div>
-                <div><strong>الدفع:</strong> ${paymentMethods[inv.payment_method]}</div>
-                ${inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${inv.transaction_number}</div>` : ''}
+                <div><strong>الدفع:</strong> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
+                ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><strong>رقم العملية (${paymentMethods[p.method]}):</strong> ${p.transaction_number}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${inv.transaction_number}</div>` : '')}
                 <div style="grid-column: 1/-1;"><strong>حالة الطلب:</strong> <span class="order-status-badge status-${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'processing' : (inv.order_status === 'قيد التوصيل' ? 'delivering' : 'completed')}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
@@ -972,6 +1041,8 @@ function displayInvoiceView(inv) {
             <div style="font-size:12px; margin-top:15px;">
                 <div style="display:flex; justify-content:space-between; margin:5px 0;"><span>المجموع:</span><span>${inv.subtotal.toFixed(3)} د.ك</span></div>
                 <div style="display:flex; justify-content:space-between; margin:5px 0; color:#dc3545;"><span>الخصم:</span><span>-${inv.discount.toFixed(3)} د.ك</span></div>
+                ${(inv.coupon_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#eab308;"><span>🎟️ خصم الكوبون:</span><span>-${inv.coupon_discount.toFixed(3)} د.ك</span></div>` : ''}
+                ${(inv.loyalty_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#0ea5e9;"><span>💎 خصم الولاء:</span><span>-${inv.loyalty_discount.toFixed(3)} د.ك</span></div>` : ''}
                 ${inv.delivery_fee > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0;"><span>رسوم التوصيل:</span><span>${inv.delivery_fee.toFixed(3)} د.ك</span></div>` : ''}
                 <div style="display:flex; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:2px solid #667eea; font-size:16px; font-weight:bold; color:#667eea;"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
             </div>
@@ -995,6 +1066,12 @@ function printInvoiceFromView() {
 
 function generateCompactInvoiceHTML(inv) {
     const paymentMethods = {'cash':'💵 نقداً','knet':'💳 كي نت','visa':'💳 فيزا','other':'💰 أخرى'};
+    if (!inv.payments && inv.transaction_number) {
+        try {
+            const parsed = JSON.parse(inv.transaction_number);
+            if (Array.isArray(parsed)) { inv.payments = parsed; }
+        } catch(e) {}
+    }
     return `
 <!DOCTYPE html>
 <html dir="rtl">
@@ -1033,8 +1110,8 @@ ${storeLogo ? `<img src="${storeLogo}">` : ''}
 <div><b>العميل:</b> ${inv.customer_name || '-'}</div>
 <div><b>الهاتف:</b> ${inv.customer_phone || '-'}</div>
 <div><b>العنوان:</b> ${inv.customer_address || '-'}</div>
-<div><b>طريقة الدفع:</b> ${paymentMethods[inv.payment_method]}</div>
-${inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${inv.transaction_number}</div>` : ''}
+<div><b>طريقة الدفع:</b> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
+${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><b>رقم العملية (${paymentMethods[p.method]}):</b> ${p.transaction_number}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${inv.transaction_number}</div>` : '')}
 <div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
 </div>
 <table>
@@ -1046,6 +1123,8 @@ ${inv.items.map((item, i) => `<tr><td>${i+1}</td><td>${item.product_name}</td><t
 <div class="totals">
 <div><span>المجموع الفرعي:</span><span>${inv.subtotal.toFixed(3)} د.ك</span></div>
 <div style="color:#dc3545;"><span>الخصم:</span><span>-${inv.discount.toFixed(3)} د.ك</span></div>
+${(inv.coupon_discount || 0) > 0 ? `<div style="color:#b45309;"><span>🎟️ خصم الكوبون:</span><span>-${inv.coupon_discount.toFixed(3)} د.ك</span></div>` : ''}
+${(inv.loyalty_discount || 0) > 0 ? `<div style="color:#0284c7;"><span>💎 خصم الولاء:</span><span>-${inv.loyalty_discount.toFixed(3)} د.ك</span></div>` : ''}
 ${inv.delivery_fee > 0 ? `<div><span>رسوم التوصيل:</span><span>+${inv.delivery_fee.toFixed(3)} د.ك</span></div>` : ''}
 <div class="total-final"><span>الإجمالي النهائي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
 </div>
@@ -1838,6 +1917,22 @@ async function loadSettings() {
                     document.getElementById('loginIconPreview').style.display = 'block';
                 }
             }
+
+            // إعدادات الولاء
+            window.loyaltyConfig = {
+                enabled: data.settings.loyalty_enabled !== 'false',
+                pointsPerKd: parseInt(data.settings.loyalty_points_per_kd) || 10,
+                redemptionRate: parseInt(data.settings.loyalty_redemption_rate) || 100
+            };
+            if (document.getElementById('loyaltyEnabled')) {
+                document.getElementById('loyaltyEnabled').value = data.settings.loyalty_enabled || 'true';
+            }
+            if (document.getElementById('loyaltyPointsPerKd')) {
+                document.getElementById('loyaltyPointsPerKd').value = window.loyaltyConfig.pointsPerKd;
+            }
+            if (document.getElementById('loyaltyRedemptionRate')) {
+                document.getElementById('loyaltyRedemptionRate').value = window.loyaltyConfig.redemptionRate;
+            }
         }
         
     } catch (error) {
@@ -1926,6 +2021,33 @@ async function saveSettings() {
         }
     } catch (error) {
         console.error('خطأ:', error);
+    }
+}
+
+async function saveLoyaltySettings() {
+    const settings = {
+        loyalty_enabled: document.getElementById('loyaltyEnabled').value,
+        loyalty_points_per_kd: document.getElementById('loyaltyPointsPerKd').value,
+        loyalty_redemption_rate: document.getElementById('loyaltyRedemptionRate').value
+    };
+    try {
+        const response = await fetch(`${API_URL}/api/settings`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(settings)
+        });
+        const data = await response.json();
+        if (data.success) {
+            window.loyaltyConfig = {
+                enabled: settings.loyalty_enabled !== 'false',
+                pointsPerKd: parseInt(settings.loyalty_points_per_kd) || 10,
+                redemptionRate: parseInt(settings.loyalty_redemption_rate) || 100
+            };
+            alert('✅ تم حفظ إعدادات الولاء');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل الحفظ');
     }
 }
 
@@ -3886,11 +4008,17 @@ function selectCustomer() {
         document.getElementById('customerName').value = customer.name;
         document.getElementById('customerPhone').value = customer.phone || '';
         document.getElementById('customerAddress').value = customer.address || '';
-        
+
         document.getElementById('displayCustomerName').textContent = customer.name;
         document.getElementById('displayCustomerPhone').textContent = customer.phone || '-';
         document.getElementById('displayCustomerAddress').textContent = customer.address || '-';
         document.getElementById('customerDetails').style.display = 'block';
+
+        // عرض قسم الولاء
+        currentCustomerData = customer;
+        document.getElementById('loyaltySection').style.display = 'block';
+        document.getElementById('customerLoyaltyPoints').textContent = customer.loyalty_points || customer.points || 0;
+        updatePointsToEarn();
     }
 }
 
@@ -3901,6 +4029,10 @@ function clearCustomerSelection() {
     document.getElementById('customerPhone').value = '';
     document.getElementById('customerAddress').value = '';
     document.getElementById('customerDetails').style.display = 'none';
+    document.getElementById('loyaltySection').style.display = 'none';
+    document.getElementById('loyaltyDiscountRow').style.display = 'none';
+    document.getElementById('pointsToRedeem').value = '';
+    currentCustomerData = null;
 }
 
 
@@ -4922,24 +5054,25 @@ async function searchCustomerByPhone() {
 // تحديث النقاط التي سيربحها العميل
 function updatePointsToEarn() {
     const total = calculateSubtotal();
-    const pointsToEarn = Math.floor(total); // 1 دينار = 1 نقطة
+    const pointsPerKd = (window.loyaltyConfig && window.loyaltyConfig.pointsPerKd) || 10;
+    const pointsToEarn = Math.floor(total * pointsPerKd);
     document.getElementById('pointsToEarn').textContent = pointsToEarn;
 }
 
 // حساب خصم الولاء
 function calculateLoyaltyDiscount() {
     const pointsToRedeem = parseInt(document.getElementById('pointsToRedeem').value) || 0;
-    const availablePoints = currentCustomerData ? (currentCustomerData.points || 0) : 0;
-    
+    const availablePoints = currentCustomerData ? (currentCustomerData.loyalty_points || currentCustomerData.points || 0) : 0;
+
     if (pointsToRedeem > availablePoints) {
         alert('⚠️ النقاط المطلوبة أكبر من النقاط المتاحة');
         document.getElementById('pointsToRedeem').value = availablePoints;
         return;
     }
-    
-    // 100 نقطة = 1 دينار
-    const discount = pointsToRedeem / 100;
-    
+
+    const redemptionRate = (window.loyaltyConfig && window.loyaltyConfig.redemptionRate) || 100;
+    const discount = pointsToRedeem / redemptionRate;
+
     // عرض الخصم
     if (discount > 0) {
         document.getElementById('loyaltyDiscountRow').style.display = 'flex';
@@ -4947,22 +5080,22 @@ function calculateLoyaltyDiscount() {
     } else {
         document.getElementById('loyaltyDiscountRow').style.display = 'none';
     }
-    
+
     updateTotals();
 }
 
 // استخدام كل النقاط
 function applyMaxPoints() {
     if (!currentCustomerData) return;
-    
-    const availablePoints = currentCustomerData.points || 0;
+
+    const availablePoints = currentCustomerData.loyalty_points || currentCustomerData.points || 0;
     const total = calculateSubtotal();
-    const maxDiscount = total;
-    const maxPointsToUse = Math.min(availablePoints, Math.floor(maxDiscount * 100));
-    
-    // تقريب لأقرب 100
-    const roundedPoints = Math.floor(maxPointsToUse / 100) * 100;
-    
+    const redemptionRate = (window.loyaltyConfig && window.loyaltyConfig.redemptionRate) || 100;
+    const maxPointsToUse = Math.min(availablePoints, Math.floor(total * redemptionRate));
+
+    // تقريب لأقرب redemptionRate
+    const roundedPoints = Math.floor(maxPointsToUse / redemptionRate) * redemptionRate;
+
     document.getElementById('pointsToRedeem').value = roundedPoints;
     calculateLoyaltyDiscount();
 }
