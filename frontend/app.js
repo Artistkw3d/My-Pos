@@ -73,6 +73,9 @@ async function initializeUI() {
     document.getElementById('advancedReportsBtn').style.display = isAdmin ? 'inline-block' : 'none';
     document.getElementById('suppliersBtn').style.display = isAdmin ? 'inline-block' : 'none';
     document.getElementById('couponsBtn').style.display = isAdmin ? 'inline-block' : 'none';
+    document.getElementById('tablesBtn').style.display = isAdmin ? 'inline-block' : 'none';
+    // عرض خانة اختيار الطاولة في نقطة البيع
+    loadTablesDropdown();
 
     // التبويبات
     const customersTab = document.querySelector('[data-tab="customers"]');
@@ -198,6 +201,9 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('advancedReportsBtn').style.display = isAdmin ? 'inline-block' : 'none';
             document.getElementById('suppliersBtn').style.display = isAdmin ? 'inline-block' : 'none';
             document.getElementById('couponsBtn').style.display = isAdmin ? 'inline-block' : 'none';
+    document.getElementById('tablesBtn').style.display = isAdmin ? 'inline-block' : 'none';
+    // عرض خانة اختيار الطاولة في نقطة البيع
+    loadTablesDropdown();
 
             // التبويبات
             const customersTab = document.querySelector('[data-tab="customers"]');
@@ -334,6 +340,7 @@ function showTab(tabName) {
         'attendance': 'attendanceTab',
         'suppliers': 'suppliersTab',
         'coupons': 'couponsTab',
+        'tables': 'tablesTab',
         'settings': 'settingsTab'
     };
     
@@ -395,6 +402,7 @@ function showTab(tabName) {
         if (tabName === 'systemlogs') loadSystemLogs();
         if (tabName === 'suppliers') loadSuppliers();
         if (tabName === 'coupons') loadCoupons();
+        if (tabName === 'tables') loadTables();
         if (tabName === 'users') loadUsersTable();
         if (tabName === 'branches') loadBranchesTable();
         if (tabName === 'attendance') loadAttendanceLog();
@@ -553,6 +561,52 @@ function addToCart(productId) {
     updateCart();
 }
 
+// مسح الباركود وإضافة المنتج تلقائياً
+let barcodeTimeout = null;
+function onBarcodeInput(value) {
+    clearTimeout(barcodeTimeout);
+    if (!value || value.length < 3) return;
+    barcodeTimeout = setTimeout(() => {
+        const barcode = value.trim();
+        const product = allProducts.find(p => p.barcode && p.barcode === barcode);
+        if (product) {
+            addToCart(product.id);
+            document.getElementById('barcodeInput').value = '';
+            // صوت تنبيه بسيط
+            try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVFQAAAABmbXQgEAAAAAEAAQBBIAAAQSAAAAEACABkYXRhAAAAAA==').play(); } catch(e) {}
+        }
+    }, 300);
+}
+
+// التقاط الباركود من قارئ خارجي
+let scanBuffer = '';
+let scanTimeout = null;
+document.addEventListener('keydown', function(e) {
+    // تجاهل إذا كان المستخدم يكتب في حقل إدخال آخر
+    const activeEl = document.activeElement;
+    const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+    if (isInput && activeEl.id !== 'barcodeInput') return;
+
+    if (e.key === 'Enter' && scanBuffer.length >= 3) {
+        e.preventDefault();
+        const barcode = scanBuffer.trim();
+        const product = allProducts.find(p => p.barcode && p.barcode === barcode);
+        if (product) {
+            addToCart(product.id);
+        }
+        scanBuffer = '';
+        document.getElementById('barcodeInput').value = '';
+        return;
+    }
+
+    if (e.key.length === 1) {
+        scanBuffer += e.key;
+        document.getElementById('barcodeInput').value = scanBuffer;
+        clearTimeout(scanTimeout);
+        scanTimeout = setTimeout(() => { scanBuffer = ''; }, 500);
+    }
+});
+
 function updateCart() {
     const cartItems = document.getElementById('cartItems');
     if (cart.length === 0) {
@@ -640,6 +694,10 @@ function clearSaleForm() {
     document.getElementById('couponDiscountDisplay').textContent = '0.000 د.ك';
     appliedCouponDiscount = 0;
     appliedCouponId = null;
+
+    // مسح بيانات الطاولة
+    const tableSelect = document.getElementById('selectedTableId');
+    if (tableSelect) tableSelect.value = '';
 }
 
 // تحديث المخزون المحلي
@@ -835,6 +893,8 @@ async function completeSale() {
         coupon_discount: couponDiscount,
         coupon_code: appliedCouponId ? document.getElementById('couponCodeInput').value : null,
         payments: payments,
+        table_id: document.getElementById('selectedTableId')?.value || null,
+        table_name: document.getElementById('selectedTableId')?.selectedOptions[0]?.textContent || '',
         items: cart.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -1024,6 +1084,7 @@ function displayInvoiceView(inv) {
                 <div><strong>الدفع:</strong> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
                 ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><strong>رقم العملية (${paymentMethods[p.method]}):</strong> ${p.transaction_number}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${inv.transaction_number}</div>` : '')}
                 <div style="grid-column: 1/-1;"><strong>حالة الطلب:</strong> <span class="order-status-badge status-${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'processing' : (inv.order_status === 'قيد التوصيل' ? 'delivering' : 'completed')}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
+                ${inv.table_name ? `<div><strong>🍽️ الطاولة:</strong> ${inv.table_name}</div>` : ''}
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
                 <thead><tr style="background:#667eea; color:white;">
@@ -1120,6 +1181,7 @@ ${storeLogo ? `<img src="${storeLogo}">` : ''}
 <div><b>طريقة الدفع:</b> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
 ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><b>رقم العملية (${paymentMethods[p.method]}):</b> ${p.transaction_number}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${inv.transaction_number}</div>` : '')}
 <div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
+${inv.table_name ? `<div><b>🍽️ الطاولة:</b> ${inv.table_name}</div>` : ''}
 </div>
 <table>
 <thead><tr><th style="width:40px;">#</th><th>المنتج</th><th style="width:80px;">الكمية</th><th style="width:100px;">السعر</th><th style="width:100px;">الإجمالي</th></tr></thead>
@@ -6349,6 +6411,493 @@ setTimeout(() => {
         console.log('[Customers Dropdown] Loaded ✅');
     }
 }, 1000);
+
+// ===== نظام طاولات المطعم =====
+
+let allTables = [];
+let editingTableId = null;
+let dragState = null;
+
+// تحميل الطاولات في dropdown نقطة البيع
+async function loadTablesDropdown() {
+    const select = document.getElementById('selectedTableId');
+    const section = document.getElementById('tableSelectionSection');
+    if (!select || !section) return;
+
+    try {
+        if (!navigator.onLine) {
+            // في وضع أوفلاين: إخفاء اختيار الطاولة
+            section.style.display = 'none';
+            return;
+        }
+        const response = await fetch(`${API_URL}/api/tables`);
+        const data = await response.json();
+        if (data.success && data.tables && data.tables.length > 0) {
+            allTables = data.tables;
+            select.innerHTML = '<option value="">-- بدون طاولة --</option>';
+            data.tables.forEach(t => {
+                const statusText = t.status === 'occupied' ? ' (مشغولة)' : '';
+                select.innerHTML += `<option value="${t.id}" ${t.status === 'occupied' ? 'disabled' : ''}>${t.name}${statusText}</option>`;
+            });
+            section.style.display = 'block';
+        } else {
+            section.style.display = 'none';
+        }
+    } catch (e) {
+        console.log('[Tables] Could not load tables dropdown:', e);
+        section.style.display = 'none';
+    }
+}
+
+// تحميل الطاولات لتبويب الطاولات
+async function loadTables() {
+    if (!navigator.onLine) {
+        showToast('لا يوجد اتصال بالإنترنت', 'warning');
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/api/tables`);
+        const data = await response.json();
+        if (data.success) {
+            allTables = data.tables || [];
+            displayTablesStats();
+            displayTablesFloorPlan();
+        }
+    } catch (e) {
+        console.error('[Tables] Failed to load:', e);
+        showToast('فشل تحميل الطاولات', 'error');
+    }
+}
+
+// عرض إحصائيات الطاولات
+function displayTablesStats() {
+    const container = document.getElementById('tablesStatsContainer');
+    if (!container) return;
+
+    const total = allTables.length;
+    const available = allTables.filter(t => t.status === 'available').length;
+    const occupied = allTables.filter(t => t.status === 'occupied').length;
+    const totalSeats = allTables.reduce((sum, t) => sum + (t.seats || 0), 0);
+
+    container.innerHTML = `
+        <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">${total}</div>
+            <div style="font-size: 13px; opacity: 0.9;">إجمالي الطاولات</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">${available}</div>
+            <div style="font-size: 13px; opacity: 0.9;">متاحة</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">${occupied}</div>
+            <div style="font-size: 13px; opacity: 0.9;">مشغولة</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">${totalSeats}</div>
+            <div style="font-size: 13px; opacity: 0.9;">إجمالي المقاعد</div>
+        </div>
+    `;
+}
+
+// عرض مخطط الطاولات مع السحب والإفلات
+function displayTablesFloorPlan() {
+    const container = document.getElementById('tablesFloorPlan');
+    if (!container) return;
+
+    if (allTables.length === 0) {
+        container.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 300px; color: #94a3b8; font-size: 18px;">لا توجد طاولات - اضغط ➕ إضافة طاولة للبدء</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+
+    allTables.forEach(table => {
+        const isOccupied = table.status === 'occupied';
+        const tableEl = document.createElement('div');
+        tableEl.className = 'table-card';
+        tableEl.dataset.id = table.id;
+        tableEl.style.cssText = `
+            position: absolute;
+            left: ${table.pos_x || 50}px;
+            top: ${table.pos_y || 50}px;
+            width: 130px;
+            min-height: 120px;
+            background: ${isOccupied ? 'linear-gradient(135deg, #fecaca, #fca5a5)' : 'linear-gradient(135deg, #d1fae5, #a7f3d0)'};
+            border: 3px solid ${isOccupied ? '#ef4444' : '#10b981'};
+            border-radius: 16px;
+            padding: 12px;
+            cursor: grab;
+            user-select: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            z-index: 10;
+            transition: box-shadow 0.2s;
+        `;
+
+        tableEl.innerHTML = `
+            <div style="font-size: 24px; margin-bottom: 6px;">${isOccupied ? '🔴' : '🟢'}</div>
+            <div style="font-weight: bold; font-size: 14px; color: #1e293b;">${table.name}</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">🪑 ${table.seats} مقاعد</div>
+            <div style="font-size: 11px; color: ${isOccupied ? '#dc2626' : '#059669'}; margin-top: 4px; font-weight: bold;">
+                ${isOccupied ? '🍽️ مشغولة' : '✅ متاحة'}
+            </div>
+            <div style="display: flex; gap: 4px; margin-top: 8px;">
+                ${isOccupied ?
+                    `<button onclick="event.stopPropagation(); viewTableInvoice(${table.id})" style="background: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📄 الفاتورة</button>
+                     <button onclick="event.stopPropagation(); releaseTableAction(${table.id})" style="background: #10b981; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔓 تحرير</button>`
+                    :
+                    `<button onclick="event.stopPropagation(); showAssignInvoice(${table.id})" style="background: #8b5cf6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📎 ربط</button>`
+                }
+                <button onclick="event.stopPropagation(); editTable(${table.id})" style="background: #f59e0b; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">✏️</button>
+                <button onclick="event.stopPropagation(); deleteTable(${table.id})" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🗑️</button>
+            </div>
+        `;
+
+        // سحب وإفلات - Mouse Events
+        tableEl.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            e.preventDefault();
+            const rect = container.getBoundingClientRect();
+            dragState = {
+                tableId: table.id,
+                el: tableEl,
+                offsetX: e.clientX - tableEl.offsetLeft,
+                offsetY: e.clientY - tableEl.offsetTop,
+                containerRect: rect
+            };
+            tableEl.style.cursor = 'grabbing';
+            tableEl.style.zIndex = '100';
+            tableEl.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
+        });
+
+        // سحب وإفلات - Touch Events
+        tableEl.addEventListener('touchstart', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            const touch = e.touches[0];
+            const rect = container.getBoundingClientRect();
+            dragState = {
+                tableId: table.id,
+                el: tableEl,
+                offsetX: touch.clientX - tableEl.offsetLeft,
+                offsetY: touch.clientY - tableEl.offsetTop,
+                containerRect: rect
+            };
+            tableEl.style.cursor = 'grabbing';
+            tableEl.style.zIndex = '100';
+            tableEl.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
+        }, { passive: true });
+
+        container.appendChild(tableEl);
+    });
+}
+
+// أحداث السحب على مستوى المستند
+document.addEventListener('mousemove', (e) => {
+    if (!dragState) return;
+    e.preventDefault();
+    const newX = e.clientX - dragState.offsetX;
+    const newY = e.clientY - dragState.offsetY;
+    // ضمان البقاء داخل الحاوية
+    const maxX = dragState.containerRect.width - 140;
+    const maxY = dragState.containerRect.height - 130;
+    dragState.el.style.left = Math.max(0, Math.min(newX, maxX)) + 'px';
+    dragState.el.style.top = Math.max(0, Math.min(newY, maxY)) + 'px';
+});
+
+document.addEventListener('mouseup', async () => {
+    if (!dragState) return;
+    const tableId = dragState.tableId;
+    const newX = parseInt(dragState.el.style.left);
+    const newY = parseInt(dragState.el.style.top);
+    dragState.el.style.cursor = 'grab';
+    dragState.el.style.zIndex = '10';
+    dragState.el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+    dragState = null;
+
+    // حفظ الموضع الجديد
+    try {
+        await fetch(`${API_URL}/api/tables/${tableId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ pos_x: newX, pos_y: newY })
+        });
+        // تحديث البيانات المحلية
+        const t = allTables.find(tb => tb.id === tableId);
+        if (t) { t.pos_x = newX; t.pos_y = newY; }
+    } catch (e) {
+        console.log('[Tables] Failed to save position:', e);
+    }
+});
+
+document.addEventListener('touchmove', (e) => {
+    if (!dragState) return;
+    const touch = e.touches[0];
+    const newX = touch.clientX - dragState.offsetX;
+    const newY = touch.clientY - dragState.offsetY;
+    const maxX = dragState.containerRect.width - 140;
+    const maxY = dragState.containerRect.height - 130;
+    dragState.el.style.left = Math.max(0, Math.min(newX, maxX)) + 'px';
+    dragState.el.style.top = Math.max(0, Math.min(newY, maxY)) + 'px';
+}, { passive: true });
+
+document.addEventListener('touchend', async () => {
+    if (!dragState) return;
+    const tableId = dragState.tableId;
+    const newX = parseInt(dragState.el.style.left);
+    const newY = parseInt(dragState.el.style.top);
+    dragState.el.style.cursor = 'grab';
+    dragState.el.style.zIndex = '10';
+    dragState.el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+    dragState = null;
+
+    try {
+        await fetch(`${API_URL}/api/tables/${tableId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ pos_x: newX, pos_y: newY })
+        });
+        const t = allTables.find(tb => tb.id === tableId);
+        if (t) { t.pos_x = newX; t.pos_y = newY; }
+    } catch (e) {
+        console.log('[Tables] Failed to save position:', e);
+    }
+});
+
+// إضافة طاولة
+function showAddTable() {
+    editingTableId = null;
+    document.getElementById('tableId').value = '';
+    document.getElementById('tableName').value = '';
+    document.getElementById('tableSeats').value = '4';
+    document.getElementById('tableModalTitle').textContent = '➕ إضافة طاولة';
+    document.getElementById('addTableModal').classList.add('active');
+}
+
+function closeAddTable() {
+    document.getElementById('addTableModal').classList.remove('active');
+}
+
+// تعديل طاولة
+function editTable(id) {
+    const table = allTables.find(t => t.id === id);
+    if (!table) return;
+    editingTableId = id;
+    document.getElementById('tableId').value = id;
+    document.getElementById('tableName').value = table.name;
+    document.getElementById('tableSeats').value = table.seats || 4;
+    document.getElementById('tableModalTitle').textContent = '✏️ تعديل طاولة';
+    document.getElementById('addTableModal').classList.add('active');
+}
+
+// معالج نموذج الطاولة
+document.getElementById('tableForm')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('tableName').value.trim();
+    const seats = parseInt(document.getElementById('tableSeats').value) || 4;
+
+    if (!name) {
+        showToast('يرجى إدخال اسم الطاولة', 'error');
+        return;
+    }
+
+    try {
+        if (editingTableId) {
+            // تحديث طاولة
+            const response = await fetch(`${API_URL}/api/tables/${editingTableId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, seats })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('تم تحديث الطاولة بنجاح', 'success');
+            } else {
+                showToast('فشل تحديث الطاولة', 'error');
+                return;
+            }
+        } else {
+            // إضافة طاولة جديدة
+            const response = await fetch(`${API_URL}/api/tables`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, seats })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('تمت إضافة الطاولة بنجاح', 'success');
+            } else {
+                showToast('فشل إضافة الطاولة', 'error');
+                return;
+            }
+        }
+
+        closeAddTable();
+        loadTables();
+        loadTablesDropdown();
+    } catch (e) {
+        console.error('[Tables] Save error:', e);
+        showToast('خطأ في حفظ الطاولة', 'error');
+    }
+});
+
+// حذف طاولة
+async function deleteTable(id) {
+    if (!confirm('هل أنت متأكد من حذف هذه الطاولة؟')) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/tables/${id}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            showToast('تم حذف الطاولة', 'success');
+            loadTables();
+            loadTablesDropdown();
+        } else {
+            showToast('فشل حذف الطاولة', 'error');
+        }
+    } catch (e) {
+        console.error('[Tables] Delete error:', e);
+        showToast('خطأ في حذف الطاولة', 'error');
+    }
+}
+
+// عرض فاتورة الطاولة
+async function viewTableInvoice(tableId) {
+    const table = allTables.find(t => t.id === tableId);
+    if (!table || !table.current_invoice_id) {
+        showToast('لا توجد فاتورة مرتبطة بهذه الطاولة', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/invoices/${table.current_invoice_id}`);
+        const data = await response.json();
+        if (data.success && data.invoice) {
+            const inv = data.invoice;
+            const content = document.getElementById('tableInvoiceContent');
+            const paymentMethods = {'cash':'💵 نقداً','knet':'💳 كي نت','visa':'💳 فيزا','other':'💰 أخرى'};
+
+            // تحليل عمليات الدفع المتعددة
+            if (!inv.payments && inv.transaction_number) {
+                try {
+                    const parsed = JSON.parse(inv.transaction_number);
+                    if (Array.isArray(parsed)) inv.payments = parsed;
+                } catch(e) {}
+            }
+
+            content.innerHTML = `
+                <div style="padding: 15px;">
+                    <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #86efac;">
+                        <strong>🍽️ ${table.name}</strong> | <strong>📄 فاتورة: ${inv.invoice_number}</strong>
+                    </div>
+                    <div style="font-size: 13px; margin-bottom: 10px;">
+                        <div><strong>العميل:</strong> ${inv.customer_name || '-'}</div>
+                        <div><strong>التاريخ:</strong> ${new Date(inv.created_at).toLocaleDateString('ar')}</div>
+                        <div><strong>الدفع:</strong> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead><tr style="background: #667eea; color: white;">
+                            <th style="padding: 6px; text-align: right;">المنتج</th>
+                            <th style="padding: 6px; text-align: center;">الكمية</th>
+                            <th style="padding: 6px; text-align: right;">السعر</th>
+                            <th style="padding: 6px; text-align: right;">الإجمالي</th>
+                        </tr></thead>
+                        <tbody>
+                            ${(inv.items || []).map(item => `
+                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                    <td style="padding: 5px;">${item.product_name}</td>
+                                    <td style="padding: 5px; text-align: center;">${item.quantity}</td>
+                                    <td style="padding: 5px;">${parseFloat(item.price).toFixed(3)}</td>
+                                    <td style="padding: 5px;">${parseFloat(item.total).toFixed(3)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div style="margin-top: 12px; padding-top: 10px; border-top: 2px solid #667eea; font-size: 16px; font-weight: bold; color: #667eea; display: flex; justify-content: space-between;">
+                        <span>الإجمالي:</span>
+                        <span>${parseFloat(inv.total).toFixed(3)} د.ك</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-top: 15px;">
+                        <button onclick="releaseTableAction(${tableId}); document.getElementById('tableInvoiceModal').classList.remove('active');" style="flex: 1; background: #10b981; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 14px;">🔓 تحرير الطاولة</button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('tableInvoiceTitle').textContent = `🍽️ فاتورة ${table.name}`;
+            document.getElementById('tableInvoiceModal').classList.add('active');
+        } else {
+            showToast('فشل تحميل الفاتورة', 'error');
+        }
+    } catch (e) {
+        console.error('[Tables] View invoice error:', e);
+        showToast('خطأ في تحميل فاتورة الطاولة', 'error');
+    }
+}
+
+// تحرير طاولة (إزالة الفاتورة)
+async function releaseTableAction(tableId) {
+    if (!confirm('هل تريد تحرير هذه الطاولة؟')) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            showToast('تم تحرير الطاولة', 'success');
+            loadTables();
+            loadTablesDropdown();
+        } else {
+            showToast('فشل تحرير الطاولة', 'error');
+        }
+    } catch (e) {
+        console.error('[Tables] Release error:', e);
+        showToast('خطأ في تحرير الطاولة', 'error');
+    }
+}
+
+// ربط فاتورة بطاولة من تبويب الطاولات
+async function showAssignInvoice(tableId) {
+    const table = allTables.find(t => t.id === tableId);
+    if (!table) return;
+
+    // عرض نافذة لإدخال رقم الفاتورة
+    const invoiceNum = prompt('أدخل رقم الفاتورة لربطها بـ ' + table.name + ':');
+    if (!invoiceNum || !invoiceNum.trim()) return;
+
+    try {
+        // البحث عن الفاتورة بالرقم
+        const response = await fetch(`${API_URL}/api/invoices`);
+        const data = await response.json();
+        if (data.success && data.invoices) {
+            const invoice = data.invoices.find(inv => inv.invoice_number === invoiceNum.trim());
+            if (invoice) {
+                const assignResponse = await fetch(`${API_URL}/api/tables/${tableId}/assign`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ invoice_id: invoice.id })
+                });
+                const assignData = await assignResponse.json();
+                if (assignData.success) {
+                    showToast(`تم ربط الفاتورة ${invoiceNum} بـ ${table.name}`, 'success');
+                    loadTables();
+                    loadTablesDropdown();
+                } else {
+                    showToast('فشل ربط الفاتورة', 'error');
+                }
+            } else {
+                showToast('لم يتم العثور على الفاتورة', 'error');
+            }
+        }
+    } catch (e) {
+        console.error('[Tables] Assign error:', e);
+        showToast('خطأ في ربط الفاتورة', 'error');
+    }
+}
+
+console.log('[Tables] Restaurant Tables System Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 
