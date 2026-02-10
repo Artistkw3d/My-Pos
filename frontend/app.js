@@ -6992,6 +6992,65 @@ function logoutSuperAdmin() {
     document.getElementById('loginOverlay').classList.remove('hidden');
 }
 
+function showSuperAdminSettings() {
+    if (!currentSuperAdmin) return;
+    document.getElementById('saSettingsFullName').value = currentSuperAdmin.full_name || '';
+    document.getElementById('saSettingsUsername').value = currentSuperAdmin.username || '';
+    document.getElementById('saSettingsOldPassword').value = '';
+    document.getElementById('saSettingsNewPassword').value = '';
+    document.getElementById('saSettingsConfirmPassword').value = '';
+    document.getElementById('superAdminSettingsModal').classList.add('active');
+}
+
+document.getElementById('superAdminSettingsForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fullName = document.getElementById('saSettingsFullName').value.trim();
+    const newUsername = document.getElementById('saSettingsUsername').value.trim();
+    const oldPassword = document.getElementById('saSettingsOldPassword').value;
+    const newPassword = document.getElementById('saSettingsNewPassword').value;
+    const confirmPassword = document.getElementById('saSettingsConfirmPassword').value;
+
+    if (!oldPassword) {
+        alert('يرجى إدخال كلمة المرور الحالية للتأكيد');
+        return;
+    }
+    if (!newUsername) {
+        alert('يرجى إدخال اسم المستخدم');
+        return;
+    }
+    if (newPassword && newPassword !== confirmPassword) {
+        alert('كلمة المرور الجديدة وتأكيدها غير متطابقتين');
+        return;
+    }
+
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/change-password`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                admin_id: currentSuperAdmin.id,
+                old_password: oldPassword,
+                new_password: newPassword || '',
+                new_username: newUsername,
+                new_full_name: fullName
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            currentSuperAdmin = data.admin;
+            localStorage.setItem('pos_super_admin', JSON.stringify(data.admin));
+            document.getElementById('saUserInfo').textContent = data.admin.full_name;
+            document.getElementById('superAdminSettingsModal').classList.remove('active');
+            alert('تم حفظ التغييرات بنجاح');
+        } else {
+            alert(data.error || 'فشل حفظ التغييرات');
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Settings error:', e);
+        alert('خطأ في حفظ الإعدادات');
+    }
+});
+
 async function loadSuperAdminDashboard() {
     try {
         const response = await originalFetch(`${API_URL}/api/super-admin/tenants`);
