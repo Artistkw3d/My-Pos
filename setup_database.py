@@ -67,6 +67,7 @@ def create_database():
         payment_method TEXT NOT NULL,
         employee_name TEXT,
         notes TEXT,
+        order_status TEXT DEFAULT 'قيد التنفيذ',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id)
     )

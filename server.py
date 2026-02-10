@@ -19,6 +19,23 @@ CORS(app)
 # إعدادات قاعدة البيانات
 DB_PATH = 'database/pos.db'
 
+def migrate_database():
+    """ترقية قاعدة البيانات - إضافة أعمدة جديدة"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("PRAGMA table_info(invoices)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'order_status' not in columns:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN order_status TEXT DEFAULT 'قيد التنفيذ'")
+            conn.commit()
+    except Exception as e:
+        print(f"Migration note: {e}")
+    finally:
+        conn.close()
+
+migrate_database()
+
 def get_db():
     """الاتصال بقاعدة البيانات"""
     conn = sqlite3.connect(DB_PATH)
@@ -774,6 +791,27 @@ def create_invoice():
         conn.close()
         
         return jsonify({'success': True, 'id': invoice_id, 'invoice_number': invoice_number_with_branch})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/invoices/<int:invoice_id>/status', methods=['PUT'])
+def update_invoice_status(invoice_id):
+    """تحديث حالة الطلب"""
+    try:
+        data = request.json
+        new_status = data.get('order_status')
+
+        valid_statuses = ['قيد التنفيذ', 'قيد التوصيل', 'منجز']
+        if new_status not in valid_statuses:
+            return jsonify({'success': False, 'error': 'حالة غير صالحة'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE invoices SET order_status = ? WHERE id = ?', (new_status, invoice_id))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
