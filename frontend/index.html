@@ -49,6 +49,7 @@
                 <button class="header-btn" onclick="showTab('systemlogs')" data-tab="systemlogs" id="systemLogsBtn" style="display: none;">📋 سجل النظام</button>
                 <button class="header-btn" onclick="showTab('coupons')" data-tab="coupons" id="couponsBtn" style="display: none;">🎟️ الكوبونات</button>
                 <button class="header-btn" onclick="showTab('suppliers')" data-tab="suppliers" id="suppliersBtn" style="display: none;">🏭 الموردين</button>
+                <button class="header-btn" onclick="showTab('tables')" data-tab="tables" id="tablesBtn" style="display: none;">🍽️ الطاولات</button>
                 <button class="header-btn" onclick="showTab('accounting')" data-tab="accounting">💰 المحاسبة</button>
                 <button class="header-btn" onclick="showTab('dcf')" data-tab="dcf" id="dcfBtn" style="display: none;">📈 تقييم DCF</button>
                 <button class="header-btn" onclick="showTab('users')" data-tab="users" id="usersBtn" style="display: none;">👥 المستخدمين</button>
@@ -73,6 +74,9 @@
                 <div class="products-section">
                     <div class="search-box">
                         <input type="text" id="searchInput" placeholder="🔍 ابحث..." onkeyup="searchProducts()">
+                    </div>
+                    <div style="padding: 0 10px 10px; display: flex; gap: 5px;">
+                        <input type="text" id="barcodeInput" placeholder="📊 مسح الباركود..." style="flex: 1; padding: 10px; border: 2px solid #eab308; border-radius: 8px; font-size: 14px; font-weight: bold; background: #fefce8;" oninput="onBarcodeInput(this.value)">
                     </div>
                     <div class="products-grid" id="productsGrid"></div>
                 </div>
@@ -143,6 +147,14 @@
                             <button onclick="applyCouponCode()" class="btn-sm" style="background: #eab308; color: #fff; padding: 8px 14px; white-space: nowrap;">تطبيق</button>
                         </div>
                         <div id="couponResult" style="display: none; margin-top: 8px; padding: 8px; border-radius: 6px;"></div>
+                    </div>
+
+                    <!-- طاولة المطعم -->
+                    <div id="tableSelectionSection" style="display: none; background: #faf5ff; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 2px solid #8b5cf6;">
+                        <div style="font-weight: bold; color: #6d28d9; margin-bottom: 8px;">🍽️ طاولة المطعم</div>
+                        <select id="selectedTableId" style="width: 100%; padding: 8px; border: 2px solid #c4b5fd; border-radius: 6px;">
+                            <option value="">-- بدون طاولة --</option>
+                        </select>
                     </div>
 
                     <!-- الدفع -->
@@ -652,6 +664,51 @@
                 <div id="couponsContainer"></div>
             </div>
         </div>
+
+        <!-- Tables Tab -->
+        <div class="tab-content" id="tablesTab" style="display: none;">
+            <div style="padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>🍽️ طاولات المطعم</h2>
+                    <button onclick="showAddTable()" class="add-btn">➕ إضافة طاولة</button>
+                </div>
+                <div id="tablesStatsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px;"></div>
+                <div id="tablesFloorPlan" style="position: relative; min-height: 500px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; overflow: hidden;"></div>
+            </div>
+        </div>
+
+    <!-- Add Table Modal -->
+    <div class="modal" id="addTableModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2 id="tableModalTitle">➕ إضافة طاولة</h2>
+                <button onclick="closeAddTable()" class="close-btn">&times;</button>
+            </div>
+            <form id="tableForm">
+                <input type="hidden" id="tableId">
+                <div class="form-group">
+                    <label>اسم الطاولة:</label>
+                    <input type="text" id="tableName" required placeholder="مثال: طاولة 1">
+                </div>
+                <div class="form-group">
+                    <label>عدد المقاعد:</label>
+                    <input type="number" id="tableSeats" min="1" value="4">
+                </div>
+                <button type="submit" class="btn" style="width: 100%; padding: 12px;">💾 حفظ</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Table Invoice Modal -->
+    <div class="modal" id="tableInvoiceModal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2 id="tableInvoiceTitle">🍽️ فاتورة الطاولة</h2>
+                <button onclick="document.getElementById('tableInvoiceModal').classList.remove('active')" class="close-btn">&times;</button>
+            </div>
+            <div id="tableInvoiceContent"></div>
+        </div>
+    </div>
 
     <!-- Add/Edit Coupon Modal -->
     <div class="modal" id="addCouponModal">

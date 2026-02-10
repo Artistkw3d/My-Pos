@@ -111,6 +111,30 @@ def migrate_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        # جدول طاولات المطاعم
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS restaurant_tables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                seats INTEGER DEFAULT 4,
+                pos_x INTEGER DEFAULT 50,
+                pos_y INTEGER DEFAULT 50,
+                status TEXT DEFAULT 'available',
+                current_invoice_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # إضافة عمود table_id للفواتير
+        cursor.execute("PRAGMA table_info(invoices)")
+        inv_cols2 = [col[1] for col in cursor.fetchall()]
+        if 'table_id' not in inv_cols2:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN table_id INTEGER")
+            conn.commit()
+        if 'table_name' not in inv_cols2:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN table_name TEXT")
+            conn.commit()
+
         conn.commit()
     except Exception as e:
         print(f"Migration note: {e}")
@@ -823,8 +847,9 @@ def create_invoice():
             INSERT INTO invoices
             (invoice_number, customer_id, customer_name, customer_phone, customer_address,
              subtotal, discount, total, payment_method, employee_name, notes, transaction_number, branch_name, delivery_fee,
-             coupon_discount, coupon_code, loyalty_discount, loyalty_points_earned, loyalty_points_redeemed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             coupon_discount, coupon_code, loyalty_discount, loyalty_points_earned, loyalty_points_redeemed,
+             table_id, table_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             invoice_number_with_branch,
             data.get('customer_id'),
@@ -844,11 +869,19 @@ def create_invoice():
             data.get('coupon_code', ''),
             data.get('loyalty_discount', 0),
             data.get('loyalty_points_earned', 0),
-            data.get('loyalty_points_redeemed', 0)
+            data.get('loyalty_points_redeemed', 0),
+            data.get('table_id'),
+            data.get('table_name', '')
         ))
-        
+
         invoice_id = cursor.lastrowid
-        
+
+        # ربط الطاولة بالفاتورة
+        table_id = data.get('table_id')
+        if table_id:
+            cursor.execute('UPDATE restaurant_tables SET status = ?, current_invoice_id = ? WHERE id = ?',
+                           ('occupied', invoice_id, table_id))
+
         # إدراج عناصر الفاتورة وتحديث المخزون
         for item in data.get('items', []):
             # الحصول على branch_stock_id
@@ -2220,6 +2253,106 @@ def delete_return(return_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ===== تشغيل الخادم =====
+
+# ===== API طاولات المطاعم =====
+
+@app.route('/api/tables', methods=['GET'])
+def get_tables():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM restaurant_tables ORDER BY id')
+        tables = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'tables': tables})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/tables', methods=['POST'])
+def add_table():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO restaurant_tables (name, seats, pos_x, pos_y)
+            VALUES (?, ?, ?, ?)
+        ''', (data.get('name', 'طاولة'), data.get('seats', 4), data.get('pos_x', 50), data.get('pos_y', 50)))
+        conn.commit()
+        table_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': table_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/tables/<int:table_id>', methods=['PUT'])
+def update_table(table_id):
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        fields = []
+        values = []
+        for key in ['name', 'seats', 'pos_x', 'pos_y', 'status', 'current_invoice_id']:
+            if key in data:
+                fields.append(f'{key} = ?')
+                values.append(data[key])
+        if fields:
+            values.append(table_id)
+            cursor.execute(f'UPDATE restaurant_tables SET {", ".join(fields)} WHERE id = ?', values)
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/tables/<int:table_id>', methods=['DELETE'])
+def delete_table(table_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM restaurant_tables WHERE id = ?', (table_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/tables/<int:table_id>/assign', methods=['POST'])
+def assign_table_invoice(table_id):
+    """ربط فاتورة بطاولة"""
+    try:
+        data = request.json
+        invoice_id = data.get('invoice_id')
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE restaurant_tables SET status = ?, current_invoice_id = ? WHERE id = ?',
+                       ('occupied', invoice_id, table_id))
+        if invoice_id:
+            cursor.execute('SELECT name FROM restaurant_tables WHERE id = ?', (table_id,))
+            tbl = cursor.fetchone()
+            table_name = tbl['name'] if tbl else ''
+            cursor.execute('UPDATE invoices SET table_id = ?, table_name = ? WHERE id = ?',
+                           (table_id, table_name, invoice_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/tables/<int:table_id>/release', methods=['POST'])
+def release_table(table_id):
+    """تحرير طاولة"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE restaurant_tables SET status = ?, current_invoice_id = NULL WHERE id = ?',
+                       ('available', table_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ===== API الكوبونات =====
 
