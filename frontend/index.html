@@ -20,11 +20,9 @@
             <div class="login-logo">🛍️</div>
             <h1 class="login-title">نظام نقاط البيع</h1>
             <form class="login-form" id="loginForm">
-                <div class="login-form-group" id="tenantSelectGroup">
-                    <label>🏢 اختر المتجر</label>
-                    <select id="loginTenantSlug" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
-                        <option value="">-- المتجر الافتراضي --</option>
-                    </select>
+                <div class="login-form-group">
+                    <label>🏢 معرف المتجر</label>
+                    <input type="text" id="loginTenantSlug" placeholder="أدخل معرف المتجر (اتركه فارغاً للافتراضي)" style="direction: ltr; text-align: center;">
                 </div>
                 <div class="login-form-group">
                     <label>اسم المستخدم</label>
@@ -151,6 +149,16 @@
                         <input type="number" id="tenantMaxBranches" value="3" min="1">
                     </div>
                 </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>💰 قيمة الاشتراك (د.ك):</label>
+                        <input type="number" id="tenantSubAmount" value="0" min="0" step="0.001">
+                    </div>
+                    <div class="form-group">
+                        <label>📅 مدة الاشتراك (يوم):</label>
+                        <input type="number" id="tenantSubPeriod" value="30" min="1">
+                    </div>
+                </div>
                 <button type="submit" class="btn" style="width: 100%; padding: 12px;">💾 حفظ</button>
             </form>
         </div>
@@ -164,6 +172,57 @@
                 <button onclick="document.getElementById('tenantStatsModal').classList.remove('active')" class="close-btn">&times;</button>
             </div>
             <div id="tenantStatsContent" style="padding: 15px;"></div>
+        </div>
+    </div>
+
+    <!-- Subscription Modal -->
+    <div class="modal" id="subscriptionModal">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <h2 id="subscriptionModalTitle">💳 إدارة الاشتراك</h2>
+                <button onclick="document.getElementById('subscriptionModal').classList.remove('active')" class="close-btn">&times;</button>
+            </div>
+            <div style="padding: 15px;">
+                <!-- معلومات الاشتراك الحالي -->
+                <div id="subscriptionInfo" style="margin-bottom: 20px;"></div>
+
+                <!-- إنشاء فاتورة اشتراك جديدة -->
+                <div style="background: #f0fdf4; padding: 15px; border-radius: 10px; border: 2px solid #86efac; margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; color: #059669;">➕ تجديد / إنشاء فاتورة اشتراك</h4>
+                    <form id="subscriptionForm">
+                        <input type="hidden" id="subTenantId">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="form-group">
+                                <label>المبلغ (د.ك):</label>
+                                <input type="number" id="subAmount" min="0.001" step="0.001" required>
+                            </div>
+                            <div class="form-group">
+                                <label>المدة (يوم):</label>
+                                <input type="number" id="subPeriodDays" min="1" value="30" required>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="form-group">
+                                <label>طريقة الدفع:</label>
+                                <select id="subPaymentMethod">
+                                    <option value="cash">💵 نقداً</option>
+                                    <option value="knet">💳 كي نت</option>
+                                    <option value="bank">🏦 تحويل بنكي</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>ملاحظات:</label>
+                                <input type="text" id="subNotes" placeholder="اختياري">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn" style="width: 100%; padding: 10px; background: linear-gradient(135deg, #10b981, #059669); color: white;">💰 إصدار فاتورة وتجديد الاشتراك</button>
+                    </form>
+                </div>
+
+                <!-- سجل الفواتير -->
+                <h4 style="margin: 0 0 10px 0;">📋 سجل فواتير الاشتراك</h4>
+                <div id="subscriptionInvoicesList"></div>
+            </div>
         </div>
     </div>
 

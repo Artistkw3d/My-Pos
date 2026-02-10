@@ -26,31 +26,13 @@ window.fetch = function(url, options = {}) {
     return originalFetch.call(this, url, options);
 };
 
-// تحميل قائمة المستأجرين في صفحة تسجيل الدخول
-async function loadTenantsList() {
-    try {
-        const response = await originalFetch(`${API_URL}/api/tenants/list`);
-        const data = await response.json();
-        const select = document.getElementById('loginTenantSlug');
-        if (!select) return;
-        if (data.success && data.tenants && data.tenants.length > 0) {
-            select.innerHTML = '<option value="">-- المتجر الافتراضي --</option>';
-            data.tenants.forEach(t => {
-                select.innerHTML += `<option value="${t.slug}" ${currentTenantSlug === t.slug ? 'selected' : ''}>${t.name}</option>`;
-            });
-            document.getElementById('tenantSelectGroup').style.display = 'block';
-        } else {
-            // إخفاء اختيار المتجر إذا لم يكن هناك مستأجرين
-            document.getElementById('tenantSelectGroup').style.display = 'none';
-        }
-    } catch (e) {
-        console.log('[Tenants] Could not load tenants list');
-        document.getElementById('tenantSelectGroup').style.display = 'none';
+// استعادة معرف المتجر في حقل الإدخال عند فتح الصفحة
+(function() {
+    const input = document.getElementById('loginTenantSlug');
+    if (input && currentTenantSlug) {
+        input.value = currentTenantSlug;
     }
-}
-
-// تحميل القائمة عند فتح الصفحة
-loadTenantsList();
+})();
 
 // استعادة المستخدم من localStorage
 function restoreUser() {
@@ -7044,19 +7026,21 @@ async function loadSuperAdminDashboard() {
         `;
 
         // جدول المستأجرين
+        const thStyle = 'padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0; white-space: nowrap;';
         let tableHTML = `
+            <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead>
                     <tr style="background: #f1f5f9;">
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">#</th>
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">المتجر</th>
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">المعرف</th>
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">المالك</th>
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">الخطة</th>
-                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">الحالة</th>
-                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">المستخدمين</th>
-                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">الفواتير</th>
-                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">الإجراءات</th>
+                        <th style="${thStyle}">#</th>
+                        <th style="${thStyle}">المتجر</th>
+                        <th style="${thStyle}">المعرف</th>
+                        <th style="${thStyle}">المالك</th>
+                        <th style="${thStyle}">الخطة</th>
+                        <th style="${thStyle} text-align: center;">الحالة</th>
+                        <th style="${thStyle} text-align: center;">الاشتراك</th>
+                        <th style="${thStyle} text-align: center;">المستخدمين</th>
+                        <th style="${thStyle} text-align: center;">الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -7067,6 +7051,24 @@ async function loadSuperAdminDashboard() {
         } else {
             tenants.forEach((t, i) => {
                 const planNames = {'basic': 'أساسية', 'premium': 'متقدمة', 'enterprise': 'مؤسسات'};
+                // حالة الاشتراك
+                let subStatus = '';
+                if (t.expires_at) {
+                    const expiry = new Date(t.expires_at);
+                    const today = new Date();
+                    today.setHours(0,0,0,0);
+                    const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                    if (daysLeft < 0) {
+                        subStatus = `<span style="color: #ef4444; font-weight: bold;">⛔ منتهي</span><br><span style="font-size: 10px; color: #94a3b8;">${t.expires_at.substring(0,10)}</span>`;
+                    } else if (daysLeft <= 7) {
+                        subStatus = `<span style="color: #f59e0b; font-weight: bold;">⚠️ ${daysLeft} يوم</span><br><span style="font-size: 10px; color: #94a3b8;">${t.expires_at.substring(0,10)}</span>`;
+                    } else {
+                        subStatus = `<span style="color: #10b981; font-weight: bold;">✅ ${daysLeft} يوم</span><br><span style="font-size: 10px; color: #94a3b8;">${t.expires_at.substring(0,10)}</span>`;
+                    }
+                } else {
+                    subStatus = '<span style="color: #94a3b8;">غير محدد</span>';
+                }
+
                 tableHTML += `
                     <tr style="border-bottom: 1px solid #f1f5f9;">
                         <td style="padding: 10px;">${i + 1}</td>
@@ -7075,10 +7077,11 @@ async function loadSuperAdminDashboard() {
                         <td style="padding: 10px;">${t.owner_name}</td>
                         <td style="padding: 10px;"><span style="background: ${t.plan === 'enterprise' ? '#fef3c7' : t.plan === 'premium' ? '#dbeafe' : '#f1f5f9'}; padding: 3px 8px; border-radius: 6px; font-size: 11px;">${planNames[t.plan] || t.plan}</span></td>
                         <td style="padding: 10px; text-align: center;">${t.is_active ? '<span style="color: #10b981; font-weight: bold;">✅ نشط</span>' : '<span style="color: #ef4444;">❌ معطل</span>'}</td>
+                        <td style="padding: 10px; text-align: center; font-size: 12px;">${subStatus}</td>
                         <td style="padding: 10px; text-align: center;">${t.users_count || 0}</td>
-                        <td style="padding: 10px; text-align: center;">${t.invoices_count || 0}</td>
                         <td style="padding: 10px; text-align: center;">
-                            <div style="display: flex; gap: 4px; justify-content: center;">
+                            <div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
+                                <button onclick="openSubscriptionModal(${t.id})" style="background: #8b5cf6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="الاشتراك">💳</button>
                                 <button onclick="viewTenantStats(${t.id})" style="background: #3b82f6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="إحصائيات">📊</button>
                                 <button onclick="editTenant(${t.id})" style="background: #f59e0b; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="تعديل">✏️</button>
                                 <button onclick="toggleTenant(${t.id}, ${t.is_active ? 0 : 1})" style="background: ${t.is_active ? '#ef4444' : '#10b981'}; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="${t.is_active ? 'تعطيل' : 'تفعيل'}">${t.is_active ? '🚫' : '✅'}</button>
@@ -7090,7 +7093,7 @@ async function loadSuperAdminDashboard() {
             });
         }
 
-        tableHTML += '</tbody></table>';
+        tableHTML += '</tbody></table></div>';
         document.getElementById('tenantsTableContainer').innerHTML = tableHTML;
 
     } catch (e) {
@@ -7113,6 +7116,8 @@ function showAddTenant() {
     document.getElementById('tenantPlan').value = 'basic';
     document.getElementById('tenantMaxUsers').value = '5';
     document.getElementById('tenantMaxBranches').value = '3';
+    document.getElementById('tenantSubAmount').value = '0';
+    document.getElementById('tenantSubPeriod').value = '30';
     document.getElementById('tenantSlugGroup').style.display = 'block';
     document.getElementById('tenantAdminFields').style.display = 'grid';
     document.getElementById('tenantModalTitle').textContent = '➕ إضافة متجر جديد';
@@ -7135,6 +7140,8 @@ async function editTenant(tenantId) {
         document.getElementById('tenantPlan').value = t.plan || 'basic';
         document.getElementById('tenantMaxUsers').value = t.max_users || 5;
         document.getElementById('tenantMaxBranches').value = t.max_branches || 3;
+        document.getElementById('tenantSubAmount').value = t.subscription_amount || 0;
+        document.getElementById('tenantSubPeriod').value = t.subscription_period || 30;
         document.getElementById('tenantSlugGroup').style.display = 'none'; // لا يمكن تغيير slug
         document.getElementById('tenantAdminFields').style.display = 'none'; // لا يمكن تغيير أدمن من هنا
         document.getElementById('tenantModalTitle').textContent = '✏️ تعديل متجر';
@@ -7159,7 +7166,9 @@ document.getElementById('tenantForm')?.addEventListener('submit', async (e) => {
                     owner_phone: document.getElementById('tenantOwnerPhone').value,
                     plan: document.getElementById('tenantPlan').value,
                     max_users: parseInt(document.getElementById('tenantMaxUsers').value),
-                    max_branches: parseInt(document.getElementById('tenantMaxBranches').value)
+                    max_branches: parseInt(document.getElementById('tenantMaxBranches').value),
+                    subscription_amount: parseFloat(document.getElementById('tenantSubAmount').value) || 0,
+                    subscription_period: parseInt(document.getElementById('tenantSubPeriod').value) || 30
                 })
             });
             const data = await response.json();
@@ -7184,7 +7193,9 @@ document.getElementById('tenantForm')?.addEventListener('submit', async (e) => {
                     admin_password: document.getElementById('tenantAdminPassword').value,
                     plan: document.getElementById('tenantPlan').value,
                     max_users: parseInt(document.getElementById('tenantMaxUsers').value),
-                    max_branches: parseInt(document.getElementById('tenantMaxBranches').value)
+                    max_branches: parseInt(document.getElementById('tenantMaxBranches').value),
+                    subscription_amount: parseFloat(document.getElementById('tenantSubAmount').value) || 0,
+                    subscription_period: parseInt(document.getElementById('tenantSubPeriod').value) || 30
                 })
             });
             const data = await response.json();
@@ -7297,6 +7308,152 @@ async function viewTenantStats(tenantId) {
         document.getElementById('tenantStatsModal').classList.add('active');
     } catch (e) {
         console.error('[SuperAdmin] Stats error:', e);
+    }
+}
+
+// ===== إدارة الاشتراكات =====
+
+async function openSubscriptionModal(tenantId) {
+    document.getElementById('subTenantId').value = tenantId;
+
+    try {
+        // جلب بيانات المستأجر
+        const statsRes = await originalFetch(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
+        const statsData = await statsRes.json();
+
+        if (!statsData.success) return;
+        const t = statsData.tenant;
+
+        // معلومات الاشتراك الحالي
+        let infoHTML = '';
+        const subAmount = t.subscription_amount || 0;
+        const subPeriod = t.subscription_period || 30;
+
+        if (t.expires_at) {
+            const expiry = new Date(t.expires_at);
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+            const isExpired = daysLeft < 0;
+            infoHTML = `
+                <div style="background: ${isExpired ? '#fef2f2' : daysLeft <= 7 ? '#fffbeb' : '#f0fdf4'}; padding: 15px; border-radius: 10px; border: 2px solid ${isExpired ? '#fca5a5' : daysLeft <= 7 ? '#fcd34d' : '#86efac'};">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center;">
+                        <div>
+                            <div style="font-size: 12px; color: #64748b;">المتجر</div>
+                            <div style="font-weight: bold;">${t.name}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #64748b;">ينتهي في</div>
+                            <div style="font-weight: bold; color: ${isExpired ? '#ef4444' : '#059669'};">${t.expires_at.substring(0,10)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #64748b;">الأيام المتبقية</div>
+                            <div style="font-weight: bold; font-size: 20px; color: ${isExpired ? '#ef4444' : daysLeft <= 7 ? '#f59e0b' : '#059669'};">${isExpired ? 'منتهي ⛔' : daysLeft + ' يوم'}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            infoHTML = `
+                <div style="background: #f1f5f9; padding: 15px; border-radius: 10px; text-align: center; color: #64748b;">
+                    <strong>${t.name}</strong> - لم يتم تحديد فترة اشتراك بعد
+                </div>
+            `;
+        }
+        document.getElementById('subscriptionInfo').innerHTML = infoHTML;
+
+        // تعبئة القيم الافتراضية
+        document.getElementById('subAmount').value = subAmount > 0 ? subAmount : '';
+        document.getElementById('subPeriodDays').value = subPeriod;
+        document.getElementById('subNotes').value = '';
+
+        document.getElementById('subscriptionModalTitle').textContent = `💳 اشتراك: ${t.name}`;
+
+        // جلب فواتير الاشتراك
+        const invRes = await originalFetch(`${API_URL}/api/super-admin/subscriptions/${tenantId}`);
+        const invData = await invRes.json();
+
+        let invHTML = '';
+        if (invData.success && invData.invoices && invData.invoices.length > 0) {
+            const payNames = {'cash': '💵 نقداً', 'knet': '💳 كي نت', 'bank': '🏦 تحويل بنكي'};
+            invHTML = `<table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead><tr style="background: #f1f5f9;">
+                    <th style="padding: 8px; text-align: right;">#</th>
+                    <th style="padding: 8px; text-align: right;">المبلغ</th>
+                    <th style="padding: 8px; text-align: right;">المدة</th>
+                    <th style="padding: 8px; text-align: right;">من</th>
+                    <th style="padding: 8px; text-align: right;">إلى</th>
+                    <th style="padding: 8px; text-align: right;">الدفع</th>
+                    <th style="padding: 8px; text-align: center;">حذف</th>
+                </tr></thead><tbody>`;
+            invData.invoices.forEach((inv, i) => {
+                invHTML += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 6px;">${i+1}</td>
+                    <td style="padding: 6px; font-weight: bold;">${parseFloat(inv.amount).toFixed(3)} د.ك</td>
+                    <td style="padding: 6px;">${inv.period_days} يوم</td>
+                    <td style="padding: 6px;">${inv.start_date}</td>
+                    <td style="padding: 6px;">${inv.end_date}</td>
+                    <td style="padding: 6px;">${payNames[inv.payment_method] || inv.payment_method}</td>
+                    <td style="padding: 6px; text-align: center;">
+                        <button onclick="deleteSubInvoice(${inv.id}, ${tenantId})" style="background: #ef4444; color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 10px;">🗑️</button>
+                    </td>
+                </tr>`;
+            });
+            invHTML += '</tbody></table>';
+        } else {
+            invHTML = '<div style="text-align: center; color: #94a3b8; padding: 20px;">لا توجد فواتير اشتراك</div>';
+        }
+        document.getElementById('subscriptionInvoicesList').innerHTML = invHTML;
+
+        document.getElementById('subscriptionModal').classList.add('active');
+    } catch (e) {
+        console.error('[SuperAdmin] Open subscription error:', e);
+    }
+}
+
+document.getElementById('subscriptionForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const tenantId = document.getElementById('subTenantId').value;
+    const amount = parseFloat(document.getElementById('subAmount').value);
+    const periodDays = parseInt(document.getElementById('subPeriodDays').value);
+    const paymentMethod = document.getElementById('subPaymentMethod').value;
+    const notes = document.getElementById('subNotes').value;
+
+    if (!amount || amount <= 0) {
+        alert('يرجى إدخال مبلغ صحيح');
+        return;
+    }
+
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/subscriptions`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tenant_id: tenantId, amount, period_days: periodDays, payment_method: paymentMethod, notes })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert(`تم تجديد الاشتراك بنجاح!\nمن: ${data.start_date}\nإلى: ${data.end_date}`);
+            openSubscriptionModal(tenantId); // إعادة تحميل
+            loadSuperAdminDashboard(); // تحديث الجدول
+        } else {
+            alert(data.error || 'فشل إنشاء الفاتورة');
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Create subscription error:', e);
+        alert('خطأ في إنشاء فاتورة الاشتراك');
+    }
+});
+
+async function deleteSubInvoice(invoiceId, tenantId) {
+    if (!confirm('هل تريد حذف هذه الفاتورة؟')) return;
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/subscriptions/${invoiceId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            openSubscriptionModal(tenantId);
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Delete sub invoice error:', e);
     }
 }
 
