@@ -60,6 +60,23 @@ def migrate_database():
                 FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
             )
         ''')
+
+        # جدول الكوبونات
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS coupons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                discount_type TEXT NOT NULL DEFAULT 'amount',
+                discount_value REAL NOT NULL DEFAULT 0,
+                min_amount REAL DEFAULT 0,
+                max_uses INTEGER DEFAULT 0,
+                used_count INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                expiry_date TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         conn.commit()
     except Exception as e:
         print(f"Migration note: {e}")
@@ -2099,6 +2116,133 @@ def delete_return(return_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ===== تشغيل الخادم =====
+
+# ===== API الكوبونات =====
+
+@app.route('/api/coupons', methods=['GET'])
+def get_coupons():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM coupons ORDER BY created_at DESC')
+        coupons = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'coupons': coupons})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/coupons', methods=['POST'])
+def add_coupon():
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO coupons (code, discount_type, discount_value, min_amount, max_uses, expiry_date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (data.get('code', '').upper(), data.get('discount_type', 'amount'),
+              data.get('discount_value', 0), data.get('min_amount', 0),
+              data.get('max_uses', 0), data.get('expiry_date', ''), data.get('notes', '')))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': cursor.lastrowid})
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'error': 'كود الكوبون موجود مسبقاً'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/coupons/<int:coupon_id>', methods=['PUT'])
+def update_coupon(coupon_id):
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE coupons SET code=?, discount_type=?, discount_value=?, min_amount=?,
+                   max_uses=?, is_active=?, expiry_date=?, notes=?
+            WHERE id=?
+        ''', (data.get('code', '').upper(), data.get('discount_type', 'amount'),
+              data.get('discount_value', 0), data.get('min_amount', 0),
+              data.get('max_uses', 0), data.get('is_active', 1),
+              data.get('expiry_date', ''), data.get('notes', ''), coupon_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/coupons/<int:coupon_id>', methods=['DELETE'])
+def delete_coupon(coupon_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM coupons WHERE id = ?', (coupon_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/coupons/validate', methods=['POST'])
+def validate_coupon():
+    """التحقق من صلاحية كوبون وحساب الخصم"""
+    try:
+        data = request.json
+        code = data.get('code', '').upper()
+        subtotal = data.get('subtotal', 0)
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM coupons WHERE code = ?', (code,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'كود الكوبون غير صحيح'})
+
+        coupon = dict_from_row(row)
+
+        if not coupon['is_active']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الكوبون غير مفعّل'})
+
+        if coupon['expiry_date'] and coupon['expiry_date'] < datetime.now().strftime('%Y-%m-%d'):
+            conn.close()
+            return jsonify({'success': False, 'error': 'الكوبون منتهي الصلاحية'})
+
+        if coupon['max_uses'] > 0 and coupon['used_count'] >= coupon['max_uses']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'تم استخدام الكوبون الحد الأقصى من المرات'})
+
+        if subtotal < coupon['min_amount']:
+            conn.close()
+            return jsonify({'success': False, 'error': f'الحد الأدنى للطلب {coupon["min_amount"]:.3f} د.ك'})
+
+        # حساب الخصم
+        if coupon['discount_type'] == 'percent':
+            discount = subtotal * (coupon['discount_value'] / 100)
+        else:
+            discount = coupon['discount_value']
+
+        conn.close()
+        return jsonify({'success': True, 'discount': round(discount, 3), 'coupon': coupon})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/coupons/use', methods=['POST'])
+def use_coupon():
+    """تسجيل استخدام كوبون"""
+    try:
+        data = request.json
+        code = data.get('code', '').upper()
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?', (code,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ===== API الموردين =====
 
