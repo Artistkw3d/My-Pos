@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  pos-system:
+    build: .
+    container_name: pos-system
+    restart: unless-stopped
+    ports:
+      - "8080:5000"
+    volumes:
+      - ./database:/app/database
+    environment:
+      - TZ=Asia/Kuwait
+    networks:
+      - pos-network
+
+networks:
+  pos-network:
+    driver: bridge
