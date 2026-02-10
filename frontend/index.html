@@ -47,6 +47,7 @@
                 <button class="header-btn" onclick="showTab('expenses')" data-tab="expenses" id="expensesBtn" style="display: none;">💰 التكاليف</button>
                 <button class="header-btn" onclick="showTab('advancedreports')" data-tab="advancedreports" id="advancedReportsBtn" style="display: none;">📈 تقارير متقدمة</button>
                 <button class="header-btn" onclick="showTab('systemlogs')" data-tab="systemlogs" id="systemLogsBtn" style="display: none;">📋 سجل النظام</button>
+                <button class="header-btn" onclick="showTab('suppliers')" data-tab="suppliers" id="suppliersBtn" style="display: none;">🏭 الموردين</button>
                 <button class="header-btn" onclick="showTab('accounting')" data-tab="accounting">💰 المحاسبة</button>
                 <button class="header-btn" onclick="showTab('dcf')" data-tab="dcf" id="dcfBtn" style="display: none;">📈 تقييم DCF</button>
                 <button class="header-btn" onclick="showTab('users')" data-tab="users" id="usersBtn" style="display: none;">👥 المستخدمين</button>
@@ -929,6 +930,115 @@
                     <button type="submit" class="btn">حفظ</button>
                 </form>
             </div>
+        </div>
+    </div>
+
+        <!-- Suppliers Tab -->
+        <div class="tab-content" id="suppliersTab" style="display: none;">
+            <div style="padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>🏭 الموردين</h2>
+                    <button onclick="showAddSupplier()" class="add-btn">➕ إضافة مورد</button>
+                </div>
+                <div id="suppliersContainer"></div>
+            </div>
+        </div>
+
+    <!-- Add/Edit Supplier Modal -->
+    <div class="modal" id="addSupplierModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="supplierModalTitle">➕ إضافة مورد</h2>
+                <button onclick="closeAddSupplier()" class="close-btn">&times;</button>
+            </div>
+            <form id="supplierForm">
+                <input type="hidden" id="supplierId">
+                <div class="form-group">
+                    <label>اسم المورد:</label>
+                    <input type="text" id="supplierName" required>
+                </div>
+                <div class="form-group">
+                    <label>الشركة:</label>
+                    <input type="text" id="supplierCompany">
+                </div>
+                <div class="form-group">
+                    <label>الهاتف:</label>
+                    <input type="tel" id="supplierPhone">
+                </div>
+                <div class="form-group">
+                    <label>البريد:</label>
+                    <input type="email" id="supplierEmail">
+                </div>
+                <div class="form-group">
+                    <label>العنوان:</label>
+                    <textarea id="supplierAddress" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>ملاحظات:</label>
+                    <textarea id="supplierNotes" rows="2"></textarea>
+                </div>
+                <button type="submit" class="btn" style="width: 100%; padding: 12px;">💾 حفظ</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Supplier Invoices Modal -->
+    <div class="modal" id="supplierInvoicesModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="supplierInvoicesTitle">📄 فواتير المورد</h2>
+                <button onclick="closeSupplierInvoices()" class="close-btn">&times;</button>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <button onclick="showAddSupplierInvoice()" class="add-btn">➕ إضافة فاتورة</button>
+            </div>
+            <div id="supplierInvoicesList"></div>
+        </div>
+    </div>
+
+    <!-- Add Supplier Invoice Modal -->
+    <div class="modal" id="addSupplierInvoiceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📄 إضافة فاتورة مورد</h2>
+                <button onclick="closeAddSupplierInvoice()" class="close-btn">&times;</button>
+            </div>
+            <form id="supplierInvoiceForm">
+                <input type="hidden" id="supplierInvoiceSupplierId">
+                <div class="form-group">
+                    <label>رقم الفاتورة:</label>
+                    <input type="text" id="supplierInvoiceNumber">
+                </div>
+                <div class="form-group">
+                    <label>المبلغ (د.ك):</label>
+                    <input type="number" id="supplierInvoiceAmount" step="0.001" min="0">
+                </div>
+                <div class="form-group">
+                    <label>تاريخ الفاتورة:</label>
+                    <input type="date" id="supplierInvoiceDate">
+                </div>
+                <div class="form-group">
+                    <label>ملاحظات:</label>
+                    <textarea id="supplierInvoiceNotes" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>صورة الفاتورة / PDF (حد أقصى 1 MB):</label>
+                    <input type="file" id="supplierInvoiceFile" accept="image/*,.pdf" onchange="validateSupplierFile(this)">
+                    <small id="supplierFileInfo" style="color: #6c757d;"></small>
+                </div>
+                <button type="submit" class="btn" style="width: 100%; padding: 12px;">💾 حفظ الفاتورة</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Supplier Invoice File Modal -->
+    <div class="modal" id="viewSupplierFileModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2>📄 عرض الفاتورة</h2>
+                <button onclick="document.getElementById('viewSupplierFileModal').classList.remove('active')" class="close-btn">&times;</button>
+            </div>
+            <div id="supplierFileViewer" style="text-align: center; padding: 20px;"></div>
         </div>
     </div>
 
