@@ -225,9 +225,15 @@
         <!-- Products Tab (Branch Distribution) -->
         <div class="tab-content" id="invoicesTab" style="display: none;">
             <div style="padding: 20px;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                     <h2>🧾 الفواتير</h2>
-                    <div style="display: flex; gap: 10px;">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <select id="orderStatusFilter" onchange="filterInvoicesByStatus()" style="padding: 8px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
+                            <option value="">📋 كل الحالات</option>
+                            <option value="قيد التنفيذ">⏳ قيد التنفيذ</option>
+                            <option value="قيد التوصيل">🚚 قيد التوصيل</option>
+                            <option value="منجز">✅ منجز</option>
+                        </select>
                         <button class="btn" onclick="exportInvoicesExcel()">📊 تصدير Excel</button>
                         <button class="btn-danger" onclick="clearAllInvoices()" id="clearInvoicesBtn" style="display: none;">🗑️ حذف الكل</button>
                     </div>

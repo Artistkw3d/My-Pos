@@ -913,6 +913,7 @@ function displayInvoiceView(inv) {
                 <div><strong>العنوان:</strong> ${inv.customer_address || '-'}</div>
                 <div><strong>الدفع:</strong> ${paymentMethods[inv.payment_method]}</div>
                 ${inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${inv.transaction_number}</div>` : ''}
+                <div style="grid-column: 1/-1;"><strong>حالة الطلب:</strong> <span class="order-status-badge status-${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'processing' : (inv.order_status === 'قيد التوصيل' ? 'delivering' : 'completed')}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
                 <thead><tr style="background:#667eea; color:white;">
@@ -1000,6 +1001,7 @@ ${storeLogo ? `<img src="${storeLogo}">` : ''}
 <div><b>العنوان:</b> ${inv.customer_address || '-'}</div>
 <div><b>طريقة الدفع:</b> ${paymentMethods[inv.payment_method]}</div>
 ${inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${inv.transaction_number}</div>` : ''}
+<div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
 </div>
 <table>
 <thead><tr><th style="width:40px;">#</th><th>المنتج</th><th style="width:80px;">الكمية</th><th style="width:100px;">السعر</th><th style="width:100px;">الإجمالي</th></tr></thead>
@@ -1394,32 +1396,6 @@ async function loadInvoicesTable() {
     }
 }
 
-// تحديث حالة الطلب
-async function updateOrderStatus(invoiceId, newStatus) {
-    try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/status`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ order_status: newStatus })
-        });
-        const data = await response.json();
-        if (data.success) {
-            // تحديث لون القائمة المنسدلة
-            const select = event.target;
-            select.className = 'order-status-select ' +
-                (newStatus === 'قيد التنفيذ' ? 'status-processing' :
-                 newStatus === 'قيد التوصيل' ? 'status-delivering' : 'status-completed');
-        } else {
-            alert('خطأ في تحديث الحالة: ' + data.error);
-            loadInvoicesTable();
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-        alert('فشل تحديث حالة الطلب');
-        loadInvoicesTable();
-    }
-}
-
 // عرض فاتورة محلية
 async function viewLocalInvoice(invoiceId) {
     try {
@@ -1478,6 +1454,7 @@ async function exportInvoicesExcel() {
         'رسوم التوصيل': inv.delivery_fee || 0,
         'الإجمالي': inv.total,
         'طريقة الدفع': inv.payment_method,
+        'حالة الطلب': inv.order_status || 'قيد التنفيذ',
         'رقم العملية': inv.transaction_number || '',
         'التاريخ': formatKuwaitTime(inv.created_at)
     }));
@@ -5408,42 +5385,82 @@ console.log('[Returns System] Loaded ✅');
 // 📦 حالات الطلب (Order Status)
 // ===============================================
 
-async function updateOrderStatus(invoiceId, newStatus, notes = '') {
+async function updateOrderStatus(invoiceId, newStatus) {
     try {
         const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/status`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                status: newStatus,
-                changed_by: currentUser.id,
-                notes: notes
-            })
+            body: JSON.stringify({ order_status: newStatus })
         });
-        
+
         const data = await response.json();
         if (data.success) {
-            alert('✅ تم تحديث حالة الطلب');
-            loadInvoicesTable();
+            // تحديث لون القائمة المنسدلة بدون إعادة تحميل
+            if (event && event.target) {
+                event.target.className = 'order-status-select ' +
+                    (newStatus === 'قيد التنفيذ' ? 'status-processing' :
+                     newStatus === 'قيد التوصيل' ? 'status-delivering' : 'status-completed');
+            }
         } else {
             alert('❌ خطأ: ' + data.error);
+            loadInvoicesTable();
         }
     } catch (error) {
         console.error('Error:', error);
         alert('❌ فشل التحديث');
+        loadInvoicesTable();
     }
 }
 
-async function filterOrdersByStatus(status) {
-    try {
-        const response = await fetch(`${API_URL}/api/orders/by-status?status=${status}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            displayOrdersTable(data.orders);
-        }
-    } catch (error) {
-        console.error('Error:', error);
+function filterInvoicesByStatus() {
+    const status = document.getElementById('orderStatusFilter').value;
+    if (!allInvoices) return;
+
+    if (!status) {
+        loadInvoicesTable();
+        return;
     }
+
+    const filtered = allInvoices.filter(inv => (inv.order_status || 'قيد التنفيذ') === status);
+    const container = document.getElementById('invoicesListContainer');
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<p style="text-align:center; padding:40px;">لا توجد فواتير بهذه الحالة</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead><tr><th>رقم الفاتورة</th><th>العميل</th><th>الموظف</th><th>الإجمالي</th><th>حالة الطلب</th><th>التاريخ</th><th>عرض</th></tr></thead>
+            <tbody>
+                ${filtered.map(inv => {
+                    const isOffline = inv.id && inv.id.toString().startsWith('offline_');
+                    const st = inv.order_status || 'قيد التنفيذ';
+                    return `
+                    <tr>
+                        <td>
+                            <strong>${inv.invoice_number}</strong>
+                            ${isOffline ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span>' : ''}
+                        </td>
+                        <td>${inv.customer_name || 'عميل'}</td>
+                        <td>${inv.employee_name}</td>
+                        <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
+                        <td>
+                            <select class="order-status-select status-${st === 'قيد التنفيذ' ? 'processing' : st === 'قيد التوصيل' ? 'delivering' : 'completed'}"
+                                    onchange="updateOrderStatus(${inv.id}, this.value)" ${isOffline ? 'disabled' : ''}>
+                                <option value="قيد التنفيذ" ${st === 'قيد التنفيذ' ? 'selected' : ''}>⏳ قيد التنفيذ</option>
+                                <option value="قيد التوصيل" ${st === 'قيد التوصيل' ? 'selected' : ''}>🚚 قيد التوصيل</option>
+                                <option value="منجز" ${st === 'منجز' ? 'selected' : ''}>✅ منجز</option>
+                            </select>
+                        </td>
+                        <td>${formatKuwaitTime(inv.created_at)}</td>
+                        <td><button onclick="viewLocalInvoice('${inv.id}')" class="btn-sm">👁️</button></td>
+                    </tr>
+                `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
 console.log('[Order Status] Loaded ✅');
