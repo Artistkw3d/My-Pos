@@ -4,31 +4,94 @@
 خادم API لنظام POS
 Flask + SQLite
 محسّن لأجهزة Synology DS120j
+نظام Multi-Tenancy بقواعد بيانات منفصلة
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 import sqlite3
 import os
 from datetime import datetime
 import json
+import re
+import hashlib
 
 app = Flask(__name__, static_folder='frontend')
 CORS(app)
 
-# إعدادات قاعدة البيانات
-DB_PATH = 'database/pos.db'
+# إعدادات قواعد البيانات
+DB_PATH = 'database/pos.db'  # قاعدة البيانات الافتراضية (للتوافق العكسي)
+MASTER_DB_PATH = 'database/master.db'
+TENANTS_DB_DIR = 'database/tenants'
 
-def migrate_database():
+# إنشاء المجلدات اللازمة
+os.makedirs('database', exist_ok=True)
+os.makedirs(TENANTS_DB_DIR, exist_ok=True)
+
+# ===== نظام Multi-Tenancy =====
+
+def hash_password(password):
+    """تشفير كلمة المرور"""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def init_master_db():
+    """إنشاء قاعدة البيانات الرئيسية للمستأجرين"""
+    conn = sqlite3.connect(MASTER_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tenants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            slug TEXT UNIQUE NOT NULL,
+            owner_name TEXT NOT NULL,
+            owner_email TEXT,
+            owner_phone TEXT,
+            db_path TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            plan TEXT DEFAULT 'basic',
+            max_users INTEGER DEFAULT 5,
+            max_branches INTEGER DEFAULT 3,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS super_admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # إنشاء حساب Super Admin افتراضي إن لم يكن موجوداً
+    cursor.execute("SELECT COUNT(*) FROM super_admins")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            "INSERT INTO super_admins (username, password, full_name) VALUES (?, ?, ?)",
+            ('superadmin', hash_password('admin123'), 'مدير النظام')
+        )
+    conn.commit()
+    conn.close()
+
+init_master_db()
+
+def migrate_database(db_path=None):
     """ترقية قاعدة البيانات - إضافة أعمدة جديدة"""
-    conn = sqlite3.connect(DB_PATH)
+    target_path = db_path or DB_PATH
+    if not os.path.exists(target_path):
+        return
+    conn = sqlite3.connect(target_path)
     cursor = conn.cursor()
     try:
-        cursor.execute("PRAGMA table_info(invoices)")
-        columns = [col[1] for col in cursor.fetchall()]
-        if 'order_status' not in columns:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN order_status TEXT DEFAULT 'قيد التنفيذ'")
-            conn.commit()
+        # التحقق من وجود جدول invoices
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(invoices)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'order_status' not in columns:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN order_status TEXT DEFAULT 'قيد التنفيذ'")
+                conn.commit()
 
         # جدول الموردين
         cursor.execute('''
@@ -62,38 +125,44 @@ def migrate_database():
         ''')
 
         # إضافة عمود نقاط الولاء للعملاء
-        cursor.execute("PRAGMA table_info(customers)")
-        cust_columns = [col[1] for col in cursor.fetchall()]
-        if 'loyalty_points' not in cust_columns:
-            cursor.execute("ALTER TABLE customers ADD COLUMN loyalty_points INTEGER DEFAULT 0")
-            conn.commit()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(customers)")
+            cust_columns = [col[1] for col in cursor.fetchall()]
+            if 'loyalty_points' not in cust_columns:
+                cursor.execute("ALTER TABLE customers ADD COLUMN loyalty_points INTEGER DEFAULT 0")
+                conn.commit()
 
         # إضافة أعمدة الكوبون والولاء للفواتير
-        cursor.execute("PRAGMA table_info(invoices)")
-        inv_columns = [col[1] for col in cursor.fetchall()]
-        if 'coupon_discount' not in inv_columns:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_discount REAL DEFAULT 0")
-            conn.commit()
-        if 'coupon_code' not in inv_columns:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_code TEXT")
-            conn.commit()
-        if 'loyalty_discount' not in inv_columns:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_discount REAL DEFAULT 0")
-            conn.commit()
-        if 'loyalty_points_earned' not in inv_columns:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_earned INTEGER DEFAULT 0")
-            conn.commit()
-        if 'loyalty_points_redeemed' not in inv_columns:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_redeemed INTEGER DEFAULT 0")
-            conn.commit()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(invoices)")
+            inv_columns = [col[1] for col in cursor.fetchall()]
+            if 'coupon_discount' not in inv_columns:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_discount REAL DEFAULT 0")
+                conn.commit()
+            if 'coupon_code' not in inv_columns:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_code TEXT")
+                conn.commit()
+            if 'loyalty_discount' not in inv_columns:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_discount REAL DEFAULT 0")
+                conn.commit()
+            if 'loyalty_points_earned' not in inv_columns:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_earned INTEGER DEFAULT 0")
+                conn.commit()
+            if 'loyalty_points_redeemed' not in inv_columns:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_redeemed INTEGER DEFAULT 0")
+                conn.commit()
 
         # إضافة إعدادات الولاء الافتراضية
-        cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_invoice', '10')")
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '0.1')")
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')")
-            conn.commit()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
+        if cursor.fetchone():
+            cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_invoice', '10')")
+                cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '0.1')")
+                cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')")
+                conn.commit()
 
         # جدول الكوبونات
         cursor.execute('''
@@ -126,14 +195,16 @@ def migrate_database():
         ''')
 
         # إضافة عمود table_id للفواتير
-        cursor.execute("PRAGMA table_info(invoices)")
-        inv_cols2 = [col[1] for col in cursor.fetchall()]
-        if 'table_id' not in inv_cols2:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN table_id INTEGER")
-            conn.commit()
-        if 'table_name' not in inv_cols2:
-            cursor.execute("ALTER TABLE invoices ADD COLUMN table_name TEXT")
-            conn.commit()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(invoices)")
+            inv_cols2 = [col[1] for col in cursor.fetchall()]
+            if 'table_id' not in inv_cols2:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN table_id INTEGER")
+                conn.commit()
+            if 'table_name' not in inv_cols2:
+                cursor.execute("ALTER TABLE invoices ADD COLUMN table_name TEXT")
+                conn.commit()
 
         conn.commit()
     except Exception as e:
@@ -141,17 +212,329 @@ def migrate_database():
     finally:
         conn.close()
 
+# ترقية قاعدة البيانات الافتراضية
 migrate_database()
 
+# ترقية جميع قواعد بيانات المستأجرين
+if os.path.exists(TENANTS_DB_DIR):
+    for f in os.listdir(TENANTS_DB_DIR):
+        if f.endswith('.db'):
+            migrate_database(os.path.join(TENANTS_DB_DIR, f))
+
+def get_tenant_slug():
+    """استخراج معرف المستأجر من الطلب"""
+    return request.headers.get('X-Tenant-ID', '').strip()
+
+def get_tenant_db_path(slug):
+    """الحصول على مسار قاعدة بيانات المستأجر"""
+    if not slug:
+        return DB_PATH  # القاعدة الافتراضية
+    # التحقق من صحة slug
+    safe_slug = re.sub(r'[^a-zA-Z0-9_-]', '', slug)
+    if not safe_slug:
+        return DB_PATH
+    return os.path.join(TENANTS_DB_DIR, f'{safe_slug}.db')
+
 def get_db():
-    """الاتصال بقاعدة البيانات"""
-    conn = sqlite3.connect(DB_PATH)
+    """الاتصال بقاعدة البيانات - يدعم Multi-Tenancy"""
+    tenant_slug = get_tenant_slug()
+    db_path = get_tenant_db_path(tenant_slug)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def get_master_db():
+    """الاتصال بقاعدة البيانات الرئيسية"""
+    conn = sqlite3.connect(MASTER_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def dict_from_row(row):
     """تحويل صف قاعدة البيانات إلى قاموس"""
     return dict(zip(row.keys(), row))
+
+def create_tenant_database(slug):
+    """إنشاء قاعدة بيانات كاملة لمستأجر جديد"""
+    db_path = get_tenant_db_path(slug)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # إنشاء جميع الجداول الأساسية
+    cursor.executescript('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            role TEXT DEFAULT 'employee',
+            invoice_prefix TEXT DEFAULT 'INV',
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            permissions TEXT,
+            can_add_products INTEGER DEFAULT 0,
+            can_edit_products INTEGER DEFAULT 0,
+            can_delete_products INTEGER DEFAULT 0,
+            can_view_invoices INTEGER DEFAULT 1,
+            can_delete_invoices INTEGER DEFAULT 0,
+            can_view_reports INTEGER DEFAULT 0,
+            can_view_accounting INTEGER DEFAULT 0,
+            can_manage_users INTEGER DEFAULT 0,
+            can_access_settings INTEGER DEFAULT 0,
+            branch_id INTEGER DEFAULT 1,
+            can_view_inventory INTEGER DEFAULT 0,
+            can_add_inventory INTEGER DEFAULT 0,
+            can_edit_inventory INTEGER DEFAULT 0,
+            can_delete_inventory INTEGER DEFAULT 0,
+            can_view_products INTEGER DEFAULT 1,
+            can_view_customers INTEGER DEFAULT 1,
+            can_add_customer INTEGER DEFAULT 1,
+            can_edit_customer INTEGER DEFAULT 0,
+            can_delete_customer INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS branches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            location TEXT,
+            phone TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            branch_number TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            barcode TEXT,
+            price REAL DEFAULT 0,
+            cost REAL DEFAULT 0,
+            stock INTEGER DEFAULT 0,
+            category TEXT,
+            image TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            image_data TEXT,
+            branch_id INTEGER DEFAULT 1,
+            is_master INTEGER DEFAULT 0,
+            master_product_id INTEGER,
+            inventory_id INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            barcode TEXT,
+            category TEXT,
+            price REAL DEFAULT 0,
+            cost REAL DEFAULT 0,
+            image_data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS branch_stock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER,
+            branch_id INTEGER,
+            stock INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sales_count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_number TEXT,
+            customer_id INTEGER,
+            customer_name TEXT,
+            customer_phone TEXT,
+            subtotal REAL DEFAULT 0,
+            discount REAL DEFAULT 0,
+            total REAL DEFAULT 0,
+            payment_method TEXT,
+            employee_name TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            transaction_number TEXT,
+            delivery_fee REAL DEFAULT 0,
+            discount_type TEXT,
+            branch_id INTEGER,
+            branch_name TEXT,
+            customer_address TEXT,
+            order_status TEXT DEFAULT 'قيد التنفيذ',
+            coupon_discount REAL DEFAULT 0,
+            coupon_code TEXT,
+            loyalty_discount REAL DEFAULT 0,
+            loyalty_points_earned INTEGER DEFAULT 0,
+            loyalty_points_redeemed INTEGER DEFAULT 0,
+            table_id INTEGER,
+            table_name TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS invoice_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER,
+            product_id INTEGER,
+            product_name TEXT,
+            quantity INTEGER,
+            price REAL,
+            total REAL,
+            branch_stock_id INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            loyalty_points INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_type TEXT,
+            amount REAL,
+            description TEXT,
+            expense_date DATE,
+            branch_id INTEGER,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS system_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_type TEXT,
+            description TEXT,
+            user_id INTEGER,
+            user_name TEXT,
+            branch_id INTEGER,
+            target_id INTEGER,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS attendance_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            user_name TEXT,
+            branch_id INTEGER,
+            check_in TIMESTAMP,
+            check_out TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS damaged_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER,
+            branch_id INTEGER,
+            quantity INTEGER,
+            reason TEXT,
+            reported_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS damaged_stock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER,
+            branch_id INTEGER,
+            quantity INTEGER,
+            reason TEXT,
+            user_id INTEGER,
+            user_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS returns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER,
+            invoice_number TEXT,
+            product_id INTEGER,
+            product_name TEXT,
+            quantity INTEGER,
+            price REAL,
+            total REAL,
+            reason TEXT,
+            employee_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            company TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS supplier_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            supplier_id INTEGER NOT NULL,
+            invoice_number TEXT,
+            amount REAL DEFAULT 0,
+            file_name TEXT,
+            file_data TEXT,
+            file_type TEXT,
+            notes TEXT,
+            invoice_date TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS coupons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            discount_type TEXT NOT NULL DEFAULT 'amount',
+            discount_value REAL NOT NULL DEFAULT 0,
+            min_amount REAL DEFAULT 0,
+            max_uses INTEGER DEFAULT 0,
+            used_count INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            expiry_date TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS restaurant_tables (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            seats INTEGER DEFAULT 4,
+            pos_x INTEGER DEFAULT 50,
+            pos_y INTEGER DEFAULT 50,
+            status TEXT DEFAULT 'available',
+            current_invoice_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+
+    # إضافة إعدادات افتراضية
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_invoice', '10')")
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '0.1')")
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')")
+
+    # إضافة فرع افتراضي
+    cursor.execute("INSERT OR IGNORE INTO branches (id, name, location, is_active) VALUES (1, 'الفرع الرئيسي', '', 1)")
+
+    conn.commit()
+    conn.close()
+    return db_path
 
 # ===== API المستخدمين =====
 
@@ -2616,10 +2999,247 @@ def get_supplier_invoice_file(invoice_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ===== نظام Multi-Tenancy API =====
+
+@app.route('/api/super-admin/login', methods=['POST'])
+def super_admin_login():
+    """تسجيل دخول المدير الأعلى"""
+    try:
+        data = request.json
+        username = data.get('username', '')
+        password = data.get('password', '')
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM super_admins WHERE username = ? AND password = ?',
+                       (username, hash_password(password)))
+        admin = cursor.fetchone()
+        conn.close()
+        if admin:
+            return jsonify({
+                'success': True,
+                'admin': {
+                    'id': admin['id'],
+                    'username': admin['username'],
+                    'full_name': admin['full_name'],
+                    'role': 'super_admin'
+                }
+            })
+        return jsonify({'success': False, 'error': 'بيانات الدخول غير صحيحة'}), 401
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/tenants', methods=['GET'])
+def get_tenants():
+    """جلب قائمة المستأجرين"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tenants ORDER BY created_at DESC')
+        tenants = [dict_from_row(row) for row in cursor.fetchall()]
+        # إضافة إحصائيات لكل مستأجر
+        for tenant in tenants:
+            try:
+                t_conn = sqlite3.connect(tenant['db_path'])
+                t_conn.row_factory = sqlite3.Row
+                t_cursor = t_conn.cursor()
+                t_cursor.execute("SELECT COUNT(*) as c FROM users")
+                tenant['users_count'] = t_cursor.fetchone()['c']
+                t_cursor.execute("SELECT COUNT(*) as c FROM invoices")
+                tenant['invoices_count'] = t_cursor.fetchone()['c']
+                t_cursor.execute("SELECT COUNT(*) as c FROM products")
+                tenant['products_count'] = t_cursor.fetchone()['c']
+                t_conn.close()
+            except:
+                tenant['users_count'] = 0
+                tenant['invoices_count'] = 0
+                tenant['products_count'] = 0
+        conn.close()
+        return jsonify({'success': True, 'tenants': tenants})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/tenants', methods=['POST'])
+def create_tenant():
+    """إنشاء مستأجر جديد"""
+    try:
+        data = request.json
+        name = data.get('name', '').strip()
+        slug = data.get('slug', '').strip().lower()
+        owner_name = data.get('owner_name', '').strip()
+        owner_email = data.get('owner_email', '').strip()
+        owner_phone = data.get('owner_phone', '').strip()
+        admin_username = data.get('admin_username', 'admin').strip()
+        admin_password = data.get('admin_password', 'admin123').strip()
+        plan = data.get('plan', 'basic')
+        max_users = data.get('max_users', 5)
+        max_branches = data.get('max_branches', 3)
+
+        if not name or not slug or not owner_name:
+            return jsonify({'success': False, 'error': 'الاسم والمعرف واسم المالك مطلوبة'}), 400
+
+        # تنظيف slug
+        slug = re.sub(r'[^a-zA-Z0-9_-]', '', slug)
+        if not slug:
+            return jsonify({'success': False, 'error': 'المعرف (slug) غير صالح'}), 400
+
+        db_path = get_tenant_db_path(slug)
+
+        # التحقق من عدم وجود مستأجر بنفس المعرف
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM tenants WHERE slug = ?', (slug,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'هذا المعرف مستخدم بالفعل'}), 400
+
+        # إنشاء قاعدة بيانات المستأجر
+        create_tenant_database(slug)
+
+        # إضافة مستخدم أدمن للمستأجر
+        t_conn = sqlite3.connect(db_path)
+        t_cursor = t_conn.cursor()
+        t_cursor.execute('''
+            INSERT INTO users (username, password, full_name, role, invoice_prefix, is_active, branch_id)
+            VALUES (?, ?, ?, 'admin', 'INV', 1, 1)
+        ''', (admin_username, admin_password, owner_name))
+        t_conn.commit()
+        t_conn.close()
+
+        # تسجيل المستأجر في القاعدة الرئيسية
+        cursor.execute('''
+            INSERT INTO tenants (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches))
+        conn.commit()
+        tenant_id = cursor.lastrowid
+        conn.close()
+
+        return jsonify({'success': True, 'id': tenant_id, 'slug': slug})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/tenants/<int:tenant_id>', methods=['PUT'])
+def update_tenant(tenant_id):
+    """تحديث بيانات مستأجر"""
+    try:
+        data = request.json
+        conn = get_master_db()
+        cursor = conn.cursor()
+        fields = []
+        values = []
+        for key in ['name', 'owner_name', 'owner_email', 'owner_phone', 'is_active', 'plan', 'max_users', 'max_branches', 'expires_at']:
+            if key in data:
+                fields.append(f'{key} = ?')
+                values.append(data[key])
+        if fields:
+            values.append(tenant_id)
+            cursor.execute(f'UPDATE tenants SET {", ".join(fields)} WHERE id = ?', values)
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/tenants/<int:tenant_id>', methods=['DELETE'])
+def delete_tenant(tenant_id):
+    """حذف مستأجر"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT db_path, slug FROM tenants WHERE id = ?', (tenant_id,))
+        tenant = cursor.fetchone()
+        if not tenant:
+            conn.close()
+            return jsonify({'success': False, 'error': 'المستأجر غير موجود'}), 404
+
+        # حذف قاعدة بيانات المستأجر
+        db_path = tenant['db_path']
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+        cursor.execute('DELETE FROM tenants WHERE id = ?', (tenant_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/tenants/<int:tenant_id>/stats', methods=['GET'])
+def get_tenant_stats(tenant_id):
+    """إحصائيات تفصيلية لمستأجر"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tenants WHERE id = ?', (tenant_id,))
+        tenant = cursor.fetchone()
+        conn.close()
+        if not tenant:
+            return jsonify({'success': False, 'error': 'المستأجر غير موجود'}), 404
+
+        t_conn = sqlite3.connect(tenant['db_path'])
+        t_conn.row_factory = sqlite3.Row
+        t_cursor = t_conn.cursor()
+
+        stats = {}
+        t_cursor.execute("SELECT COUNT(*) as c FROM users")
+        stats['users_count'] = t_cursor.fetchone()['c']
+        t_cursor.execute("SELECT COUNT(*) as c FROM invoices")
+        stats['invoices_count'] = t_cursor.fetchone()['c']
+        t_cursor.execute("SELECT COUNT(*) as c FROM products")
+        stats['products_count'] = t_cursor.fetchone()['c']
+        t_cursor.execute("SELECT COUNT(*) as c FROM customers")
+        stats['customers_count'] = t_cursor.fetchone()['c']
+        t_cursor.execute("SELECT COALESCE(SUM(total), 0) as t FROM invoices")
+        stats['total_sales'] = t_cursor.fetchone()['t']
+        t_cursor.execute("SELECT COUNT(*) as c FROM branches")
+        stats['branches_count'] = t_cursor.fetchone()['c']
+        t_conn.close()
+
+        return jsonify({'success': True, 'stats': stats, 'tenant': dict_from_row(tenant)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/tenants/list', methods=['GET'])
+def list_active_tenants():
+    """قائمة المستأجرين النشطين (للعرض في صفحة تسجيل الدخول)"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, name, slug FROM tenants WHERE is_active = 1 ORDER BY name')
+        tenants = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'tenants': tenants})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/change-password', methods=['POST'])
+def super_admin_change_password():
+    """تغيير كلمة مرور المدير الأعلى"""
+    try:
+        data = request.json
+        admin_id = data.get('admin_id')
+        old_password = data.get('old_password', '')
+        new_password = data.get('new_password', '')
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM super_admins WHERE id = ? AND password = ?',
+                       (admin_id, hash_password(old_password)))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'كلمة المرور القديمة غير صحيحة'}), 400
+        cursor.execute('UPDATE super_admins SET password = ? WHERE id = ?',
+                       (hash_password(new_password), admin_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
-    print("🚀 تشغيل خادم POS...")
+    print("🚀 تشغيل خادم POS (Multi-Tenancy)...")
     print("📍 العنوان: http://0.0.0.0:5000")
     print("💡 يمكنك الوصول من أي جهاز على الشبكة المحلية")
+    print("🏢 نظام تعدد المستأجرين مفعل")
     print("⏹️  لإيقاف الخادم: اضغط Ctrl+C")
     
     app.run(host='0.0.0.0', port=5000, debug=False)

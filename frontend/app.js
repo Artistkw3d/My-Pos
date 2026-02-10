@@ -8,6 +8,50 @@ let currentInvoice = null;
 let categories = new Set();
 let storeLogo = null;
 
+// ===== نظام Multi-Tenancy =====
+let currentTenantSlug = localStorage.getItem('pos_tenant_slug') || '';
+let currentSuperAdmin = null;
+
+// إعادة تعريف fetch لإضافة هيدر المستأجر تلقائياً
+const originalFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+    if (currentTenantSlug && typeof url === 'string' && url.includes('/api/')) {
+        options.headers = options.headers || {};
+        if (options.headers instanceof Headers) {
+            options.headers.set('X-Tenant-ID', currentTenantSlug);
+        } else {
+            options.headers['X-Tenant-ID'] = currentTenantSlug;
+        }
+    }
+    return originalFetch.call(this, url, options);
+};
+
+// تحميل قائمة المستأجرين في صفحة تسجيل الدخول
+async function loadTenantsList() {
+    try {
+        const response = await originalFetch(`${API_URL}/api/tenants/list`);
+        const data = await response.json();
+        const select = document.getElementById('loginTenantSlug');
+        if (!select) return;
+        if (data.success && data.tenants && data.tenants.length > 0) {
+            select.innerHTML = '<option value="">-- المتجر الافتراضي --</option>';
+            data.tenants.forEach(t => {
+                select.innerHTML += `<option value="${t.slug}" ${currentTenantSlug === t.slug ? 'selected' : ''}>${t.name}</option>`;
+            });
+            document.getElementById('tenantSelectGroup').style.display = 'block';
+        } else {
+            // إخفاء اختيار المتجر إذا لم يكن هناك مستأجرين
+            document.getElementById('tenantSelectGroup').style.display = 'none';
+        }
+    } catch (e) {
+        console.log('[Tenants] Could not load tenants list');
+        document.getElementById('tenantSelectGroup').style.display = 'none';
+    }
+}
+
+// تحميل القائمة عند فتح الصفحة
+loadTenantsList();
+
 // استعادة المستخدم من localStorage
 function restoreUser() {
     const savedUser = localStorage.getItem('pos_current_user');
@@ -141,6 +185,11 @@ function clearUserCart() {
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
+        // حفظ المستأجر المختار
+        const selectedTenant = document.getElementById('loginTenantSlug')?.value || '';
+        currentTenantSlug = selectedTenant;
+        localStorage.setItem('pos_tenant_slug', selectedTenant);
+
         const response = await fetch(`${API_URL}/api/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -152,7 +201,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         const data = await response.json();
         if (data.success) {
             currentUser = data.user;
-            
+
             // حفظ المستخدم في localStorage
             localStorage.setItem('pos_current_user', JSON.stringify(data.user));
             
@@ -295,6 +344,8 @@ async function logout() {
         });
         // مسح بيانات المستخدم المحفوظة
         localStorage.removeItem('pos_current_user');
+        localStorage.removeItem('pos_tenant_slug');
+        currentTenantSlug = '';
     } catch (e) {}
     
     // إعادة تعيين الواجهة
@@ -4245,7 +4296,14 @@ console.log('✅ Notification helpers جاهزة');
 // ===== استعادة المستخدم عند تحميل الصفحة =====
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[App] DOMContentLoaded - checking for saved user...');
-    
+
+    // إذا كان المدير الأعلى مسجل دخوله، لا نستعيد جلسة المستخدم العادي
+    const savedSA = localStorage.getItem('pos_super_admin');
+    if (savedSA) {
+        console.log('[App] Super Admin session found, skipping regular user restore');
+        return;
+    }
+
     if (restoreUser()) {
         console.log('[App] User found in localStorage, restoring session...');
         initializeUI();
@@ -6905,6 +6963,361 @@ async function showAssignInvoice(tableId) {
 }
 
 console.log('[Tables] Restaurant Tables System Loaded ✅');
+
+// ===== نظام المدير الأعلى (Super Admin) =====
+
+function showSuperAdminLogin() {
+    document.getElementById('superAdminLoginOverlay').classList.remove('hidden');
+}
+
+function hideSuperAdminLogin() {
+    document.getElementById('superAdminLoginOverlay').classList.add('hidden');
+}
+
+document.getElementById('superAdminLoginForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/login`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: document.getElementById('saLoginUsername').value,
+                password: document.getElementById('saLoginPassword').value
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            currentSuperAdmin = data.admin;
+            localStorage.setItem('pos_super_admin', JSON.stringify(data.admin));
+            hideSuperAdminLogin();
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('mainContainer').style.display = 'none';
+            document.getElementById('superAdminDashboard').style.display = 'block';
+            document.getElementById('saUserInfo').textContent = currentSuperAdmin.full_name;
+            loadSuperAdminDashboard();
+        } else {
+            alert(data.error || 'فشل تسجيل الدخول');
+        }
+    } catch (e) {
+        alert('فشل الاتصال بالخادم');
+    }
+});
+
+function logoutSuperAdmin() {
+    currentSuperAdmin = null;
+    localStorage.removeItem('pos_super_admin');
+    document.getElementById('superAdminDashboard').style.display = 'none';
+    document.getElementById('loginOverlay').classList.remove('hidden');
+}
+
+async function loadSuperAdminDashboard() {
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/tenants`);
+        const data = await response.json();
+        if (!data.success) return;
+
+        const tenants = data.tenants || [];
+
+        // إحصائيات عامة
+        const totalTenants = tenants.length;
+        const activeTenants = tenants.filter(t => t.is_active).length;
+        const totalUsers = tenants.reduce((sum, t) => sum + (t.users_count || 0), 0);
+        const totalInvoices = tenants.reduce((sum, t) => sum + (t.invoices_count || 0), 0);
+
+        document.getElementById('saStatsContainer').innerHTML = `
+            <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${totalTenants}</div>
+                <div style="font-size: 13px; opacity: 0.9;">إجمالي المتاجر</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${activeTenants}</div>
+                <div style="font-size: 13px; opacity: 0.9;">متاجر نشطة</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${totalUsers}</div>
+                <div style="font-size: 13px; opacity: 0.9;">إجمالي المستخدمين</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${totalInvoices}</div>
+                <div style="font-size: 13px; opacity: 0.9;">إجمالي الفواتير</div>
+            </div>
+        `;
+
+        // جدول المستأجرين
+        let tableHTML = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f1f5f9;">
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">#</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">المتجر</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">المعرف</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">المالك</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e2e8f0;">الخطة</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">الحالة</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">المستخدمين</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">الفواتير</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e2e8f0;">الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        if (tenants.length === 0) {
+            tableHTML += '<tr><td colspan="9" style="padding: 30px; text-align: center; color: #94a3b8;">لا توجد متاجر - اضغط "إضافة متجر جديد" للبدء</td></tr>';
+        } else {
+            tenants.forEach((t, i) => {
+                const planNames = {'basic': 'أساسية', 'premium': 'متقدمة', 'enterprise': 'مؤسسات'};
+                tableHTML += `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 10px;">${i + 1}</td>
+                        <td style="padding: 10px; font-weight: bold;">${t.name}</td>
+                        <td style="padding: 10px; direction: ltr; color: #64748b;">${t.slug}</td>
+                        <td style="padding: 10px;">${t.owner_name}</td>
+                        <td style="padding: 10px;"><span style="background: ${t.plan === 'enterprise' ? '#fef3c7' : t.plan === 'premium' ? '#dbeafe' : '#f1f5f9'}; padding: 3px 8px; border-radius: 6px; font-size: 11px;">${planNames[t.plan] || t.plan}</span></td>
+                        <td style="padding: 10px; text-align: center;">${t.is_active ? '<span style="color: #10b981; font-weight: bold;">✅ نشط</span>' : '<span style="color: #ef4444;">❌ معطل</span>'}</td>
+                        <td style="padding: 10px; text-align: center;">${t.users_count || 0}</td>
+                        <td style="padding: 10px; text-align: center;">${t.invoices_count || 0}</td>
+                        <td style="padding: 10px; text-align: center;">
+                            <div style="display: flex; gap: 4px; justify-content: center;">
+                                <button onclick="viewTenantStats(${t.id})" style="background: #3b82f6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="إحصائيات">📊</button>
+                                <button onclick="editTenant(${t.id})" style="background: #f59e0b; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="تعديل">✏️</button>
+                                <button onclick="toggleTenant(${t.id}, ${t.is_active ? 0 : 1})" style="background: ${t.is_active ? '#ef4444' : '#10b981'}; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="${t.is_active ? 'تعطيل' : 'تفعيل'}">${t.is_active ? '🚫' : '✅'}</button>
+                                <button onclick="deleteTenantAction(${t.id}, '${t.name}')" style="background: #dc2626; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="حذف">🗑️</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        tableHTML += '</tbody></table>';
+        document.getElementById('tenantsTableContainer').innerHTML = tableHTML;
+
+    } catch (e) {
+        console.error('[SuperAdmin] Load dashboard error:', e);
+    }
+}
+
+let editingTenantId = null;
+
+function showAddTenant() {
+    editingTenantId = null;
+    document.getElementById('tenantEditId').value = '';
+    document.getElementById('tenantName').value = '';
+    document.getElementById('tenantSlug').value = '';
+    document.getElementById('tenantOwnerName').value = '';
+    document.getElementById('tenantOwnerEmail').value = '';
+    document.getElementById('tenantOwnerPhone').value = '';
+    document.getElementById('tenantAdminUsername').value = 'admin';
+    document.getElementById('tenantAdminPassword').value = 'admin123';
+    document.getElementById('tenantPlan').value = 'basic';
+    document.getElementById('tenantMaxUsers').value = '5';
+    document.getElementById('tenantMaxBranches').value = '3';
+    document.getElementById('tenantSlugGroup').style.display = 'block';
+    document.getElementById('tenantAdminFields').style.display = 'grid';
+    document.getElementById('tenantModalTitle').textContent = '➕ إضافة متجر جديد';
+    document.getElementById('addTenantModal').classList.add('active');
+}
+
+async function editTenant(tenantId) {
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
+        const data = await response.json();
+        if (!data.success) return;
+        const t = data.tenant;
+        editingTenantId = tenantId;
+        document.getElementById('tenantEditId').value = tenantId;
+        document.getElementById('tenantName').value = t.name;
+        document.getElementById('tenantSlug').value = t.slug;
+        document.getElementById('tenantOwnerName').value = t.owner_name;
+        document.getElementById('tenantOwnerEmail').value = t.owner_email || '';
+        document.getElementById('tenantOwnerPhone').value = t.owner_phone || '';
+        document.getElementById('tenantPlan').value = t.plan || 'basic';
+        document.getElementById('tenantMaxUsers').value = t.max_users || 5;
+        document.getElementById('tenantMaxBranches').value = t.max_branches || 3;
+        document.getElementById('tenantSlugGroup').style.display = 'none'; // لا يمكن تغيير slug
+        document.getElementById('tenantAdminFields').style.display = 'none'; // لا يمكن تغيير أدمن من هنا
+        document.getElementById('tenantModalTitle').textContent = '✏️ تعديل متجر';
+        document.getElementById('addTenantModal').classList.add('active');
+    } catch (e) {
+        console.error('[SuperAdmin] Edit tenant error:', e);
+    }
+}
+
+document.getElementById('tenantForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        if (editingTenantId) {
+            // تحديث
+            const response = await originalFetch(`${API_URL}/api/super-admin/tenants/${editingTenantId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: document.getElementById('tenantName').value,
+                    owner_name: document.getElementById('tenantOwnerName').value,
+                    owner_email: document.getElementById('tenantOwnerEmail').value,
+                    owner_phone: document.getElementById('tenantOwnerPhone').value,
+                    plan: document.getElementById('tenantPlan').value,
+                    max_users: parseInt(document.getElementById('tenantMaxUsers').value),
+                    max_branches: parseInt(document.getElementById('tenantMaxBranches').value)
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert('تم تحديث المتجر بنجاح');
+            } else {
+                alert(data.error || 'فشل التحديث');
+                return;
+            }
+        } else {
+            // إنشاء جديد
+            const response = await originalFetch(`${API_URL}/api/super-admin/tenants`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: document.getElementById('tenantName').value,
+                    slug: document.getElementById('tenantSlug').value,
+                    owner_name: document.getElementById('tenantOwnerName').value,
+                    owner_email: document.getElementById('tenantOwnerEmail').value,
+                    owner_phone: document.getElementById('tenantOwnerPhone').value,
+                    admin_username: document.getElementById('tenantAdminUsername').value,
+                    admin_password: document.getElementById('tenantAdminPassword').value,
+                    plan: document.getElementById('tenantPlan').value,
+                    max_users: parseInt(document.getElementById('tenantMaxUsers').value),
+                    max_branches: parseInt(document.getElementById('tenantMaxBranches').value)
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert('تم إنشاء المتجر بنجاح');
+            } else {
+                alert(data.error || 'فشل الإنشاء');
+                return;
+            }
+        }
+        document.getElementById('addTenantModal').classList.remove('active');
+        loadSuperAdminDashboard();
+    } catch (e) {
+        console.error('[SuperAdmin] Save tenant error:', e);
+        alert('خطأ في حفظ المتجر');
+    }
+});
+
+async function toggleTenant(tenantId, newState) {
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/tenants/${tenantId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ is_active: newState })
+        });
+        const data = await response.json();
+        if (data.success) {
+            loadSuperAdminDashboard();
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Toggle error:', e);
+    }
+}
+
+async function deleteTenantAction(tenantId, tenantName) {
+    if (!confirm(`⚠️ هل أنت متأكد من حذف المتجر "${tenantName}"؟\n\nسيتم حذف جميع البيانات نهائياً!`)) return;
+    if (!confirm('تأكيد نهائي: هذا الإجراء لا يمكن التراجع عنه!')) return;
+
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/tenants/${tenantId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            alert('تم حذف المتجر');
+            loadSuperAdminDashboard();
+        } else {
+            alert(data.error || 'فشل الحذف');
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Delete error:', e);
+    }
+}
+
+async function viewTenantStats(tenantId) {
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
+        const data = await response.json();
+        if (!data.success) return;
+
+        const t = data.tenant;
+        const s = data.stats;
+        const planNames = {'basic': 'أساسية', 'premium': 'متقدمة', 'enterprise': 'مؤسسات'};
+
+        document.getElementById('tenantStatsTitle').textContent = `📊 إحصائيات: ${t.name}`;
+        document.getElementById('tenantStatsContent').innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                    <div style="color: #64748b; font-size: 12px;">المعرف</div>
+                    <div style="font-weight: bold; direction: ltr;">${t.slug}</div>
+                </div>
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                    <div style="color: #64748b; font-size: 12px;">الخطة</div>
+                    <div style="font-weight: bold;">${planNames[t.plan] || t.plan}</div>
+                </div>
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                    <div style="color: #64748b; font-size: 12px;">المالك</div>
+                    <div style="font-weight: bold;">${t.owner_name}</div>
+                </div>
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                    <div style="color: #64748b; font-size: 12px;">تاريخ الإنشاء</div>
+                    <div style="font-weight: bold;">${new Date(t.created_at).toLocaleDateString('ar')}</div>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">${s.users_count}</div>
+                    <div style="font-size: 11px; opacity: 0.9;">مستخدمين (حد: ${t.max_users})</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">${s.branches_count}</div>
+                    <div style="font-size: 11px; opacity: 0.9;">فروع (حد: ${t.max_branches})</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">${s.products_count}</div>
+                    <div style="font-size: 11px; opacity: 0.9;">منتجات</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">${s.invoices_count}</div>
+                    <div style="font-size: 11px; opacity: 0.9;">فواتير</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">${s.customers_count}</div>
+                    <div style="font-size: 11px; opacity: 0.9;">عملاء</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #ec4899, #db2777); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">${parseFloat(s.total_sales || 0).toFixed(3)}</div>
+                    <div style="font-size: 11px; opacity: 0.9;">إجمالي المبيعات (د.ك)</div>
+                </div>
+            </div>
+        `;
+        document.getElementById('tenantStatsModal').classList.add('active');
+    } catch (e) {
+        console.error('[SuperAdmin] Stats error:', e);
+    }
+}
+
+// استعادة جلسة Super Admin
+(function restoreSuperAdmin() {
+    const savedSA = localStorage.getItem('pos_super_admin');
+    if (savedSA) {
+        try {
+            currentSuperAdmin = JSON.parse(savedSA);
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('mainContainer').style.display = 'none';
+            document.getElementById('superAdminDashboard').style.display = 'block';
+            document.getElementById('saUserInfo').textContent = currentSuperAdmin.full_name;
+            loadSuperAdminDashboard();
+        } catch (e) {
+            localStorage.removeItem('pos_super_admin');
+        }
+    }
+})();
+
+console.log('[Multi-Tenancy] System Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 
