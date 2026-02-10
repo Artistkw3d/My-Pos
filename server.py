@@ -2261,7 +2261,12 @@ def get_tables():
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM restaurant_tables ORDER BY id')
+        cursor.execute('''
+            SELECT rt.*, i.invoice_number, i.total as invoice_total, i.customer_name as invoice_customer
+            FROM restaurant_tables rt
+            LEFT JOIN invoices i ON rt.current_invoice_id = i.id
+            ORDER BY rt.id
+        ''')
         tables = [dict_from_row(row) for row in cursor.fetchall()]
         conn.close()
         return jsonify({'success': True, 'tables': tables})

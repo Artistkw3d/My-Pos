@@ -6452,7 +6452,7 @@ async function loadTablesDropdown() {
 // تحميل الطاولات لتبويب الطاولات
 async function loadTables() {
     if (!navigator.onLine) {
-        showToast('لا يوجد اتصال بالإنترنت', 'warning');
+        alert('لا يوجد اتصال بالإنترنت', 'warning');
         return;
     }
     try {
@@ -6465,7 +6465,7 @@ async function loadTables() {
         }
     } catch (e) {
         console.error('[Tables] Failed to load:', e);
-        showToast('فشل تحميل الطاولات', 'error');
+        alert('فشل تحميل الطاولات', 'error');
     }
 }
 
@@ -6545,6 +6545,13 @@ function displayTablesFloorPlan() {
             <div style="font-size: 11px; color: ${isOccupied ? '#dc2626' : '#059669'}; margin-top: 4px; font-weight: bold;">
                 ${isOccupied ? '🍽️ مشغولة' : '✅ متاحة'}
             </div>
+            ${isOccupied && table.invoice_number ? `
+                <div style="background: rgba(255,255,255,0.8); border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin-top: 6px; font-size: 10px; width: 100%;">
+                    <div style="color: #3b82f6; font-weight: bold;">📄 ${table.invoice_number}</div>
+                    ${table.invoice_customer ? `<div style="color: #64748b;">👤 ${table.invoice_customer}</div>` : ''}
+                    ${table.invoice_total ? `<div style="color: #059669; font-weight: bold;">${parseFloat(table.invoice_total).toFixed(3)} د.ك</div>` : ''}
+                </div>
+            ` : ''}
             <div style="display: flex; gap: 4px; margin-top: 8px;">
                 ${isOccupied ?
                     `<button onclick="event.stopPropagation(); viewTableInvoice(${table.id})" style="background: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📄 الفاتورة</button>
@@ -6701,7 +6708,7 @@ document.getElementById('tableForm')?.addEventListener('submit', async function(
     const seats = parseInt(document.getElementById('tableSeats').value) || 4;
 
     if (!name) {
-        showToast('يرجى إدخال اسم الطاولة', 'error');
+        alert('يرجى إدخال اسم الطاولة', 'error');
         return;
     }
 
@@ -6715,9 +6722,9 @@ document.getElementById('tableForm')?.addEventListener('submit', async function(
             });
             const data = await response.json();
             if (data.success) {
-                showToast('تم تحديث الطاولة بنجاح', 'success');
+                alert('تم تحديث الطاولة بنجاح', 'success');
             } else {
-                showToast('فشل تحديث الطاولة', 'error');
+                alert('فشل تحديث الطاولة', 'error');
                 return;
             }
         } else {
@@ -6729,9 +6736,9 @@ document.getElementById('tableForm')?.addEventListener('submit', async function(
             });
             const data = await response.json();
             if (data.success) {
-                showToast('تمت إضافة الطاولة بنجاح', 'success');
+                alert('تمت إضافة الطاولة بنجاح', 'success');
             } else {
-                showToast('فشل إضافة الطاولة', 'error');
+                alert('فشل إضافة الطاولة', 'error');
                 return;
             }
         }
@@ -6741,7 +6748,7 @@ document.getElementById('tableForm')?.addEventListener('submit', async function(
         loadTablesDropdown();
     } catch (e) {
         console.error('[Tables] Save error:', e);
-        showToast('خطأ في حفظ الطاولة', 'error');
+        alert('خطأ في حفظ الطاولة', 'error');
     }
 });
 
@@ -6753,15 +6760,15 @@ async function deleteTable(id) {
         const response = await fetch(`${API_URL}/api/tables/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
-            showToast('تم حذف الطاولة', 'success');
+            alert('تم حذف الطاولة', 'success');
             loadTables();
             loadTablesDropdown();
         } else {
-            showToast('فشل حذف الطاولة', 'error');
+            alert('فشل حذف الطاولة', 'error');
         }
     } catch (e) {
         console.error('[Tables] Delete error:', e);
-        showToast('خطأ في حذف الطاولة', 'error');
+        alert('خطأ في حذف الطاولة', 'error');
     }
 }
 
@@ -6769,7 +6776,7 @@ async function deleteTable(id) {
 async function viewTableInvoice(tableId) {
     const table = allTables.find(t => t.id === tableId);
     if (!table || !table.current_invoice_id) {
-        showToast('لا توجد فاتورة مرتبطة بهذه الطاولة', 'warning');
+        alert('لا توجد فاتورة مرتبطة بهذه الطاولة', 'warning');
         return;
     }
 
@@ -6830,11 +6837,11 @@ async function viewTableInvoice(tableId) {
             document.getElementById('tableInvoiceTitle').textContent = `🍽️ فاتورة ${table.name}`;
             document.getElementById('tableInvoiceModal').classList.add('active');
         } else {
-            showToast('فشل تحميل الفاتورة', 'error');
+            alert('فشل تحميل الفاتورة', 'error');
         }
     } catch (e) {
         console.error('[Tables] View invoice error:', e);
-        showToast('خطأ في تحميل فاتورة الطاولة', 'error');
+        alert('خطأ في تحميل فاتورة الطاولة', 'error');
     }
 }
 
@@ -6846,15 +6853,15 @@ async function releaseTableAction(tableId) {
         const response = await fetch(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
-            showToast('تم تحرير الطاولة', 'success');
+            alert('تم تحرير الطاولة', 'success');
             loadTables();
             loadTablesDropdown();
         } else {
-            showToast('فشل تحرير الطاولة', 'error');
+            alert('فشل تحرير الطاولة', 'error');
         }
     } catch (e) {
         console.error('[Tables] Release error:', e);
-        showToast('خطأ في تحرير الطاولة', 'error');
+        alert('خطأ في تحرير الطاولة', 'error');
     }
 }
 
@@ -6881,19 +6888,19 @@ async function showAssignInvoice(tableId) {
                 });
                 const assignData = await assignResponse.json();
                 if (assignData.success) {
-                    showToast(`تم ربط الفاتورة ${invoiceNum} بـ ${table.name}`, 'success');
+                    alert(`تم ربط الفاتورة ${invoiceNum} بـ ${table.name}`, 'success');
                     loadTables();
                     loadTablesDropdown();
                 } else {
-                    showToast('فشل ربط الفاتورة', 'error');
+                    alert('فشل ربط الفاتورة', 'error');
                 }
             } else {
-                showToast('لم يتم العثور على الفاتورة', 'error');
+                alert('لم يتم العثور على الفاتورة', 'error');
             }
         }
     } catch (e) {
         console.error('[Tables] Assign error:', e);
-        showToast('خطأ في ربط الفاتورة', 'error');
+        alert('خطأ في ربط الفاتورة', 'error');
     }
 }
 
