@@ -51,6 +51,8 @@ def init_master_db():
             plan TEXT DEFAULT 'basic',
             max_users INTEGER DEFAULT 5,
             max_branches INTEGER DEFAULT 3,
+            subscription_amount REAL DEFAULT 0,
+            subscription_period INTEGER DEFAULT 30,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TEXT
         )
@@ -64,6 +66,30 @@ def init_master_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS subscription_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            period_days INTEGER NOT NULL DEFAULT 30,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            notes TEXT,
+            payment_method TEXT DEFAULT 'cash',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+        )
+    ''')
+    # ترقية: إضافة أعمدة جديدة إن لم تكن موجودة
+    try:
+        cursor.execute("PRAGMA table_info(tenants)")
+        cols = [col[1] for col in cursor.fetchall()]
+        if 'subscription_amount' not in cols:
+            cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_amount REAL DEFAULT 0")
+        if 'subscription_period' not in cols:
+            cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_period INTEGER DEFAULT 30")
+    except:
+        pass
     # إنشاء حساب Super Admin افتراضي إن لم يكن موجوداً
     cursor.execute("SELECT COUNT(*) FROM super_admins")
     if cursor.fetchone()[0] == 0:
@@ -545,10 +571,34 @@ def login():
         data = request.json
         username = data.get('username')
         password = data.get('password')
-        
+
+        # التحقق من اشتراك المستأجر
+        tenant_slug = get_tenant_slug()
+        if tenant_slug:
+            m_conn = get_master_db()
+            m_cursor = m_conn.cursor()
+            m_cursor.execute('SELECT is_active, expires_at, name FROM tenants WHERE slug = ?', (tenant_slug,))
+            tenant = m_cursor.fetchone()
+            m_conn.close()
+            if not tenant:
+                return jsonify({'success': False, 'error': 'معرف المتجر غير صحيح'}), 404
+            if not tenant['is_active']:
+                return jsonify({'success': False, 'error': '⛔ هذا المتجر معطل. تواصل مع إدارة النظام'}), 403
+            if tenant['expires_at']:
+                from datetime import date
+                expiry = date.fromisoformat(tenant['expires_at'][:10])
+                if date.today() > expiry:
+                    # تعطيل المتجر تلقائياً
+                    m_conn2 = get_master_db()
+                    m_cursor2 = m_conn2.cursor()
+                    m_cursor2.execute('UPDATE tenants SET is_active = 0 WHERE slug = ?', (tenant_slug,))
+                    m_conn2.commit()
+                    m_conn2.close()
+                    return jsonify({'success': False, 'error': f'⛔ انتهى اشتراك المتجر "{tenant["name"]}" بتاريخ {tenant["expires_at"][:10]}.\nتواصل مع إدارة النظام لتجديد الاشتراك.'}), 403
+
         conn = get_db()
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             SELECT u.id, u.username, u.full_name, u.role, u.invoice_prefix, u.is_active, u.branch_id,
                    u.can_view_products, u.can_add_products, u.can_edit_products, u.can_delete_products,
@@ -561,10 +611,10 @@ def login():
             LEFT JOIN branches b ON u.branch_id = b.id
             WHERE u.username = ? AND u.password = ? AND u.is_active = 1
         ''', (username, password))
-        
+
         user = cursor.fetchone()
         conn.close()
-        
+
         if user:
             user_data = dict_from_row(user)
             return jsonify({'success': True, 'user': user_data})
@@ -3073,6 +3123,8 @@ def create_tenant():
         plan = data.get('plan', 'basic')
         max_users = data.get('max_users', 5)
         max_branches = data.get('max_branches', 3)
+        subscription_amount = data.get('subscription_amount', 0)
+        subscription_period = data.get('subscription_period', 30)
 
         if not name or not slug or not owner_name:
             return jsonify({'success': False, 'error': 'الاسم والمعرف واسم المالك مطلوبة'}), 400
@@ -3107,9 +3159,9 @@ def create_tenant():
 
         # تسجيل المستأجر في القاعدة الرئيسية
         cursor.execute('''
-            INSERT INTO tenants (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches))
+            INSERT INTO tenants (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches, subscription_amount, subscription_period)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches, subscription_amount, subscription_period))
         conn.commit()
         tenant_id = cursor.lastrowid
         conn.close()
@@ -3127,7 +3179,7 @@ def update_tenant(tenant_id):
         cursor = conn.cursor()
         fields = []
         values = []
-        for key in ['name', 'owner_name', 'owner_email', 'owner_phone', 'is_active', 'plan', 'max_users', 'max_branches', 'expires_at']:
+        for key in ['name', 'owner_name', 'owner_email', 'owner_phone', 'is_active', 'plan', 'max_users', 'max_branches', 'expires_at', 'subscription_amount', 'subscription_period']:
             if key in data:
                 fields.append(f'{key} = ?')
                 values.append(data[key])
@@ -3199,16 +3251,95 @@ def get_tenant_stats(tenant_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/tenants/list', methods=['GET'])
-def list_active_tenants():
-    """قائمة المستأجرين النشطين (للعرض في صفحة تسجيل الدخول)"""
+@app.route('/api/super-admin/subscriptions/<int:tenant_id>', methods=['GET'])
+def get_subscription_invoices(tenant_id):
+    """جلب فواتير اشتراك مستأجر"""
     try:
         conn = get_master_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, slug FROM tenants WHERE is_active = 1 ORDER BY name')
-        tenants = [dict_from_row(row) for row in cursor.fetchall()]
+        cursor.execute('SELECT * FROM subscription_invoices WHERE tenant_id = ? ORDER BY created_at DESC', (tenant_id,))
+        invoices = [dict_from_row(row) for row in cursor.fetchall()]
         conn.close()
-        return jsonify({'success': True, 'tenants': tenants})
+        return jsonify({'success': True, 'invoices': invoices})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/subscriptions', methods=['POST'])
+def create_subscription_invoice():
+    """إنشاء فاتورة اشتراك وتجديد المتجر"""
+    try:
+        data = request.json
+        tenant_id = data.get('tenant_id')
+        amount = float(data.get('amount', 0))
+        period_days = int(data.get('period_days', 30))
+        notes = data.get('notes', '')
+        payment_method = data.get('payment_method', 'cash')
+
+        if not tenant_id or amount <= 0 or period_days <= 0:
+            return jsonify({'success': False, 'error': 'بيانات الفاتورة غير مكتملة'}), 400
+
+        conn = get_master_db()
+        cursor = conn.cursor()
+
+        # جلب بيانات المستأجر
+        cursor.execute('SELECT * FROM tenants WHERE id = ?', (tenant_id,))
+        tenant = cursor.fetchone()
+        if not tenant:
+            conn.close()
+            return jsonify({'success': False, 'error': 'المستأجر غير موجود'}), 404
+
+        # حساب تاريخ البداية والنهاية
+        from datetime import date, timedelta
+        today = date.today()
+
+        # إذا كان الاشتراك ساري، نضيف من تاريخ الانتهاء الحالي
+        if tenant['expires_at']:
+            try:
+                current_expiry = date.fromisoformat(tenant['expires_at'][:10])
+                if current_expiry > today:
+                    start_date = current_expiry
+                else:
+                    start_date = today
+            except:
+                start_date = today
+        else:
+            start_date = today
+
+        end_date = start_date + timedelta(days=period_days)
+
+        # إنشاء فاتورة الاشتراك
+        cursor.execute('''
+            INSERT INTO subscription_invoices (tenant_id, amount, period_days, start_date, end_date, notes, payment_method)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (tenant_id, amount, period_days, start_date.isoformat(), end_date.isoformat(), notes, payment_method))
+
+        # تحديث تاريخ الانتهاء وتفعيل المتجر
+        cursor.execute('UPDATE tenants SET expires_at = ?, is_active = 1 WHERE id = ?',
+                       (end_date.isoformat(), tenant_id))
+
+        conn.commit()
+        invoice_id = cursor.lastrowid
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'id': invoice_id,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/subscriptions/<int:invoice_id>', methods=['DELETE'])
+def delete_subscription_invoice(invoice_id):
+    """حذف فاتورة اشتراك"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM subscription_invoices WHERE id = ?', (invoice_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
