@@ -913,6 +913,7 @@ function displayInvoiceView(inv) {
                 <div><strong>العنوان:</strong> ${inv.customer_address || '-'}</div>
                 <div><strong>الدفع:</strong> ${paymentMethods[inv.payment_method]}</div>
                 ${inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${inv.transaction_number}</div>` : ''}
+                <div style="grid-column: 1/-1;"><strong>حالة الطلب:</strong> <span class="order-status-badge status-${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'processing' : (inv.order_status === 'قيد التوصيل' ? 'delivering' : 'completed')}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
                 <thead><tr style="background:#667eea; color:white;">
@@ -1000,6 +1001,7 @@ ${storeLogo ? `<img src="${storeLogo}">` : ''}
 <div><b>العنوان:</b> ${inv.customer_address || '-'}</div>
 <div><b>طريقة الدفع:</b> ${paymentMethods[inv.payment_method]}</div>
 ${inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${inv.transaction_number}</div>` : ''}
+<div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
 </div>
 <table>
 <thead><tr><th style="width:40px;">#</th><th>المنتج</th><th style="width:80px;">الكمية</th><th style="width:100px;">السعر</th><th style="width:100px;">الإجمالي</th></tr></thead>
@@ -1394,32 +1396,6 @@ async function loadInvoicesTable() {
     }
 }
 
-// تحديث حالة الطلب
-async function updateOrderStatus(invoiceId, newStatus) {
-    try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/status`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ order_status: newStatus })
-        });
-        const data = await response.json();
-        if (data.success) {
-            // تحديث لون القائمة المنسدلة
-            const select = event.target;
-            select.className = 'order-status-select ' +
-                (newStatus === 'قيد التنفيذ' ? 'status-processing' :
-                 newStatus === 'قيد التوصيل' ? 'status-delivering' : 'status-completed');
-        } else {
-            alert('خطأ في تحديث الحالة: ' + data.error);
-            loadInvoicesTable();
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-        alert('فشل تحديث حالة الطلب');
-        loadInvoicesTable();
-    }
-}
-
 // عرض فاتورة محلية
 async function viewLocalInvoice(invoiceId) {
     try {
@@ -1478,6 +1454,7 @@ async function exportInvoicesExcel() {
         'رسوم التوصيل': inv.delivery_fee || 0,
         'الإجمالي': inv.total,
         'طريقة الدفع': inv.payment_method,
+        'حالة الطلب': inv.order_status || 'قيد التنفيذ',
         'رقم العملية': inv.transaction_number || '',
         'التاريخ': formatKuwaitTime(inv.created_at)
     }));
@@ -3748,184 +3725,7 @@ async function loadBranchesForAdvReports() {
 }
 
 
-// ===== العملاء (CRM) =====
-
-async function loadCustomers() {
-    try {
-        const response = await fetch(`${API_URL}/api/customers`);
-        const data = await response.json();
-        
-        if (data.success) {
-            displayCustomers(data.customers);
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-    }
-}
-
-async function searchCustomers() {
-    const search = document.getElementById('customerSearch').value;
-    
-    try {
-        const response = await fetch(`${API_URL}/api/customers?search=${encodeURIComponent(search)}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            displayCustomers(data.customers);
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-    }
-}
-
-function displayCustomers(customers) {
-    const container = document.getElementById('customersContainer');
-    
-    if (customers.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">لا يوجد عملاء</div>';
-        return;
-    }
-    
-    // إحصائيات
-    const totalCustomers = customers.length;
-    const totalSpent = customers.reduce((sum, c) => sum + (c.total_spent || 0), 0);
-    const totalOrders = customers.reduce((sum, c) => sum + (c.total_orders || 0), 0);
-    
-    let html = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(102,126,234,0.3);">
-                <div style="opacity: 0.9; margin-bottom: 5px;">إجمالي العملاء</div>
-                <div style="font-size: 32px; font-weight: bold;">${totalCustomers}</div>
-            </div>
-            <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(240,147,251,0.3);">
-                <div style="opacity: 0.9; margin-bottom: 5px;">إجمالي المبيعات</div>
-                <div style="font-size: 32px; font-weight: bold;">${totalSpent.toFixed(3)} د.ك</div>
-            </div>
-            <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(79,172,254,0.3);">
-                <div style="opacity: 0.9; margin-bottom: 5px;">إجمالي الطلبات</div>
-                <div style="font-size: 32px; font-weight: bold;">${totalOrders}</div>
-            </div>
-        </div>
-        
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>الاسم</th>
-                    <th>الهاتف</th>
-                    <th>العنوان</th>
-                    <th>عدد الطلبات</th>
-                    <th>إجمالي الإنفاق</th>
-                    <th>تاريخ الإنشاء</th>
-                    <th>إجراءات</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${customers.map(c => `
-                    <tr>
-                        <td><strong>${c.name || '-'}</strong></td>
-                        <td>${c.phone || '-'}</td>
-                        <td>${c.address || '-'}</td>
-                        <td><span style="background: #667eea; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;">${c.total_orders || 0}</span></td>
-                        <td style="color: #28a745; font-weight: bold;">${(c.total_spent || 0).toFixed(3)} د.ك</td>
-                        <td>${new Date(c.created_at).toLocaleDateString('ar')}</td>
-                        <td>
-                            <button onclick="viewCustomerInvoices(${c.id})" class="btn-sm" style="background: #667eea;">📋</button>
-                            ${window.userPermissions?.canEditCustomer ? `<button onclick="editCustomer(${c.id})" class="btn-sm">✏️</button>` : ''}
-                            ${window.userPermissions?.canDeleteCustomer ? `<button onclick="deleteCustomer(${c.id})" class="btn-sm btn-danger">🗑️</button>` : ''}
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    `;
-    
-    container.innerHTML = html;
-}
-
-function showAddCustomer() {
-    document.getElementById('customerModalTitle').textContent = '➕ إضافة عميل';
-    document.getElementById('customerForm').reset();
-    document.getElementById('customerId').value = '';
-    document.getElementById('addCustomerModal').classList.add('active');
-}
-
-function closeAddCustomer() {
-    document.getElementById('addCustomerModal').classList.remove('active');
-}
-
-async function editCustomer(id) {
-    try {
-        const response = await fetch(`${API_URL}/api/customers`);
-        const data = await response.json();
-        
-        if (data.success) {
-            const customer = data.customers.find(c => c.id === id);
-            if (customer) {
-                document.getElementById('customerModalTitle').textContent = '✏️ تعديل عميل';
-                document.getElementById('customerId').value = customer.id;
-                document.getElementById('customerNameField').value = customer.name || '';
-                document.getElementById('customerPhoneField').value = customer.phone || '';
-                document.getElementById('customerAddressField').value = customer.address || '';
-                document.getElementById('customerNotes').value = customer.notes || '';
-                document.getElementById('addCustomerModal').classList.add('active');
-            }
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-    }
-}
-
-document.getElementById('customerForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const customerId = document.getElementById('customerId').value;
-    
-    const customerData = {
-        name: document.getElementById('customerNameField').value,
-        phone: document.getElementById('customerPhoneField').value,
-        email: document.getElementById('customerEmailField').value || '',
-        address: document.getElementById('customerAddressField').value,
-        notes: document.getElementById('customerNotes').value
-    };
-    
-    try {
-        const url = customerId ? `${API_URL}/api/customers/${customerId}` : `${API_URL}/api/customers`;
-        const method = customerId ? 'PUT' : 'POST';
-        
-        const response = await fetch(url, {
-            method: method,
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(customerData)
-        });
-        
-        const data = await response.json();
-        if (data.success) {
-            alert('✅ تم الحفظ بنجاح');
-            closeAddCustomer();
-            await loadCustomers();
-            await loadCustomersDropdown();
-        } else {
-            alert('خطأ: ' + data.error);
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-    }
-});
-
-async function deleteCustomer(id) {
-    if (!confirm('هل أنت متأكد من حذف هذا العميل؟')) return;
-    
-    try {
-        const response = await fetch(`${API_URL}/api/customers/${id}`, {method: 'DELETE'});
-        const data = await response.json();
-        if (data.success) {
-            alert('✅ تم الحذف');
-            await loadCustomers();
-        }
-    } catch (error) {
-        console.error('خطأ:', error);
-    }
-}
+// ===== العملاء (CRM) - عرض فواتير عميل =====
 
 async function viewCustomerInvoices(customerId) {
     try {
@@ -4800,7 +4600,7 @@ async function loadCustomers() {
 
 // عرض جدول العملاء
 function displayCustomersTable(customers) {
-    const container = document.getElementById('customersTableContainer');
+    const container = document.getElementById('customersContainer');
     if (!container) return;
     
     if (!customers || customers.length === 0) {
@@ -4935,6 +4735,39 @@ async function editCustomer(id) {
             
             currentCustomerData = c;
             document.getElementById('addCustomerModal').classList.add('active');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل تحميل بيانات العميل');
+    }
+}
+
+// عرض تفاصيل عميل
+async function viewCustomerDetails(id) {
+    try {
+        const response = await fetch(`${API_URL}/api/customers/${id}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const c = data.customer;
+            const html = `
+                <div style="padding: 20px;">
+                    <h3 style="margin-bottom: 20px;">👤 تفاصيل العميل</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                        <div><strong>الاسم:</strong> ${c.name || '-'}</div>
+                        <div><strong>الهاتف:</strong> ${c.phone || '-'}</div>
+                        <div><strong>البريد:</strong> ${c.email || '-'}</div>
+                        <div><strong>العنوان:</strong> ${c.address || '-'}</div>
+                        <div><strong>النقاط:</strong> <span style="color: #0ea5e9; font-weight: bold;">${c.points || 0}</span></div>
+                        <div><strong>إجمالي المشتريات:</strong> <span style="color: #28a745; font-weight: bold;">${(c.total_spent || 0).toFixed(3)} د.ك</span></div>
+                        <div><strong>عدد الطلبات:</strong> ${c.total_orders || 0}</div>
+                        <div><strong>تاريخ التسجيل:</strong> ${c.created_at ? new Date(c.created_at).toLocaleDateString('ar') : '-'}</div>
+                    </div>
+                    ${c.notes ? `<div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;"><strong>ملاحظات:</strong> ${c.notes}</div>` : ''}
+                </div>
+            `;
+            document.getElementById('invoiceViewContent').innerHTML = html;
+            document.getElementById('invoiceViewModal').classList.add('active');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -5585,42 +5418,82 @@ console.log('[Returns System] Loaded ✅');
 // 📦 حالات الطلب (Order Status)
 // ===============================================
 
-async function updateOrderStatus(invoiceId, newStatus, notes = '') {
+async function updateOrderStatus(invoiceId, newStatus) {
     try {
         const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/status`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                status: newStatus,
-                changed_by: currentUser.id,
-                notes: notes
-            })
+            body: JSON.stringify({ order_status: newStatus })
         });
-        
+
         const data = await response.json();
         if (data.success) {
-            alert('✅ تم تحديث حالة الطلب');
-            loadInvoicesTable();
+            // تحديث لون القائمة المنسدلة بدون إعادة تحميل
+            if (event && event.target) {
+                event.target.className = 'order-status-select ' +
+                    (newStatus === 'قيد التنفيذ' ? 'status-processing' :
+                     newStatus === 'قيد التوصيل' ? 'status-delivering' : 'status-completed');
+            }
         } else {
             alert('❌ خطأ: ' + data.error);
+            loadInvoicesTable();
         }
     } catch (error) {
         console.error('Error:', error);
         alert('❌ فشل التحديث');
+        loadInvoicesTable();
     }
 }
 
-async function filterOrdersByStatus(status) {
-    try {
-        const response = await fetch(`${API_URL}/api/orders/by-status?status=${status}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            displayOrdersTable(data.orders);
-        }
-    } catch (error) {
-        console.error('Error:', error);
+function filterInvoicesByStatus() {
+    const status = document.getElementById('orderStatusFilter').value;
+    if (!allInvoices) return;
+
+    if (!status) {
+        loadInvoicesTable();
+        return;
     }
+
+    const filtered = allInvoices.filter(inv => (inv.order_status || 'قيد التنفيذ') === status);
+    const container = document.getElementById('invoicesListContainer');
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<p style="text-align:center; padding:40px;">لا توجد فواتير بهذه الحالة</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead><tr><th>رقم الفاتورة</th><th>العميل</th><th>الموظف</th><th>الإجمالي</th><th>حالة الطلب</th><th>التاريخ</th><th>عرض</th></tr></thead>
+            <tbody>
+                ${filtered.map(inv => {
+                    const isOffline = inv.id && inv.id.toString().startsWith('offline_');
+                    const st = inv.order_status || 'قيد التنفيذ';
+                    return `
+                    <tr>
+                        <td>
+                            <strong>${inv.invoice_number}</strong>
+                            ${isOffline ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span>' : ''}
+                        </td>
+                        <td>${inv.customer_name || 'عميل'}</td>
+                        <td>${inv.employee_name}</td>
+                        <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
+                        <td>
+                            <select class="order-status-select status-${st === 'قيد التنفيذ' ? 'processing' : st === 'قيد التوصيل' ? 'delivering' : 'completed'}"
+                                    onchange="updateOrderStatus(${inv.id}, this.value)" ${isOffline ? 'disabled' : ''}>
+                                <option value="قيد التنفيذ" ${st === 'قيد التنفيذ' ? 'selected' : ''}>⏳ قيد التنفيذ</option>
+                                <option value="قيد التوصيل" ${st === 'قيد التوصيل' ? 'selected' : ''}>🚚 قيد التوصيل</option>
+                                <option value="منجز" ${st === 'منجز' ? 'selected' : ''}>✅ منجز</option>
+                            </select>
+                        </td>
+                        <td>${formatKuwaitTime(inv.created_at)}</td>
+                        <td><button onclick="viewLocalInvoice('${inv.id}')" class="btn-sm">👁️</button></td>
+                    </tr>
+                `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
 console.log('[Order Status] Loaded ✅');

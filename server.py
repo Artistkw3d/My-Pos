@@ -1495,6 +1495,28 @@ def get_customers():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/customers/<int:customer_id>', methods=['GET'])
+def get_customer(customer_id):
+    """جلب بيانات عميل محدد"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT *,
+                   (SELECT COUNT(*) FROM invoices WHERE customer_id = customers.id) as total_orders,
+                   (SELECT SUM(total) FROM invoices WHERE customer_id = customers.id) as total_spent
+            FROM customers WHERE id = ?
+        ''', (customer_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return jsonify({'success': True, 'customer': dict_from_row(row)})
+        else:
+            return jsonify({'success': False, 'error': 'العميل غير موجود'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/customers', methods=['POST'])
 def add_customer():
     """إضافة أو تحديث عميل"""
