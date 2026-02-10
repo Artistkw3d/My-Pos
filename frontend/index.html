@@ -20,6 +20,12 @@
             <div class="login-logo">🛍️</div>
             <h1 class="login-title">نظام نقاط البيع</h1>
             <form class="login-form" id="loginForm">
+                <div class="login-form-group" id="tenantSelectGroup">
+                    <label>🏢 اختر المتجر</label>
+                    <select id="loginTenantSlug" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
+                        <option value="">-- المتجر الافتراضي --</option>
+                    </select>
+                </div>
                 <div class="login-form-group">
                     <label>اسم المستخدم</label>
                     <input type="text" id="loginUsername" required>
@@ -29,7 +35,135 @@
                     <input type="password" id="loginPassword" required>
                 </div>
                 <button type="submit" class="login-btn">دخول</button>
+                <div style="text-align: center; margin-top: 10px;">
+                    <a href="#" onclick="showSuperAdminLogin(); return false;" style="color: #667eea; font-size: 12px; text-decoration: none;">🔐 دخول المدير الأعلى</a>
+                </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Super Admin Login -->
+    <div class="login-overlay hidden" id="superAdminLoginOverlay" style="z-index: 10001;">
+        <div class="login-box">
+            <div class="login-logo">🔐</div>
+            <h1 class="login-title">المدير الأعلى</h1>
+            <form class="login-form" id="superAdminLoginForm">
+                <div class="login-form-group">
+                    <label>اسم المستخدم</label>
+                    <input type="text" id="saLoginUsername" required>
+                </div>
+                <div class="login-form-group">
+                    <label>كلمة المرور</label>
+                    <input type="password" id="saLoginPassword" required>
+                </div>
+                <button type="submit" class="login-btn" style="background: linear-gradient(135deg, #ef4444, #dc2626);">دخول كمدير أعلى</button>
+                <div style="text-align: center; margin-top: 10px;">
+                    <a href="#" onclick="hideSuperAdminLogin(); return false;" style="color: #667eea; font-size: 12px; text-decoration: none;">← العودة لتسجيل دخول المتجر</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Super Admin Dashboard -->
+    <div id="superAdminDashboard" style="display: none;">
+        <div style="background: linear-gradient(135deg, #1e293b, #334155); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 24px;">🔐</span>
+                <h2 style="margin: 0; font-size: 18px;">لوحة تحكم المدير الأعلى</h2>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span id="saUserInfo" style="font-size: 13px; opacity: 0.8;"></span>
+                <button onclick="logoutSuperAdmin()" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">🚪 خروج</button>
+            </div>
+        </div>
+        <div style="padding: 25px; max-width: 1200px; margin: 0 auto;">
+            <!-- إحصائيات عامة -->
+            <div id="saStatsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px;"></div>
+
+            <!-- إضافة مستأجر -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0;">🏢 المتاجر (المستأجرين)</h3>
+                <button onclick="showAddTenant()" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px;">➕ إضافة متجر جديد</button>
+            </div>
+
+            <!-- جدول المستأجرين -->
+            <div id="tenantsTableContainer" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;"></div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Tenant Modal -->
+    <div class="modal" id="addTenantModal">
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <h2 id="tenantModalTitle">➕ إضافة متجر جديد</h2>
+                <button onclick="document.getElementById('addTenantModal').classList.remove('active')" class="close-btn">&times;</button>
+            </div>
+            <form id="tenantForm">
+                <input type="hidden" id="tenantEditId">
+                <div class="form-group">
+                    <label>اسم المتجر:</label>
+                    <input type="text" id="tenantName" required placeholder="مثال: مطعم السلام">
+                </div>
+                <div class="form-group" id="tenantSlugGroup">
+                    <label>معرف المتجر (بالإنجليزية):</label>
+                    <input type="text" id="tenantSlug" required placeholder="مثال: al-salam" pattern="[a-zA-Z0-9_-]+" style="direction: ltr;">
+                    <small style="color: #64748b;">يستخدم للتعريف - أحرف إنجليزية وأرقام فقط</small>
+                </div>
+                <div class="form-group">
+                    <label>اسم المالك:</label>
+                    <input type="text" id="tenantOwnerName" required placeholder="اسم صاحب المتجر">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>البريد:</label>
+                        <input type="email" id="tenantOwnerEmail" placeholder="email@example.com" style="direction: ltr;">
+                    </div>
+                    <div class="form-group">
+                        <label>الهاتف:</label>
+                        <input type="text" id="tenantOwnerPhone" placeholder="9XXXXXXX">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;" id="tenantAdminFields">
+                    <div class="form-group">
+                        <label>اسم مستخدم الأدمن:</label>
+                        <input type="text" id="tenantAdminUsername" value="admin" style="direction: ltr;">
+                    </div>
+                    <div class="form-group">
+                        <label>كلمة مرور الأدمن:</label>
+                        <input type="text" id="tenantAdminPassword" value="admin123" style="direction: ltr;">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label>الخطة:</label>
+                        <select id="tenantPlan">
+                            <option value="basic">أساسية</option>
+                            <option value="premium">متقدمة</option>
+                            <option value="enterprise">مؤسسات</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>أقصى مستخدمين:</label>
+                        <input type="number" id="tenantMaxUsers" value="5" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>أقصى فروع:</label>
+                        <input type="number" id="tenantMaxBranches" value="3" min="1">
+                    </div>
+                </div>
+                <button type="submit" class="btn" style="width: 100%; padding: 12px;">💾 حفظ</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tenant Stats Modal -->
+    <div class="modal" id="tenantStatsModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 id="tenantStatsTitle">📊 إحصائيات المتجر</h2>
+                <button onclick="document.getElementById('tenantStatsModal').classList.remove('active')" class="close-btn">&times;</button>
+            </div>
+            <div id="tenantStatsContent" style="padding: 15px;"></div>
         </div>
     </div>
 
