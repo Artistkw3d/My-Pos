@@ -148,13 +148,22 @@
                     <!-- الدفع -->
                     <div class="payment-section">
                         <h3>💳 الدفع</h3>
-                        <select id="paymentMethod" onchange="toggleTransactionNumber()">
-                            <option value="cash">💵 نقداً</option>
-                            <option value="knet">💳 كي نت</option>
-                            <option value="visa">💳 فيزا</option>
-                            <option value="other">💰 أخرى</option>
-                        </select>
-                        <input type="text" id="transactionNumber" placeholder="رقم العملية" style="display: none;">
+                        <div id="paymentMethodsList">
+                            <div class="payment-entry" data-index="0" style="display: flex; gap: 5px; align-items: center; margin-bottom: 8px;">
+                                <select class="pm-method" onchange="togglePaymentTxn(this)" style="flex: 1; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                                    <option value="cash">💵 نقداً</option>
+                                    <option value="knet">💳 كي نت</option>
+                                    <option value="visa">💳 فيزا</option>
+                                    <option value="other">💰 أخرى</option>
+                                </select>
+                                <input type="number" class="pm-amount" placeholder="المبلغ" step="0.001" min="0" style="width: 100px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                                <input type="text" class="pm-txn" placeholder="رقم العملية" style="display: none; width: 110px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                            </div>
+                        </div>
+                        <button onclick="addPaymentMethod()" type="button" style="background: #38a169; color: white; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-top: 4px;">➕ عملية إضافية</button>
+                        <!-- Hidden fields for backward compatibility -->
+                        <input type="hidden" id="paymentMethod" value="cash">
+                        <input type="hidden" id="transactionNumber" value="">
                     </div>
 
                     <!-- الملخص -->
@@ -530,6 +539,31 @@
                     </div>
                     
                     <button onclick="saveSettings()" class="btn">حفظ</button>
+                </div>
+
+                <!-- إعدادات نقاط الولاء -->
+                <div style="max-width: 600px; margin-top: 30px;">
+                    <h3 style="color: #667eea; margin-bottom: 15px;">💎 إعدادات نقاط الولاء</h3>
+                    <div style="background: #f0f9ff; padding: 20px; border-radius: 12px; border: 2px solid #0ea5e9;">
+                        <div class="form-group">
+                            <label>تفعيل نظام الولاء:</label>
+                            <select id="loyaltyEnabled" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="true">مفعل</option>
+                                <option value="false">معطل</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>النقاط لكل 1 د.ك مصروف:</label>
+                            <input type="number" id="loyaltyPointsPerKd" min="1" value="10" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            <p style="font-size: 12px; color: #666; margin-top: 5px;">مثال: 10 يعني كل 1 د.ك = 10 نقاط</p>
+                        </div>
+                        <div class="form-group">
+                            <label>عدد النقاط لخصم 1 د.ك:</label>
+                            <input type="number" id="loyaltyRedemptionRate" min="1" value="100" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            <p style="font-size: 12px; color: #666; margin-top: 5px;">مثال: 100 يعني كل 100 نقطة = 1 د.ك خصم</p>
+                        </div>
+                        <button onclick="saveLoyaltySettings()" class="btn" style="background: #0ea5e9;">💾 حفظ إعدادات الولاء</button>
+                    </div>
                 </div>
             </div>
         </div>

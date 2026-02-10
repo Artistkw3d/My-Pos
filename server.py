@@ -61,6 +61,40 @@ def migrate_database():
             )
         ''')
 
+        # إضافة عمود نقاط الولاء للعملاء
+        cursor.execute("PRAGMA table_info(customers)")
+        cust_columns = [col[1] for col in cursor.fetchall()]
+        if 'loyalty_points' not in cust_columns:
+            cursor.execute("ALTER TABLE customers ADD COLUMN loyalty_points INTEGER DEFAULT 0")
+            conn.commit()
+
+        # إضافة أعمدة الكوبون والولاء للفواتير
+        cursor.execute("PRAGMA table_info(invoices)")
+        inv_columns = [col[1] for col in cursor.fetchall()]
+        if 'coupon_discount' not in inv_columns:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_discount REAL DEFAULT 0")
+            conn.commit()
+        if 'coupon_code' not in inv_columns:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_code TEXT")
+            conn.commit()
+        if 'loyalty_discount' not in inv_columns:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_discount REAL DEFAULT 0")
+            conn.commit()
+        if 'loyalty_points_earned' not in inv_columns:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_earned INTEGER DEFAULT 0")
+            conn.commit()
+        if 'loyalty_points_redeemed' not in inv_columns:
+            cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_redeemed INTEGER DEFAULT 0")
+            conn.commit()
+
+        # إضافة إعدادات الولاء الافتراضية
+        cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_kd'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_kd', '10')")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_redemption_rate', '100')")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')")
+            conn.commit()
+
         # جدول الكوبونات
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS coupons (
@@ -786,10 +820,11 @@ def create_invoice():
         
         # إدراج الفاتورة
         cursor.execute('''
-            INSERT INTO invoices 
+            INSERT INTO invoices
             (invoice_number, customer_id, customer_name, customer_phone, customer_address,
-             subtotal, discount, total, payment_method, employee_name, notes, transaction_number, branch_name, delivery_fee)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             subtotal, discount, total, payment_method, employee_name, notes, transaction_number, branch_name, delivery_fee,
+             coupon_discount, coupon_code, loyalty_discount, loyalty_points_earned, loyalty_points_redeemed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             invoice_number_with_branch,
             data.get('customer_id'),
@@ -804,7 +839,12 @@ def create_invoice():
             data.get('notes', ''),
             data.get('transaction_number', ''),
             branch_name,
-            data.get('delivery_fee', 0)
+            data.get('delivery_fee', 0),
+            data.get('coupon_discount', 0),
+            data.get('coupon_code', ''),
+            data.get('loyalty_discount', 0),
+            data.get('loyalty_points_earned', 0),
+            data.get('loyalty_points_redeemed', 0)
         ))
         
         invoice_id = cursor.lastrowid
@@ -836,9 +876,28 @@ def create_invoice():
                     WHERE id = ?
                 ''', (item.get('quantity'), branch_stock_id))
         
+        # حفظ عمليات الدفع المتعددة كـ JSON
+        payments = data.get('payments', [])
+        if payments:
+            import json as json_mod
+            payments_json = json_mod.dumps(payments, ensure_ascii=False)
+            cursor.execute('UPDATE invoices SET transaction_number = ? WHERE id = ?', (payments_json, invoice_id))
+
+        # تحديث نقاط الولاء للعميل
+        customer_id = data.get('customer_id')
+        if customer_id:
+            points_earned = data.get('loyalty_points_earned', 0)
+            points_redeemed = data.get('loyalty_points_redeemed', 0)
+            net_points = points_earned - points_redeemed
+            if net_points != 0:
+                cursor.execute('''
+                    UPDATE customers SET loyalty_points = MAX(0, COALESCE(loyalty_points, 0) + ?)
+                    WHERE id = ?
+                ''', (net_points, customer_id))
+
         conn.commit()
         conn.close()
-        
+
         return jsonify({'success': True, 'id': invoice_id, 'invoice_number': invoice_number_with_branch})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1563,6 +1622,51 @@ def get_customer(customer_id):
             return jsonify({'success': True, 'customer': dict_from_row(row)})
         else:
             return jsonify({'success': False, 'error': 'العميل غير موجود'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customers/search', methods=['GET'])
+def search_customer():
+    """البحث عن عميل بالهاتف"""
+    try:
+        phone = request.args.get('phone', '')
+        if not phone:
+            return jsonify({'success': False, 'error': 'رقم الهاتف مطلوب'}), 400
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT *,
+                   COALESCE(loyalty_points, 0) as points,
+                   (SELECT COUNT(*) FROM invoices WHERE customer_id = customers.id) as total_orders,
+                   (SELECT SUM(total) FROM invoices WHERE customer_id = customers.id) as total_spent
+            FROM customers WHERE phone = ?
+        ''', (phone,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return jsonify({'success': True, 'customer': dict_from_row(row)})
+        else:
+            return jsonify({'success': False, 'error': 'العميل غير موجود'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customers/<int:customer_id>/points/adjust', methods=['POST'])
+def adjust_customer_points(customer_id):
+    """تعديل نقاط الولاء للعميل"""
+    try:
+        data = request.json
+        points = data.get('points', 0)
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE customers SET loyalty_points = MAX(0, COALESCE(loyalty_points, 0) + ?)
+            WHERE id = ?
+        ''', (points, customer_id))
+        conn.commit()
+        cursor.execute('SELECT COALESCE(loyalty_points, 0) as loyalty_points FROM customers WHERE id = ?', (customer_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return jsonify({'success': True, 'new_points': row['loyalty_points'] if row else 0})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
