@@ -443,6 +443,15 @@ def create_tenant_database(slug):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS salary_details (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_id INTEGER,
+            employee_name TEXT NOT NULL,
+            monthly_salary REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS system_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             action_type TEXT,
@@ -2267,13 +2276,13 @@ def get_expenses():
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         branch_id = request.args.get('branch_id')
-        
+
         conn = get_db()
         cursor = conn.cursor()
-        
+
         query = 'SELECT * FROM expenses WHERE 1=1'
         params = []
-        
+
         if start_date:
             query += ' AND date(expense_date) >= ?'
             params.append(start_date)
@@ -2283,13 +2292,22 @@ def get_expenses():
         if branch_id:
             query += ' AND branch_id = ?'
             params.append(branch_id)
-        
+
         query += ' ORDER BY expense_date DESC'
-        
+
         cursor.execute(query, params)
         expenses = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # جلب تفاصيل الرواتب لكل تكلفة نوعها رواتب
+        for exp in expenses:
+            if exp['expense_type'] == 'رواتب':
+                cursor.execute('SELECT * FROM salary_details WHERE expense_id = ? ORDER BY id', (exp['id'],))
+                exp['salary_details'] = [dict_from_row(row) for row in cursor.fetchall()]
+            else:
+                exp['salary_details'] = []
+
         conn.close()
-        
+
         return jsonify({'success': True, 'expenses': expenses})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -2302,7 +2320,7 @@ def add_expense():
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             INSERT INTO expenses (expense_type, amount, description, expense_date, branch_id, created_by)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -2314,10 +2332,20 @@ def add_expense():
             data.get('branch_id'),
             data.get('created_by')
         ))
-        
+
         expense_id = cursor.lastrowid
+
+        # حفظ تفاصيل الرواتب إذا كان النوع رواتب
+        salary_details = data.get('salary_details', [])
+        if data.get('expense_type') == 'رواتب' and salary_details:
+            for emp in salary_details:
+                cursor.execute('''
+                    INSERT INTO salary_details (expense_id, employee_name, monthly_salary)
+                    VALUES (?, ?, ?)
+                ''', (expense_id, emp.get('employee_name', ''), emp.get('monthly_salary', 0)))
+
         conn.commit()
-        
+
         return jsonify({'success': True, 'id': expense_id})
     except Exception as e:
         if conn:
@@ -2334,6 +2362,8 @@ def delete_expense(expense_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
+        # حذف تفاصيل الرواتب المرتبطة
+        cursor.execute('DELETE FROM salary_details WHERE expense_id = ?', (expense_id,))
         cursor.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
         conn.commit()
         return jsonify({'success': True})
