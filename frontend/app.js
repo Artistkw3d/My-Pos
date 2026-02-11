@@ -536,23 +536,24 @@ function displayProducts(products) {
         } else {
             imgDisplay = '<div class="product-card-icon">🛍️</div>';
         }
-        
-        // البحث عن المنتج في السلة
-        const cartItem = cart.find(item => item.id === p.id);
-        const inCart = cartItem ? cartItem.quantity : 0;
-        
+
+        // حساب الكمية الإجمالية في السلة (شاملة جميع المتغيرات)
+        const inCart = cart.filter(item => item.id === p.id).reduce((sum, item) => sum + item.quantity, 0);
+
+        const hasVariants = p.variants && p.variants.length > 0;
+        const variantBadge = hasVariants ? `<div style="font-size:11px; color:#38a169; font-weight:bold; margin-top:2px;">📐 ${p.variants.length} خاصية</div>` : '';
+
         let counterHTML = '';
         if (inCart > 0) {
-            // العداد إذا موجود في السلة
             counterHTML = `
                 <div class="product-counter">
-                    <button class="counter-btn" onclick="event.stopPropagation(); updateQuantity(${p.id}, -1)" title="تقليل">
+                    <button class="counter-btn" onclick="event.stopPropagation(); removeLastFromCart(${p.id})" title="تقليل">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
                     </button>
                     <span class="counter-value">${inCart}</span>
-                    <button class="counter-btn" onclick="event.stopPropagation(); updateQuantity(${p.id}, 1)" title="زيادة">
+                    <button class="counter-btn" onclick="event.stopPropagation(); addToCart(${p.id})" title="زيادة">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -561,24 +562,39 @@ function displayProducts(products) {
                 </div>
             `;
         } else {
-            // زر إضافة إذا مش موجود
             counterHTML = `
                 <button class="add-to-cart-btn" onclick="event.stopPropagation(); addToCart(${p.id})">
                     إضافة للسلة
                 </button>
             `;
         }
-        
+
         return `
         <div class="product-card">
             ${imgDisplay}
             <div class="product-card-name">${p.name}</div>
             <div class="product-card-price">${p.price.toFixed(3)} د.ك</div>
+            ${variantBadge}
             <div class="product-card-stock">المخزون: ${p.stock}</div>
             ${counterHTML}
         </div>
         `;
     }).join('');
+}
+
+function removeLastFromCart(productId) {
+    // إزالة آخر عنصر مضاف لهذا المنتج
+    const items = cart.filter(item => item.id === productId);
+    if (items.length > 0) {
+        const lastItem = items[items.length - 1];
+        if (lastItem.quantity > 1) {
+            lastItem.quantity--;
+        } else {
+            const idx = cart.findIndex(item => item.cartKey === lastItem.cartKey);
+            if (idx !== -1) cart.splice(idx, 1);
+        }
+        updateCart();
+    }
 }
 
 async function searchProducts() {
@@ -597,13 +613,39 @@ async function searchProducts() {
 }
 
 // Cart
-function addToCart(productId) {
+function addToCart(productId, variantId = null) {
     const product = allProducts.find(p => p.id === productId);
     if (!product || product.stock <= 0) {
         alert('المنتج غير متوفر');
         return;
     }
-    const existingItem = cart.find(item => item.id === productId);
+
+    // إذا المنتج له خصائص ولم يتم تحديد واحدة، اعرض نافذة الاختيار
+    if (product.variants && product.variants.length > 0 && !variantId) {
+        showVariantSelectModal(product);
+        return;
+    }
+
+    // تحديد السعر والاسم حسب الخاصية المختارة
+    let itemPrice = product.price;
+    let itemName = product.name;
+    let selectedVariantId = null;
+    let selectedVariantName = null;
+
+    if (variantId && product.variants) {
+        const variant = product.variants.find(v => v.id === variantId);
+        if (variant) {
+            itemPrice = variant.price;
+            itemName = `${product.name} (${variant.variant_name})`;
+            selectedVariantId = variant.id;
+            selectedVariantName = variant.variant_name;
+        }
+    }
+
+    // المفتاح الفريد: product_id + variant_id
+    const cartKey = variantId ? `${productId}_v${variantId}` : `${productId}`;
+    const existingItem = cart.find(item => item.cartKey === cartKey);
+
     if (existingItem) {
         if (existingItem.quantity < product.stock) {
             existingItem.quantity++;
@@ -614,13 +656,55 @@ function addToCart(productId) {
     } else {
         cart.push({
             id: product.id,
-            name: product.name,
-            price: product.price,
+            cartKey: cartKey,
+            name: itemName,
+            price: itemPrice,
             quantity: 1,
-            stock: product.stock
+            stock: product.stock,
+            variant_id: selectedVariantId,
+            variant_name: selectedVariantName
         });
     }
     updateCart();
+}
+
+function showVariantSelectModal(product) {
+    document.getElementById('variantSelectProductName').textContent = product.name;
+    const container = document.getElementById('variantSelectOptions');
+
+    // خيار السعر الأساسي
+    let html = `
+        <button onclick="selectVariantAndAdd(${product.id}, null)" style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px; background: white; border: 2px solid #e2e8f0; border-radius: 10px; cursor: pointer; font-size: 16px; transition: all 0.2s;"
+            onmouseover="this.style.borderColor='#667eea'; this.style.background='#f0f4ff';"
+            onmouseout="this.style.borderColor='#e2e8f0'; this.style.background='white';">
+            <span style="font-weight: bold;">الأساسي</span>
+            <span style="color: #667eea; font-weight: bold;">${product.price.toFixed(3)} د.ك</span>
+        </button>
+    `;
+
+    // خيارات المتغيرات
+    product.variants.forEach(v => {
+        html += `
+        <button onclick="selectVariantAndAdd(${product.id}, ${v.id})" style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px; background: white; border: 2px solid #c6f6d5; border-radius: 10px; cursor: pointer; font-size: 16px; transition: all 0.2s;"
+            onmouseover="this.style.borderColor='#38a169'; this.style.background='#f0fff4';"
+            onmouseout="this.style.borderColor='#c6f6d5'; this.style.background='white';">
+            <span style="font-weight: bold;">📐 ${v.variant_name}</span>
+            <span style="color: #38a169; font-weight: bold;">${v.price.toFixed(3)} د.ك</span>
+        </button>
+        `;
+    });
+
+    container.innerHTML = html;
+    document.getElementById('variantSelectModal').classList.add('active');
+}
+
+function selectVariantAndAdd(productId, variantId) {
+    closeVariantSelect();
+    addToCart(productId, variantId);
+}
+
+function closeVariantSelect() {
+    document.getElementById('variantSelectModal').classList.remove('active');
 }
 
 // مسح الباركود وإضافة المنتج تلقائياً
@@ -630,12 +714,25 @@ function onBarcodeInput(value) {
     if (!value || value.length < 3) return;
     barcodeTimeout = setTimeout(() => {
         const barcode = value.trim();
+        // بحث في المنتجات أولاً
         const product = allProducts.find(p => p.barcode && p.barcode === barcode);
         if (product) {
             addToCart(product.id);
             document.getElementById('barcodeInput').value = '';
-            // صوت تنبيه بسيط
             try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVFQAAAABmbXQgEAAAAAEAAQBBIAAAQSAAAAEACABkYXRhAAAAAA==').play(); } catch(e) {}
+            return;
+        }
+        // بحث في باركود المتغيرات
+        for (const p of allProducts) {
+            if (p.variants) {
+                const variant = p.variants.find(v => v.barcode && v.barcode === barcode);
+                if (variant) {
+                    addToCart(p.id, variant.id);
+                    document.getElementById('barcodeInput').value = '';
+                    try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVFQAAAABmbXQgEAAAAAEAAQBBIAAAQSAAAAEACABkYXRhAAAAAA==').play(); } catch(e) {}
+                    return;
+                }
+            }
         }
     }, 300);
 }
@@ -674,24 +771,34 @@ function updateCart() {
     if (cart.length === 0) {
         cartItems.innerHTML = '<div class="empty-cart"><div class="empty-cart-icon">🛒</div><p>السلة فارغة</p></div>';
     } else {
-        cartItems.innerHTML = cart.map(item => `
-            <div class="cart-item-simple">
-                <div class="cart-item-name">${item.name}</div>
-                <div class="cart-item-price">${item.price.toFixed(3)} × ${item.quantity} = ${(item.price * item.quantity).toFixed(3)} د.ك</div>
-            </div>
-        `).join('');
+        cartItems.innerHTML = cart.map(item => {
+            const key = item.cartKey || item.id;
+            return `
+            <div class="cart-item-simple" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                    <div class="cart-item-name">${item.name}</div>
+                    <div class="cart-item-price">${item.price.toFixed(3)} × ${item.quantity} = ${(item.price * item.quantity).toFixed(3)} د.ك</div>
+                </div>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                    <button onclick="updateQuantity('${key}', -1)" style="background: #e2e8f0; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-weight: bold;">-</button>
+                    <span style="min-width: 20px; text-align: center;">${item.quantity}</span>
+                    <button onclick="updateQuantity('${key}', 1)" style="background: #e2e8f0; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-weight: bold;">+</button>
+                    <button onclick="removeFromCart('${key}')" style="background: #dc3545; color: white; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-size: 12px;">✕</button>
+                </div>
+            </div>`;
+        }).join('');
     }
     updateTotals();
     // تحديث عرض المنتجات لتحديث العدادات
     displayProducts(allProducts);
 }
 
-function updateQuantity(productId, change) {
-    const item = cart.find(i => i.id === productId);
+function updateQuantity(cartKey, change) {
+    const item = cart.find(i => (i.cartKey || i.id) === cartKey);
     if (!item) return;
     const newQty = item.quantity + change;
     if (newQty <= 0) {
-        removeFromCart(productId);
+        removeFromCart(cartKey);
         return;
     }
     if (newQty > item.stock) {
@@ -702,8 +809,8 @@ function updateQuantity(productId, change) {
     updateCart();
 }
 
-function removeFromCart(productId) {
-    cart = cart.filter(item => item.id !== productId);
+function removeFromCart(cartKey) {
+    cart = cart.filter(item => (item.cartKey || item.id) !== cartKey);
     updateCart();
 }
 
@@ -963,7 +1070,9 @@ async function completeSale() {
             quantity: item.quantity,
             price: item.price,
             total: item.price * item.quantity,
-            branch_stock_id: item.id
+            branch_stock_id: item.id,
+            variant_id: item.variant_id || null,
+            variant_name: item.variant_name || null
         }))
     };
     
@@ -1324,7 +1433,19 @@ async function loadProductsTable() {
                                                 </div>
                                             </div>
                                         ` : ''}
-                                        
+
+                                        ${p.variants && p.variants.length > 0 ? `
+                                            <div style="background:#f0fff4; padding:8px; border-radius:6px; margin:8px 0; border:1px solid #c6f6d5;">
+                                                <div style="font-size:12px; color:#38a169; font-weight:bold; margin-bottom:5px;">📐 ${p.variants.length} خاصية</div>
+                                                ${p.variants.map(v => `
+                                                    <div style="display:flex; justify-content:space-between; font-size:11px; padding:2px 0; border-bottom:1px solid #e8f5e9;">
+                                                        <span>${v.variant_name}</span>
+                                                        <span style="font-weight:bold;">${v.price.toFixed(3)} د.ك</span>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        ` : ''}
+
                                         <div style="display:flex; gap:5px; justify-content:center; margin-top:10px;">
                                             <button onclick="editProduct(${p.id})" class="btn-sm" style="flex:1;">✏️ تعديل</button>
                                             <button onclick="deleteProduct(${p.id})" class="btn-sm btn-danger" style="flex:1;">🗑️</button>
@@ -2606,10 +2727,15 @@ async function displayInventory() {
             ? `<span style="background: #f8d7da; padding: 5px 10px; border-radius: 5px; font-weight: bold;">${damaged}</span>`
             : `<span style="color: #999;">0</span>`;
         
+        const hasVariants = item.variants && item.variants.length > 0;
+        const variantBadge = hasVariants
+            ? ` <button onclick="toggleInventoryVariants(${item.id})" class="btn-sm" style="background:#38a169;color:white;padding:2px 8px;font-size:11px;border-radius:6px;cursor:pointer;">📐 ${item.variants.length} خاصية</button>`
+            : '';
+
         html += `
             <tr>
                 <td style="text-align: center;">${imgDisplay}</td>
-                <td><strong>${item.name}</strong></td>
+                <td><strong>${item.name}</strong>${variantBadge}</td>
                 <td>${item.barcode || '-'}</td>
                 <td>${item.category || '-'}</td>
                 <td>${item.price.toFixed(3)} د.ك</td>
@@ -2625,10 +2751,106 @@ async function displayInventory() {
                 </td>
             </tr>
         `;
+
+        if (hasVariants) {
+            html += `
+            <tr id="invVariants_${item.id}" style="display: none;">
+                <td colspan="10" style="padding: 0;">
+                    <div style="background: #f0fff4; padding: 12px; border-radius: 8px; margin: 5px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #38a169; color: white;">
+                                    <th style="padding: 8px; border-radius: 0 6px 0 0;">الخاصية</th>
+                                    <th style="padding: 8px;">السعر</th>
+                                    <th style="padding: 8px;">التكلفة</th>
+                                    <th style="padding: 8px; border-radius: 6px 0 0 0;">الباركود</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${item.variants.map(v => `
+                                <tr style="border-bottom: 1px solid #c6f6d5;">
+                                    <td style="padding: 8px; text-align: center; font-weight: bold;">${v.variant_name}</td>
+                                    <td style="padding: 8px; text-align: center; color: #38a169; font-weight: bold;">${v.price.toFixed(3)} د.ك</td>
+                                    <td style="padding: 8px; text-align: center; color: #e53e3e;">${(v.cost || 0).toFixed(3)} د.ك</td>
+                                    <td style="padding: 8px; text-align: center; color: #666;">${v.barcode || '-'}</td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </td>
+            </tr>`;
+        }
     });
-    
+
     html += '</tbody></table>';
     container.innerHTML = html;
+}
+
+function toggleInventoryVariants(inventoryId) {
+    const row = document.getElementById('invVariants_' + inventoryId);
+    if (row) {
+        row.style.display = row.style.display === 'none' ? '' : 'none';
+    }
+}
+
+// ===== نظام خصائص/متغيرات المنتجات =====
+let variantRowCounter = 0;
+
+function addVariantRow(data = {}) {
+    variantRowCounter++;
+    const container = document.getElementById('variantsContainer');
+    const emptyMsg = document.getElementById('variantsEmptyMsg');
+    if (emptyMsg) emptyMsg.style.display = 'none';
+
+    const row = document.createElement('div');
+    row.id = `variantRow_${variantRowCounter}`;
+    row.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; background: white; padding: 10px; border-radius: 8px; border: 1px solid #c6f6d5;';
+    row.innerHTML = `
+        <input type="text" placeholder="الاسم (مثل: صغير، وسط، كبير، 500مل)" value="${data.variant_name || ''}" class="variant-name" style="padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: right;">
+        <input type="number" placeholder="السعر" step="0.001" value="${data.price || ''}" class="variant-price" style="padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: right;">
+        <input type="number" placeholder="التكلفة" step="0.001" value="${data.cost || ''}" class="variant-cost" style="padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: right;">
+        <input type="text" placeholder="باركود" value="${data.barcode || ''}" class="variant-barcode" style="padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: right;">
+        <button type="button" onclick="removeVariantRow('variantRow_${variantRowCounter}')" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer;">🗑️</button>
+    `;
+    container.appendChild(row);
+}
+
+function removeVariantRow(rowId) {
+    document.getElementById(rowId)?.remove();
+    const container = document.getElementById('variantsContainer');
+    const emptyMsg = document.getElementById('variantsEmptyMsg');
+    if (container.children.length === 0 && emptyMsg) {
+        emptyMsg.style.display = 'block';
+    }
+}
+
+function getVariantsData() {
+    const rows = document.querySelectorAll('#variantsContainer > div');
+    const variants = [];
+    rows.forEach(row => {
+        const name = row.querySelector('.variant-name')?.value?.trim();
+        const price = parseFloat(row.querySelector('.variant-price')?.value) || 0;
+        const cost = parseFloat(row.querySelector('.variant-cost')?.value) || 0;
+        const barcode = row.querySelector('.variant-barcode')?.value?.trim() || '';
+        if (name) {
+            variants.push({ variant_name: name, price, cost, barcode });
+        }
+    });
+    return variants;
+}
+
+function loadVariantsToForm(variants) {
+    const container = document.getElementById('variantsContainer');
+    const emptyMsg = document.getElementById('variantsEmptyMsg');
+    container.innerHTML = '';
+    variantRowCounter = 0;
+
+    if (variants && variants.length > 0) {
+        if (emptyMsg) emptyMsg.style.display = 'none';
+        variants.forEach(v => addVariantRow(v));
+    } else {
+        if (emptyMsg) emptyMsg.style.display = 'block';
+    }
 }
 
 function showAddInventory() {
@@ -2638,10 +2860,13 @@ function showAddInventory() {
     document.getElementById('inventoryId').value = '';
     document.getElementById('inventoryImageData').value = '';
     document.getElementById('inventoryImagePreview').style.display = 'none';
-    
+
     // تهيئة نظام التكاليف
     initializeInventoryCosts();
-    
+
+    // تهيئة المتغيرات
+    loadVariantsToForm([]);
+
     document.getElementById('addInventoryModal').classList.add('active');
 }
 
@@ -2694,22 +2919,35 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e) =>
         const data = await response.json();
         
         if (data.success) {
+            // حفظ المتغيرات
+            const savedId = data.id || inventoryId;
+            const variants = getVariantsData();
+            try {
+                await fetch(`${API_URL}/api/inventory/${savedId}/variants`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ variants })
+                });
+            } catch (e) {
+                console.error('خطأ حفظ المتغيرات:', e);
+            }
+
             // تسجيل في السجل
             try {
                 const action = inventoryId ? 'edit_inventory' : 'add_inventory';
                 const description = inventoryId ? `تعديل منتج: ${inventoryData.name}` : `إضافة منتج: ${inventoryData.name}`;
-                await logAction(action, description, data.id || inventoryId);
+                await logAction(action, description, savedId);
             } catch (e) {
                 // تجاهل خطأ السجل
             }
-            
+
             // رسالة نجاح
             if (typeof showSuccess === 'function') {
                 showSuccess('✅ تم حفظ المنتج بنجاح');
             } else {
                 alert('✅ تم الحفظ');
             }
-            
+
             closeAddInventory();
             await loadInventory();
         } else {
@@ -2780,7 +3018,10 @@ async function editInventory(id) {
     } else {
         document.getElementById('inventoryImagePreview').style.display = 'none';
     }
-    
+
+    // تحميل المتغيرات
+    loadVariantsToForm(item.variants || []);
+
     document.getElementById('addInventoryModal').classList.add('active');
 }
 
