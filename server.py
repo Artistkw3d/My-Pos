@@ -3345,24 +3345,54 @@ def delete_subscription_invoice(invoice_id):
 
 @app.route('/api/super-admin/change-password', methods=['POST'])
 def super_admin_change_password():
-    """تغيير كلمة مرور المدير الأعلى"""
+    """تغيير اسم المستخدم وكلمة مرور المدير الأعلى"""
     try:
         data = request.json
         admin_id = data.get('admin_id')
         old_password = data.get('old_password', '')
         new_password = data.get('new_password', '')
+        new_username = data.get('new_username', '').strip()
+        new_full_name = data.get('new_full_name', '').strip()
         conn = get_master_db()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM super_admins WHERE id = ? AND password = ?',
                        (admin_id, hash_password(old_password)))
-        if not cursor.fetchone():
+        admin = cursor.fetchone()
+        if not admin:
             conn.close()
             return jsonify({'success': False, 'error': 'كلمة المرور القديمة غير صحيحة'}), 400
-        cursor.execute('UPDATE super_admins SET password = ? WHERE id = ?',
-                       (hash_password(new_password), admin_id))
+
+        # تحديث كلمة المرور
+        if new_password:
+            cursor.execute('UPDATE super_admins SET password = ? WHERE id = ?',
+                           (hash_password(new_password), admin_id))
+
+        # تحديث اسم المستخدم
+        if new_username and new_username != admin['username']:
+            cursor.execute('SELECT id FROM super_admins WHERE username = ? AND id != ?', (new_username, admin_id))
+            if cursor.fetchone():
+                conn.close()
+                return jsonify({'success': False, 'error': 'اسم المستخدم مستخدم بالفعل'}), 400
+            cursor.execute('UPDATE super_admins SET username = ? WHERE id = ?', (new_username, admin_id))
+
+        # تحديث الاسم الكامل
+        if new_full_name:
+            cursor.execute('UPDATE super_admins SET full_name = ? WHERE id = ?', (new_full_name, admin_id))
+
         conn.commit()
+        # إرجاع البيانات المحدّثة
+        cursor.execute('SELECT id, username, full_name FROM super_admins WHERE id = ?', (admin_id,))
+        updated = cursor.fetchone()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'admin': {
+                'id': updated['id'],
+                'username': updated['username'],
+                'full_name': updated['full_name'],
+                'role': 'super_admin'
+            }
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
