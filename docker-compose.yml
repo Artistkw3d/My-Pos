@@ -6,7 +6,7 @@ services:
     container_name: pos-system
     restart: unless-stopped
     ports:
-      - "8080:5000"
+      - "80:5000"
     volumes:
       - ./database:/app/database
     environment:
