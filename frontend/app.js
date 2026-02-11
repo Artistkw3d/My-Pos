@@ -3577,22 +3577,22 @@ async function loadExpenses() {
 
 function displayExpenses(expenses) {
     const container = document.getElementById('expensesContainer');
-    
+
     if (expenses.length === 0) {
         container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">لا توجد تكاليف</div>';
         return;
     }
-    
+
     // حساب الإجمالي
     const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-    
+
     let html = `
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
             <h3 style="margin: 0 0 10px 0;">📊 إجمالي التكاليف</h3>
             <div style="font-size: 32px; font-weight: bold;">${total.toFixed(3)} د.ك</div>
             <div style="opacity: 0.9; margin-top: 5px;">${expenses.length} تكلفة</div>
         </div>
-        
+
         <table class="data-table">
             <thead>
                 <tr>
@@ -3605,29 +3605,139 @@ function displayExpenses(expenses) {
                 </tr>
             </thead>
             <tbody>
-                ${expenses.map(e => `
+                ${expenses.map(e => {
+                    const hasSalary = e.expense_type === 'رواتب' && e.salary_details && e.salary_details.length > 0;
+                    let row = `
                     <tr>
                         <td>${new Date(e.expense_date).toLocaleDateString('ar')}</td>
-                        <td><strong>${e.expense_type}</strong></td>
+                        <td><strong>${e.expense_type}</strong>${hasSalary ? ` <button onclick="toggleSalaryExpand(${e.id})" class="btn-sm" style="background:#667eea;color:white;padding:2px 8px;font-size:11px;border-radius:6px;cursor:pointer;">👥 ${e.salary_details.length} موظف</button>` : ''}</td>
                         <td style="color: #dc3545; font-weight: bold;">${e.amount.toFixed(3)} د.ك</td>
                         <td>${e.description || '-'}</td>
                         <td>${e.branch_id || 'عام'}</td>
                         <td>
                             <button onclick="deleteExpense(${e.id})" class="btn-sm btn-danger">🗑️</button>
                         </td>
-                    </tr>
-                `).join('')}
+                    </tr>`;
+                    if (hasSalary) {
+                        row += `
+                    <tr id="salaryExpand_${e.id}" style="display: none;">
+                        <td colspan="6" style="padding: 0;">
+                            <div style="background: #f0f4ff; padding: 12px; border-radius: 8px; margin: 5px;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="background: #667eea; color: white;">
+                                            <th style="padding: 8px; border-radius: 0 6px 0 0;">اسم الموظف</th>
+                                            <th style="padding: 8px; border-radius: 6px 0 0 0;">الراتب الشهري</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${e.salary_details.map(s => `
+                                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                                            <td style="padding: 8px; text-align: center;">${s.employee_name}</td>
+                                            <td style="padding: 8px; text-align: center; color: #dc3545; font-weight: bold;">${s.monthly_salary.toFixed(3)} د.ك</td>
+                                        </tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>`;
+                    }
+                    return row;
+                }).join('')}
             </tbody>
         </table>
     `;
-    
+
     container.innerHTML = html;
+}
+
+function toggleSalaryExpand(expenseId) {
+    const row = document.getElementById('salaryExpand_' + expenseId);
+    if (row) {
+        row.style.display = row.style.display === 'none' ? '' : 'none';
+    }
+}
+
+// ===== نظام تفاصيل الرواتب =====
+let salaryRowCounter = 0;
+
+function toggleSalaryDetails() {
+    const type = document.getElementById('expenseType').value;
+    const section = document.getElementById('salaryDetailsSection');
+    const amountInput = document.getElementById('expenseAmount');
+
+    if (type === 'رواتب') {
+        section.style.display = 'block';
+        amountInput.readOnly = true;
+        amountInput.style.background = '#e9ecef';
+        // إضافة صف أول تلقائياً إذا فارغ
+        if (document.getElementById('salaryRowsContainer').children.length === 0) {
+            addSalaryRow();
+        }
+    } else {
+        section.style.display = 'none';
+        amountInput.readOnly = false;
+        amountInput.style.background = '';
+    }
+}
+
+function addSalaryRow() {
+    salaryRowCounter++;
+    const container = document.getElementById('salaryRowsContainer');
+    const row = document.createElement('div');
+    row.id = `salaryRow_${salaryRowCounter}`;
+    row.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-bottom: 8px; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;';
+    row.innerHTML = `
+        <div style="flex: 1;">
+            <input type="text" placeholder="اسم الموظف" class="salary-emp-name" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: right;">
+        </div>
+        <div style="flex: 1;">
+            <input type="number" placeholder="الراتب الشهري" step="0.001" class="salary-emp-amount" oninput="calcSalaryTotal()" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: right;">
+        </div>
+        <button type="button" onclick="removeSalaryRow('salaryRow_${salaryRowCounter}')" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer;">🗑️</button>
+    `;
+    container.appendChild(row);
+}
+
+function removeSalaryRow(rowId) {
+    document.getElementById(rowId)?.remove();
+    calcSalaryTotal();
+}
+
+function calcSalaryTotal() {
+    const amounts = document.querySelectorAll('#salaryRowsContainer .salary-emp-amount');
+    let total = 0;
+    amounts.forEach(inp => {
+        total += parseFloat(inp.value) || 0;
+    });
+    document.getElementById('salaryTotalDisplay').textContent = total.toFixed(3) + ' د.ك';
+    document.getElementById('expenseAmount').value = total.toFixed(3);
+}
+
+function getSalaryDetails() {
+    const rows = document.querySelectorAll('#salaryRowsContainer > div');
+    const details = [];
+    rows.forEach(row => {
+        const name = row.querySelector('.salary-emp-name')?.value?.trim();
+        const salary = parseFloat(row.querySelector('.salary-emp-amount')?.value) || 0;
+        if (name && salary > 0) {
+            details.push({ employee_name: name, monthly_salary: salary });
+        }
+    });
+    return details;
 }
 
 function showAddExpense() {
     document.getElementById('expenseModalTitle').textContent = '➕ إضافة تكلفة';
     document.getElementById('expenseForm').reset();
     document.getElementById('expenseDate').valueAsDate = new Date();
+    // إعادة تعيين قسم الرواتب
+    document.getElementById('salaryDetailsSection').style.display = 'none';
+    document.getElementById('salaryRowsContainer').innerHTML = '';
+    document.getElementById('salaryTotalDisplay').textContent = '0.000 د.ك';
+    document.getElementById('expenseAmount').readOnly = false;
+    document.getElementById('expenseAmount').style.background = '';
+    salaryRowCounter = 0;
     loadBranchesForExpense();
     document.getElementById('addExpenseModal').classList.add('active');
 }
@@ -3666,23 +3776,34 @@ async function loadBranchesForExpenseFilter() {
 
 document.getElementById('expenseForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
+    const expenseType = document.getElementById('expenseType').value;
     const expenseData = {
-        expense_type: document.getElementById('expenseType').value,
+        expense_type: expenseType,
         amount: parseFloat(document.getElementById('expenseAmount').value),
         description: document.getElementById('expenseDescription').value,
         expense_date: document.getElementById('expenseDate').value,
         branch_id: parseInt(document.getElementById('expenseBranch').value) || null,
         created_by: currentUser.id
     };
-    
+
+    // إضافة تفاصيل الرواتب إذا كان النوع رواتب
+    if (expenseType === 'رواتب') {
+        const salaryDetails = getSalaryDetails();
+        if (salaryDetails.length === 0) {
+            alert('يرجى إضافة موظف واحد على الأقل مع الراتب');
+            return;
+        }
+        expenseData.salary_details = salaryDetails;
+    }
+
     try {
         const response = await fetch(`${API_URL}/api/expenses`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(expenseData)
         });
-        
+
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحفظ');

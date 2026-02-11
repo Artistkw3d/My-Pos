@@ -1433,7 +1433,7 @@
                 <form id="expenseForm">
                     <div class="form-group">
                         <label>نوع التكلفة:</label>
-                        <select id="expenseType" required>
+                        <select id="expenseType" required onchange="toggleSalaryDetails()">
                             <option value="">اختر النوع</option>
                             <option value="إيجار">🏢 إيجار المحل</option>
                             <option value="رواتب">💰 رواتب الموظفين</option>
@@ -1447,7 +1447,23 @@
                             <option value="أخرى">🔧 أخرى</option>
                         </select>
                     </div>
-                    <div class="form-group">
+
+                    <!-- قسم تفاصيل الرواتب -->
+                    <div id="salaryDetailsSection" style="display: none; background: #f8f9ff; border: 2px solid #667eea; border-radius: 12px; padding: 15px; margin: 10px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h4 style="color: #667eea; margin: 0;">👥 تفاصيل رواتب الموظفين</h4>
+                            <button type="button" onclick="addSalaryRow()" class="btn" style="background: #38a169; padding: 6px 14px; font-size: 13px;">➕ إضافة موظف</button>
+                        </div>
+                        <div id="salaryRowsContainer">
+                            <!-- صفوف الموظفين تضاف هنا -->
+                        </div>
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 8px; margin-top: 10px; text-align: center;">
+                            <span>إجمالي الرواتب: </span>
+                            <span id="salaryTotalDisplay" style="font-size: 22px; font-weight: bold;">0.000 د.ك</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="expenseAmountGroup">
                         <label>المبلغ (د.ك):</label>
                         <input type="number" id="expenseAmount" step="0.001" required>
                     </div>

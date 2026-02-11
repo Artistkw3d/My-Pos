@@ -2,8 +2,8 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v13';
-const STATIC_CACHE = 'pos-static-v13';
+const CACHE_NAME = 'pos-cache-v14';
+const STATIC_CACHE = 'pos-static-v14';
 
 // الملفات الأساسية
 const STATIC_ASSETS = [
