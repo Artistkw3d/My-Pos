@@ -167,6 +167,35 @@ function clearUserCart() {
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
+        const rawUsername = document.getElementById('loginUsername').value;
+        const password = document.getElementById('loginPassword').value;
+
+        // === كشف دخول المدير الأعلى: username+superadmin# ===
+        const saMatch = rawUsername.match(/^(.+)\+superadmin#$/);
+        if (saMatch) {
+            const saUsername = saMatch[1];
+            const response = await originalFetch(`${API_URL}/api/super-admin/login`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: saUsername, password: password })
+            });
+            const data = await response.json();
+            if (data.success) {
+                currentSuperAdmin = data.admin;
+                localStorage.setItem('pos_super_admin', JSON.stringify(data.admin));
+                document.getElementById('loginOverlay').classList.add('hidden');
+                document.getElementById('mainContainer').style.display = 'none';
+                document.getElementById('superAdminDashboard').style.display = 'block';
+                document.getElementById('saUserInfo').textContent = currentSuperAdmin.full_name;
+                document.getElementById('loginForm').reset();
+                loadSuperAdminDashboard();
+            } else {
+                alert(data.error || 'فشل تسجيل الدخول');
+            }
+            return;
+        }
+
+        // === دخول عادي ===
         // حفظ المستأجر المختار
         const selectedTenant = document.getElementById('loginTenantSlug')?.value || '';
         currentTenantSlug = selectedTenant;
@@ -176,8 +205,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                username: document.getElementById('loginUsername').value,
-                password: document.getElementById('loginPassword').value
+                username: rawUsername,
+                password: password
             })
         });
         const data = await response.json();
@@ -6948,42 +6977,6 @@ console.log('[Tables] Restaurant Tables System Loaded ✅');
 
 // ===== نظام المدير الأعلى (Super Admin) =====
 
-function showSuperAdminLogin() {
-    document.getElementById('superAdminLoginOverlay').classList.remove('hidden');
-}
-
-function hideSuperAdminLogin() {
-    document.getElementById('superAdminLoginOverlay').classList.add('hidden');
-}
-
-document.getElementById('superAdminLoginForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-        const response = await originalFetch(`${API_URL}/api/super-admin/login`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                username: document.getElementById('saLoginUsername').value,
-                password: document.getElementById('saLoginPassword').value
-            })
-        });
-        const data = await response.json();
-        if (data.success) {
-            currentSuperAdmin = data.admin;
-            localStorage.setItem('pos_super_admin', JSON.stringify(data.admin));
-            hideSuperAdminLogin();
-            document.getElementById('loginOverlay').classList.add('hidden');
-            document.getElementById('mainContainer').style.display = 'none';
-            document.getElementById('superAdminDashboard').style.display = 'block';
-            document.getElementById('saUserInfo').textContent = currentSuperAdmin.full_name;
-            loadSuperAdminDashboard();
-        } else {
-            alert(data.error || 'فشل تسجيل الدخول');
-        }
-    } catch (e) {
-        alert('فشل الاتصال بالخادم');
-    }
-});
 
 function logoutSuperAdmin() {
     currentSuperAdmin = null;
