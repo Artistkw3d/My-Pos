@@ -5,15 +5,15 @@ services:
     build: .
     container_name: pos-system
     restart: unless-stopped
-    ports:
-      - "80:5000"
+    expose:
+      - "5000"
     volumes:
       - ./database:/app/database
     environment:
       - TZ=Asia/Kuwait
     networks:
-      - pos-network
+      - nginx-proxy
 
 networks:
-  pos-network:
-    driver: bridge
+  nginx-proxy:
+    external: true
