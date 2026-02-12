@@ -1,4 +1,8 @@
 const API_URL = window.location.origin;
+// حماية من عدم تحميل localDB في وضع أوفلاين
+if (typeof localDB === 'undefined') {
+    window.localDB = { isReady: false, init: async()=>{}, save:async()=>{}, saveAll:async()=>{}, getAll:async()=>[], get:async()=>null, add:async()=>{}, delete:async()=>{} };
+}
 let currentUser = null;
 let cart = [];
 let allProducts = [];
@@ -95,6 +99,9 @@ async function initializeUI() {
     // إخفاء شاشة Login وإظهار النظام
     document.getElementById('loginOverlay').classList.add('hidden');
     document.getElementById('mainContainer').style.display = 'block';
+
+    // تحديث حالة زر الخروج
+    updateLogoutButton();
     
     // عرض اسم المستخدم
     const branchText = currentUser.branch_name ? ` - ${currentUser.branch_name}` : '';
@@ -349,6 +356,26 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         alert('فشل الاتصال');
     }
 });
+
+// === حماية زر الخروج من الأوفلاين ===
+function updateLogoutButton() {
+    const btn = document.getElementById('logoutBtn');
+    if (!btn) return;
+    if (navigator.onLine) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.title = '';
+    } else {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'not-allowed';
+        btn.title = 'لا يمكن تسجيل الخروج بدون اتصال';
+    }
+}
+window.addEventListener('online', updateLogoutButton);
+window.addEventListener('offline', updateLogoutButton);
+setInterval(updateLogoutButton, 2000);
 
 async function logout() {
     // منع تسجيل الخروج في وضع offline

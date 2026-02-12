@@ -1648,7 +1648,15 @@
     // ========================================
     // PWA Initialization
     // ========================================
-    
+
+    // حماية من عدم تحميل الملفات الخارجية
+    if (typeof localDB === 'undefined') {
+        window.localDB = { isReady: false, init: async()=>{}, save:async()=>{}, saveAll:async()=>{}, getAll:async()=>[], get:async()=>null, add:async()=>{}, delete:async()=>{} };
+    }
+    if (typeof syncManager === 'undefined') {
+        window.syncManager = { sync:async()=>{}, start:()=>{}, showStatus:()=>{} };
+    }
+
     // تسجيل Service Worker
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
@@ -1694,46 +1702,23 @@
                 syncManager.start(5); // كل 5 دقائق
             }
             
-            // تحديث حالة زر الخروج حسب الاتصال
-            updateLogoutBtnState();
-            
+
         } catch (error) {
             console.error('[PWA] Initialization error:', error);
         }
     });
-    
-    // مراقبة حالة الاتصال
-    function updateLogoutBtnState() {
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (!logoutBtn) return;
-        if (navigator.onLine) {
-            logoutBtn.disabled = false;
-            logoutBtn.style.opacity = '1';
-            logoutBtn.style.cursor = 'pointer';
-            logoutBtn.title = '';
-        } else {
-            logoutBtn.disabled = true;
-            logoutBtn.style.opacity = '0.5';
-            logoutBtn.style.cursor = 'not-allowed';
-            logoutBtn.title = 'لا يمكن تسجيل الخروج في وضع offline';
-        }
-    }
 
+    // مراقبة حالة الاتصال
     window.addEventListener('online', () => {
         console.log('[PWA] Online ✅');
-        updateLogoutBtnState();
-        try { syncManager.showStatus('🌐 متصل - جاري المزامنة...', 'info'); } catch(e) {}
-        try { setTimeout(() => syncManager.sync(), 1000); } catch(e) {}
+        syncManager.showStatus('🌐 متصل - جاري المزامنة...', 'info');
+        setTimeout(() => syncManager.sync(), 1000);
     });
 
     window.addEventListener('offline', () => {
         console.log('[PWA] Offline 📴');
-        updateLogoutBtnState();
-        try { syncManager.showStatus('📴 غير متصل - الوضع المحلي', 'info'); } catch(e) {}
+        syncManager.showStatus('📴 غير متصل - الوضع المحلي', 'info');
     });
-
-    // فحص دوري لحالة الاتصال كل 3 ثواني
-    setInterval(updateLogoutBtnState, 3000);
     </script>
     
     <!-- Variant Selection Modal for POS -->
