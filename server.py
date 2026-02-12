@@ -881,6 +881,76 @@ def delete_user(user_id):
 def index():
     return send_from_directory('frontend', 'index.html')
 
+@app.route('/sw.js')
+def service_worker():
+    """SW يجب أن لا يُخزّن مؤقتاً أبداً"""
+    response = send_from_directory('frontend', 'sw.js')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+@app.route('/clear-cache')
+def clear_cache_page():
+    """صفحة لمسح كاش المتصفح و Service Worker"""
+    return '''<!DOCTYPE html>
+<html dir="rtl">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مسح الكاش</title>
+<style>
+body{font-family:Arial;background:#1a1a2e;color:white;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
+.box{background:#16213e;padding:40px;border-radius:16px;text-align:center;max-width:500px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.5);}
+h1{color:#667eea;margin-bottom:20px;}
+p{color:#aaa;margin-bottom:20px;line-height:1.8;}
+.btn{padding:15px 40px;border:none;border-radius:10px;font-size:18px;font-weight:bold;cursor:pointer;margin:10px;display:inline-block;}
+.btn-clear{background:#e74c3c;color:white;}
+.btn-clear:hover{background:#c0392b;}
+.btn-home{background:#28a745;color:white;}
+.btn-home:hover{background:#218838;}
+#status{margin-top:20px;padding:15px;border-radius:8px;display:none;font-size:14px;line-height:1.6;}
+.success{background:#d4edda;color:#155724;display:block!important;}
+.error{background:#f8d7da;color:#721c24;display:block!important;}
+</style></head>
+<body>
+<div class="box">
+<h1>🔄 مسح الكاش وتحديث النظام</h1>
+<p>هذه الصفحة تمسح جميع ملفات الكاش القديمة وتحدّث النظام لآخر إصدار.</p>
+<button class="btn btn-clear" onclick="clearAll()">🗑️ مسح الكاش وتحديث</button>
+<div id="status"></div>
+</div>
+<script>
+async function clearAll() {
+    const status = document.getElementById('status');
+    status.className = '';
+    status.style.display = 'block';
+    status.textContent = '⏳ جاري المسح...';
+    try {
+        // 1. إلغاء تسجيل جميع Service Workers
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) { await reg.unregister(); }
+        status.textContent += '\\n✅ تم إلغاء Service Workers (' + regs.length + ')';
+        // 2. حذف جميع الكاشات
+        const keys = await caches.keys();
+        for (const key of keys) { await caches.delete(key); }
+        status.textContent += '\\n✅ تم حذف الكاشات (' + keys.length + ')';
+        // 3. مسح localStorage
+        const tenant = localStorage.getItem('pos_tenant_slug');
+        const viewMode = localStorage.getItem('pos_view_mode');
+        localStorage.clear();
+        if (tenant) localStorage.setItem('pos_tenant_slug', tenant);
+        if (viewMode) localStorage.setItem('pos_view_mode', viewMode);
+        status.textContent += '\\n✅ تم مسح البيانات المؤقتة';
+        status.className = 'success';
+        status.textContent += '\\n\\n🎉 تم التحديث! سيتم إعادة التوجيه...';
+        setTimeout(() => { window.location.href = '/'; }, 2000);
+    } catch (err) {
+        status.className = 'error';
+        status.textContent = '❌ خطأ: ' + err.message;
+    }
+}
+</script>
+</body></html>'''
+
 @app.route('/<path:path>')
 def static_files(path):
     return send_from_directory('frontend', path)
