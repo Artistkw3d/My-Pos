@@ -616,16 +616,7 @@ def login():
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT u.id, u.username, u.full_name, u.role, u.invoice_prefix, u.is_active, u.branch_id,
-                   u.can_view_products, u.can_add_products, u.can_edit_products, u.can_delete_products,
-                   u.can_view_inventory, u.can_add_inventory, u.can_edit_inventory, u.can_delete_inventory,
-                   u.can_view_invoices, u.can_delete_invoices,
-                   u.can_view_customers, u.can_add_customer, u.can_edit_customer, u.can_delete_customer,
-                   u.can_view_reports, u.can_view_accounting, u.can_manage_users, u.can_access_settings,
-                   u.can_view_returns, u.can_view_expenses, u.can_view_suppliers, u.can_view_coupons,
-                   u.can_view_tables, u.can_view_attendance, u.can_view_advanced_reports,
-                   u.can_view_system_logs, u.can_view_dcf, u.can_cancel_invoices, u.can_view_branches,
-                   b.name as branch_name
+            SELECT u.*, b.name as branch_name
             FROM users u
             LEFT JOIN branches b ON u.branch_id = b.id
             WHERE u.username = ? AND u.password = ? AND u.is_active = 1
@@ -636,6 +627,7 @@ def login():
 
         if user:
             user_data = dict_from_row(user)
+            user_data.pop('password', None)
             return jsonify({'success': True, 'user': user_data})
         else:
             return jsonify({'success': False, 'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
@@ -648,17 +640,10 @@ def get_users():
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('''SELECT id, username, full_name, role, invoice_prefix, branch_id, is_active, created_at,
-                         can_view_products, can_add_products, can_edit_products, can_delete_products,
-                         can_view_inventory, can_add_inventory, can_edit_inventory, can_delete_inventory,
-                         can_view_invoices, can_delete_invoices,
-                         can_view_customers, can_add_customer, can_edit_customer, can_delete_customer,
-                         can_view_reports, can_view_accounting, can_manage_users, can_access_settings,
-                         can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
-                         can_view_tables, can_view_attendance, can_view_advanced_reports,
-                         can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches
-                         FROM users ORDER BY created_at DESC''')
+        cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
         users = [dict_from_row(row) for row in cursor.fetchall()]
+        for u in users:
+            u.pop('password', None)
         conn.close()
         return jsonify({'success': True, 'users': users})
     except Exception as e:
