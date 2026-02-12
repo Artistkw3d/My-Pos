@@ -459,6 +459,7 @@
                             <option value="قيد التنفيذ">⏳ قيد التنفيذ</option>
                             <option value="قيد التوصيل">🚚 قيد التوصيل</option>
                             <option value="منجز">✅ منجز</option>
+                            <option value="ملغية">🚫 ملغية</option>
                         </select>
                         <button class="btn" onclick="exportInvoicesExcel()">📊 تصدير Excel</button>
                         <button class="btn-danger" onclick="clearAllInvoices()" id="clearInvoicesBtn" style="display: none;">🗑️ حذف الكل</button>
@@ -1451,6 +1452,45 @@
     </div>
 
     <!-- Invoice View Modal -->
+    <!-- Cancel Invoice Modal -->
+    <div class="modal" id="cancelInvoiceModal">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header" style="background: #dc3545;">
+                <h2>🚫 إلغاء الفاتورة</h2>
+                <button class="close-btn" onclick="closeCancelInvoiceModal()">✖️</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <input type="hidden" id="cancelInvoiceId">
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 8px;">سبب الإلغاء:</label>
+                    <select id="cancelReasonSelect" onchange="toggleCustomReason()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
+                        <option value="">-- اختر السبب --</option>
+                        <option value="فاتورة مكررة">فاتورة مكررة</option>
+                        <option value="فاتورة ملغية">فاتورة ملغية</option>
+                        <option value="خطأ في البيانات">خطأ في البيانات</option>
+                        <option value="خطأ في المنتجات">خطأ في المنتجات</option>
+                        <option value="خطأ في السعر">خطأ في السعر</option>
+                        <option value="طلب العميل">طلب العميل</option>
+                        <option value="custom">سبب آخر...</option>
+                    </select>
+                </div>
+                <div id="customReasonDiv" style="margin-bottom: 15px; display: none;">
+                    <input type="text" id="customReasonInput" placeholder="اكتب السبب..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 20px; background: #fff3cd; padding: 12px; border-radius: 8px; border: 1px solid #ffc107;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+                        <input type="checkbox" id="returnStockCheckbox" checked style="width: 18px; height: 18px;">
+                        <span>إرجاع المنتجات إلى المخزون (نفس الفرع)</span>
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="confirmCancelInvoice()" style="flex: 1; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold;">🚫 تأكيد الإلغاء</button>
+                    <button onclick="closeCancelInvoiceModal()" style="flex: 1; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer;">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="invoiceViewModal">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
@@ -1458,6 +1498,7 @@
                 <div style="display: flex; gap: 10px;">
                     <button onclick="printInvoiceFromView()" class="btn">🖨️ طباعة</button>
                     <button onclick="printThermalInvoice()" class="btn" style="background: #e67e22; font-size: 12px;">🧾 57×40</button>
+                    <button onclick="showCancelInvoiceModal()" class="btn" id="cancelInvoiceBtn" style="background: #dc3545; font-size: 12px;">🚫 إلغاء</button>
                     <button class="close-btn" onclick="closeInvoiceView()">✖️</button>
                 </div>
             </div>
