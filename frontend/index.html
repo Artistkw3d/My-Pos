@@ -246,7 +246,7 @@
             </div>
             <div class="header-right">
                 <span class="user-info" id="userInfo"></span>
-                <button class="logout-btn" id="logoutBtn" onclick="logout()">خروج</button>
+                <button class="logout-btn" id="logoutBtn" onclick="if(!navigator.onLine){return false;}logout()">خروج</button>
             </div>
         </div>
 

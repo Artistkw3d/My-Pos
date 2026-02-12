@@ -187,6 +187,16 @@ body {
     border: none;
     color: white;
     font-size: 14px;
+    transition: opacity 0.3s, background 0.3s;
+}
+
+.logout-btn.offline-locked {
+    opacity: 0.3 !important;
+    pointer-events: none !important;
+    cursor: not-allowed !important;
+    background: rgba(150, 150, 150, 0.5) !important;
+    text-decoration: line-through;
+    user-select: none;
 }
 
 .tab-content {
