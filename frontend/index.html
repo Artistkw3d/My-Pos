@@ -246,7 +246,7 @@
             </div>
             <div class="header-right">
                 <span class="user-info" id="userInfo"></span>
-                <button class="logout-btn" id="logoutBtn" onclick="if(!navigator.onLine){return false;}logout()">خروج</button>
+                <button class="logout-btn" id="logoutBtn" onclick="if(!navigator.onLine || typeof _htmlOnlineStatus!=='undefined'&&!_htmlOnlineStatus || typeof _realOnlineStatus!=='undefined'&&!_realOnlineStatus){return false;}logout()">خروج</button>
             </div>
         </div>
 
@@ -1743,6 +1743,8 @@
     });
 
     // === حماية زر الخروج مباشرة في HTML (تعمل حتى لو app.js قديم) ===
+    let _htmlOnlineStatus = navigator.onLine;
+
     function _lockLogout(lock) {
         const btn = document.getElementById('logoutBtn');
         if (!btn) return;
@@ -1767,16 +1769,29 @@
         }
     }
 
-    // فحص دوري كل ثانية
-    setInterval(() => { _lockLogout(!navigator.onLine); }, 1000);
+    // فحص الاتصال الحقيقي بالسيرفر (navigator.onLine غير موثوق)
+    async function _checkReal() {
+        try {
+            const c = new AbortController();
+            const t = setTimeout(() => c.abort(), 3000);
+            const r = await fetch('/api/settings', { method: 'GET', cache: 'no-store', signal: c.signal });
+            clearTimeout(t);
+            _htmlOnlineStatus = r.ok;
+        } catch(e) {
+            _htmlOnlineStatus = false;
+        }
+        _lockLogout(!_htmlOnlineStatus);
+    }
+
+    // فحص دوري كل 5 ثواني بالـ ping الحقيقي
+    setInterval(_checkReal, 5000);
     // فحص فوري عند تحميل الصفحة
-    document.addEventListener('DOMContentLoaded', () => { _lockLogout(!navigator.onLine); });
-    // فحص إضافي بعد ثانية
-    setTimeout(() => { _lockLogout(!navigator.onLine); }, 500);
+    document.addEventListener('DOMContentLoaded', _checkReal);
+    setTimeout(_checkReal, 1000);
 
     // اعتراض أي نقرة على زر الخروج في وضع أوفلاين
     document.addEventListener('click', function(e) {
-        if (!navigator.onLine) {
+        if (!_htmlOnlineStatus || !navigator.onLine) {
             const btn = e.target.closest('#logoutBtn, .logout-btn');
             if (btn) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return false; }
         }
