@@ -2,8 +2,8 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v22';
-const STATIC_CACHE = 'pos-static-v22';
+const CACHE_NAME = 'pos-cache-v23';
+const STATIC_CACHE = 'pos-static-v23';
 
 // الملفات الأساسية
 const STATIC_ASSETS = [
@@ -11,7 +11,10 @@ const STATIC_ASSETS = [
     '/index.html',
     '/app.js',
     '/style.css',
-    '/products-search.js'
+    '/products-search.js',
+    '/localdb.js',
+    '/sync-manager.js',
+    '/manifest.json'
 ];
 
 // التثبيت
