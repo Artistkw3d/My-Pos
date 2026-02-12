@@ -276,12 +276,18 @@
                     <!-- معلومات العميل -->
                     <div class="customer-section">
                         <h3>👤 معلومات العميل</h3>
-                        
-                        <select id="customerSelect" onchange="selectCustomer()" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; margin-bottom: 10px;">
-                            <option value="">-- اختر عميل أو أضف جديد --</option>
-                            <option value="new" style="font-weight: bold; color: #667eea;">➕ عميل جديد</option>
-                        </select>
-                        
+
+                        <div style="position: relative;">
+                            <input type="text" id="customerSearchInput" placeholder="🔍 ابحث بالاسم أو رقم الهاتف..."
+                                autocomplete="off"
+                                style="width: 100%; padding: 10px 40px 10px 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; margin-bottom: 0;"
+                                oninput="searchCustomerInPOS(this.value)"
+                                onfocus="searchCustomerInPOS(this.value)">
+                            <button onclick="showAddCustomerFromPOS()" title="إضافة عميل جديد"
+                                style="position: absolute; left: 6px; top: 6px; background: #28a745; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;">+</button>
+                            <div id="customerSearchResults" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 2px solid #667eea; border-top: none; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+                        </div>
+
                         <input type="hidden" id="selectedCustomerId">
                         <input type="hidden" id="customerName">
                         <input type="hidden" id="customerPhone">
