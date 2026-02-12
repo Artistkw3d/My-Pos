@@ -2,6 +2,7 @@ const API_URL = window.location.origin;
 let currentUser = null;
 let cart = [];
 let allProducts = [];
+let allProductsTable = [];
 let allInvoices = [];
 let allCustomers = [];
 let currentInvoice = null;
@@ -1384,6 +1385,9 @@ async function loadProductsTable() {
         const response = await fetch(`${API_URL}/api/products?branch_id=${branchParam}`);
         const data = await response.json();
         if (data.success) {
+            // حفظ المنتجات للتعديل
+            allProductsTable = data.products;
+
             // تجميع حسب الفئة
             const byCategory = {};
             data.products.forEach(p => {
@@ -1555,7 +1559,7 @@ async function editProduct(id) {
         return;
     }
     
-    const product = allProducts.find(p => p.id === id);
+    const product = allProductsTable.find(p => p.id === id) || allProducts.find(p => p.id === id);
     if (!product) return;
     updateCategoryDropdown();
     loadBranchesDropdowns();
@@ -1564,7 +1568,6 @@ async function editProduct(id) {
     document.getElementById('productName').value = product.name;
     document.getElementById('productBarcode').value = product.barcode || '';
     document.getElementById('productPrice').value = product.price;
-    document.getElementById('productCost').value = product.cost || 0;
     document.getElementById('productStock').value = product.stock;
     document.getElementById('productCategory').value = product.category || '';
     document.getElementById('productImageData').value = product.image_data || '';
@@ -3044,26 +3047,39 @@ let currentDistributionProduct = null;
 async function distributeToBranch(inventoryId) {
     const product = allInventory.find(p => p.id === inventoryId);
     if (!product) return;
-    
+
     currentDistributionProduct = product;
-    
+
     // عرض معلومات المنتج
+    let variantsInfo = '';
+    if (product.variants && product.variants.length > 0) {
+        variantsInfo = `
+            <div style="margin-top: 10px; background: #f0fff4; padding: 10px; border-radius: 8px; border: 1px solid #c6f6d5;">
+                <strong style="color: #38a169;">📐 الخصائص:</strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                    ${product.variants.map(v => `<span style="background: #38a169; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px;">${v.variant_name} - ${v.price.toFixed(3)} د.ك</span>`).join('')}
+                </div>
+            </div>
+        `;
+    }
+
     document.getElementById('distributionProductInfo').innerHTML = `
         <div style="display: flex; align-items: center; gap: 15px;">
             <div style="font-size: 50px;">🛍️</div>
-            <div>
+            <div style="flex: 1;">
                 <h3 style="margin: 0;">${product.name}</h3>
                 <p style="margin: 5px 0 0; color: #666;">السعر: ${product.price.toFixed(3)} د.ك | التكلفة: ${(product.cost || 0).toFixed(3)} د.ك</p>
+                ${variantsInfo}
             </div>
         </div>
     `;
-    
+
     // تحميل الفروع
     await loadBranchesForDistribution();
-    
+
     // تحميل التوزيعات الحالية
     await loadCurrentDistributions(inventoryId);
-    
+
     // فتح modal
     document.getElementById('distributionModal').classList.add('active');
 }
