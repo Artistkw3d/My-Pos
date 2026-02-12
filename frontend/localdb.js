@@ -5,7 +5,7 @@
 class LocalDB {
     constructor() {
         this.dbName = 'POS_DB';
-        this.version = 2; // زيادة الإصدار لإجبار rebuild
+        this.version = 3; // v3: إضافة pending_customers
         this.db = null;
         this.isReady = false;
     }
@@ -48,7 +48,12 @@ class LocalDB {
                 if (!db.objectStoreNames.contains('user_data')) {
                     db.createObjectStore('user_data', { keyPath: 'key' });
                 }
-                
+
+                // Pending Customers (للمزامنة عند العودة أونلاين)
+                if (!db.objectStoreNames.contains('pending_customers')) {
+                    db.createObjectStore('pending_customers', { keyPath: 'id' });
+                }
+
                 console.log('[LocalDB] Tables created');
             };
         });

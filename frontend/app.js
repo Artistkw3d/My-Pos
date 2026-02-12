@@ -5649,16 +5649,19 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
         const method = customerId ? 'PUT' : 'POST';
 
         if (!navigator.onLine) {
-            // حفظ العميل محلياً عند عدم الاتصال
+            // حفظ العميل محلياً عند عدم الاتصال + في IndexedDB
             const offlineCustomer = {
                 id: 'offline_' + Date.now(),
                 ...customerData,
                 loyalty_points: 0,
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                _offline: true
             };
             allCustomersDropdown.push(offlineCustomer);
+            try { await localDB.save('pending_customers', offlineCustomer); } catch(e) {}
             alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
             closeAddCustomer();
+            loadCustomers();
             return;
         }
 
@@ -5674,7 +5677,7 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
             alert('✅ تم حفظ العميل بنجاح');
             closeAddCustomer();
             loadCustomers();
-            loadCustomersDropdown();
+            await loadCustomersDropdown();
         } else {
             alert('❌ خطأ: ' + data.error);
         }
@@ -5685,11 +5688,14 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
             id: 'offline_' + Date.now(),
             ...customerData,
             loyalty_points: 0,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            _offline: true
         };
         allCustomersDropdown.push(offlineCustomer);
+        try { await localDB.save('pending_customers', offlineCustomer); } catch(e) {}
         alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
         closeAddCustomer();
+        loadCustomers();
     }
 });
 
@@ -7215,10 +7221,43 @@ function calculateAdditionalOperationsTotal() {
 
 console.log('[Additional Operations] Loaded ✅');
 
+// مزامنة العملاء المحفوظين محلياً عند العودة أونلاين
+async function syncOfflineCustomers() {
+    try {
+        const pending = await localDB.getAll('pending_customers');
+        if (!pending || pending.length === 0) return;
+        console.log(`[Sync] Uploading ${pending.length} offline customers...`);
+        for (const customer of pending) {
+            try {
+                const { id, _offline, ...data } = customer;
+                const response = await fetch(`${API_URL}/api/customers`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                if (result.success) {
+                    await localDB.delete('pending_customers', customer.id);
+                    console.log(`[Sync] Customer synced: ${data.name}`);
+                }
+            } catch (e) {
+                console.error('[Sync] Failed to sync customer:', e);
+            }
+        }
+        // إعادة تحميل قائمة العملاء بعد المزامنة
+        await loadCustomersDropdown();
+        if (typeof loadCustomers === 'function') loadCustomers();
+    } catch (e) {
+        console.error('[Sync] Customer sync error:', e);
+    }
+}
+
 // تحميل العملاء في dropdown عند بدء التشغيل
 setTimeout(() => {
     if (document.getElementById('customerSearchInput')) {
         loadCustomersDropdown();
+        // مزامنة العملاء المعلقين إذا أونلاين
+        if (navigator.onLine) setTimeout(syncOfflineCustomers, 2000);
         console.log('[Customers Search] Loaded ✅');
     }
 }, 1000);
