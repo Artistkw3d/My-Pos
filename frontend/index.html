@@ -1695,15 +1695,7 @@
             }
             
             // تحديث حالة زر الخروج حسب الاتصال
-            const logoutBtn = document.getElementById('logoutBtn');
-            if (logoutBtn) {
-                if (!navigator.onLine) {
-                    logoutBtn.disabled = true;
-                    logoutBtn.style.opacity = '0.5';
-                    logoutBtn.style.cursor = 'not-allowed';
-                    logoutBtn.title = 'لا يمكن تسجيل الخروج في وضع offline';
-                }
-            }
+            updateLogoutBtnState();
             
         } catch (error) {
             console.error('[PWA] Initialization error:', error);
@@ -1711,34 +1703,37 @@
     });
     
     // مراقبة حالة الاتصال
-    window.addEventListener('online', () => {
-        console.log('[PWA] Online ✅');
-        syncManager.showStatus('🌐 متصل - جاري المزامنة...', 'info');
-        setTimeout(() => syncManager.sync(), 1000);
-        
-        // تفعيل زر الخروج
+    function updateLogoutBtnState() {
         const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
+        if (!logoutBtn) return;
+        if (navigator.onLine) {
             logoutBtn.disabled = false;
             logoutBtn.style.opacity = '1';
             logoutBtn.style.cursor = 'pointer';
             logoutBtn.title = '';
-        }
-    });
-    
-    window.addEventListener('offline', () => {
-        console.log('[PWA] Offline 📴');
-        syncManager.showStatus('📴 غير متصل - الوضع المحلي', 'info');
-        
-        // تعطيل زر الخروج
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
+        } else {
             logoutBtn.disabled = true;
             logoutBtn.style.opacity = '0.5';
             logoutBtn.style.cursor = 'not-allowed';
             logoutBtn.title = 'لا يمكن تسجيل الخروج في وضع offline';
         }
+    }
+
+    window.addEventListener('online', () => {
+        console.log('[PWA] Online ✅');
+        updateLogoutBtnState();
+        try { syncManager.showStatus('🌐 متصل - جاري المزامنة...', 'info'); } catch(e) {}
+        try { setTimeout(() => syncManager.sync(), 1000); } catch(e) {}
     });
+
+    window.addEventListener('offline', () => {
+        console.log('[PWA] Offline 📴');
+        updateLogoutBtnState();
+        try { syncManager.showStatus('📴 غير متصل - الوضع المحلي', 'info'); } catch(e) {}
+    });
+
+    // فحص دوري لحالة الاتصال كل 3 ثواني
+    setInterval(updateLogoutBtnState, 3000);
     </script>
     
     <!-- Variant Selection Modal for POS -->
