@@ -178,6 +178,10 @@ def migrate_database(db_path=None):
         add_column('invoices', 'loyalty_points_redeemed', 'INTEGER', 0)
         add_column('invoices', 'table_id', 'INTEGER')
         add_column('invoices', 'table_name', 'TEXT')
+        add_column('invoices', 'cancelled', 'INTEGER', 0)
+        add_column('invoices', 'cancel_reason', 'TEXT')
+        add_column('invoices', 'cancelled_at', 'TIMESTAMP')
+        add_column('invoices', 'stock_returned', 'INTEGER', 0)
 
         add_column('customers', 'loyalty_points', 'INTEGER', 0)
 
@@ -1536,6 +1540,74 @@ def update_invoice_status(invoice_id):
         conn.close()
 
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/invoices/<int:invoice_id>/cancel', methods=['PUT'])
+def cancel_invoice(invoice_id):
+    """إلغاء فاتورة مع إرجاع المخزون"""
+    try:
+        data = request.json
+        cancel_reason = data.get('reason', '')
+        return_stock = data.get('return_stock', False)
+
+        if not cancel_reason:
+            return jsonify({'success': False, 'error': 'يجب تحديد سبب الإلغاء'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # التحقق من الفاتورة
+        cursor.execute('SELECT * FROM invoices WHERE id = ?', (invoice_id,))
+        invoice = cursor.fetchone()
+        if not invoice:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الفاتورة غير موجودة'}), 404
+
+        if invoice['cancelled']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الفاتورة ملغية مسبقاً'}), 400
+
+        # إرجاع المخزون إذا مطلوب
+        stock_returned = 0
+        if return_stock:
+            cursor.execute('SELECT * FROM invoice_items WHERE invoice_id = ?', (invoice_id,))
+            items = cursor.fetchall()
+            for item in items:
+                bsid = item['branch_stock_id']
+                qty = item['quantity']
+                if bsid and qty:
+                    cursor.execute('''
+                        UPDATE branch_stock
+                        SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (qty, bsid))
+            stock_returned = 1
+
+        # تحديث الفاتورة
+        cursor.execute('''
+            UPDATE invoices
+            SET cancelled = 1, cancel_reason = ?, cancelled_at = CURRENT_TIMESTAMP,
+                stock_returned = ?, order_status = 'ملغية'
+            WHERE id = ?
+        ''', (cancel_reason, stock_returned, invoice_id))
+
+        # إرجاع نقاط الولاء للعميل
+        customer_id = invoice['customer_id']
+        if customer_id:
+            points_earned = invoice['loyalty_points_earned'] or 0
+            points_redeemed = invoice['loyalty_points_redeemed'] or 0
+            net_reverse = points_redeemed - points_earned
+            if net_reverse != 0:
+                cursor.execute('''
+                    UPDATE customers SET loyalty_points = MAX(0, COALESCE(loyalty_points, 0) + ?)
+                    WHERE id = ?
+                ''', (net_reverse, customer_id))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'stock_returned': bool(stock_returned)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

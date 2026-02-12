@@ -1387,9 +1387,21 @@ function displayInvoiceView(inv) {
             if (Array.isArray(parsed)) { inv.payments = parsed; }
         } catch(e) { /* not JSON, single payment */ }
     }
+    // إخفاء/إظهار زر الإلغاء
+    const cancelBtn = document.getElementById('cancelInvoiceBtn');
+    if (cancelBtn) cancelBtn.style.display = inv.cancelled ? 'none' : '';
+
     const content = document.getElementById('invoiceViewContent');
+    const isCancelled = inv.cancelled;
     content.innerHTML = `
-        <div style="padding: 20px;">
+        <div style="padding: 20px; ${isCancelled ? 'opacity: 0.7;' : ''}">
+            ${isCancelled ? `
+            <div style="background: #dc3545; color: white; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; text-align: center;">
+                <div style="font-size: 18px; font-weight: bold;">🚫 فاتورة ملغية</div>
+                <div style="font-size: 13px; margin-top: 5px;">السبب: ${inv.cancel_reason || '-'}</div>
+                ${inv.stock_returned ? '<div style="font-size: 12px; margin-top: 3px;">📦 تم إرجاع المنتجات إلى المخزون</div>' : ''}
+                ${inv.cancelled_at ? `<div style="font-size: 11px; margin-top: 3px;">تاريخ الإلغاء: ${new Date(inv.cancelled_at).toLocaleDateString('ar')}</div>` : ''}
+            </div>` : ''}
             <div style="text-align: center; margin-bottom: 20px;">
                 ${storeLogo ? `<img src="${storeLogo}" style="max-width: 150px; max-height: 80px; margin-bottom: 10px;">` : ''}
                 <h2 style="margin: 5px 0;">فاتورة مبيعات</h2>
@@ -1457,6 +1469,67 @@ function printThermalInvoice() {
     const printWindow = window.open('', '', 'width=820,height=600');
     printWindow.document.write(generateThermalInvoiceHTML(currentInvoice));
     printWindow.document.close();
+}
+
+// ===== نظام إلغاء الفواتير =====
+
+function showCancelInvoiceModal() {
+    if (!currentInvoice) return;
+    if (currentInvoice.cancelled) {
+        alert('هذه الفاتورة ملغية مسبقاً');
+        return;
+    }
+    document.getElementById('cancelInvoiceId').value = currentInvoice.id;
+    document.getElementById('cancelReasonSelect').value = '';
+    document.getElementById('customReasonInput').value = '';
+    document.getElementById('customReasonDiv').style.display = 'none';
+    document.getElementById('returnStockCheckbox').checked = true;
+    document.getElementById('cancelInvoiceModal').classList.add('active');
+}
+
+function closeCancelInvoiceModal() {
+    document.getElementById('cancelInvoiceModal').classList.remove('active');
+}
+
+function toggleCustomReason() {
+    const select = document.getElementById('cancelReasonSelect');
+    document.getElementById('customReasonDiv').style.display = select.value === 'custom' ? 'block' : 'none';
+}
+
+async function confirmCancelInvoice() {
+    const invoiceId = document.getElementById('cancelInvoiceId').value;
+    const selectVal = document.getElementById('cancelReasonSelect').value;
+    const customVal = document.getElementById('customReasonInput').value.trim();
+    const returnStock = document.getElementById('returnStockCheckbox').checked;
+
+    const reason = selectVal === 'custom' ? customVal : selectVal;
+    if (!reason) {
+        alert('يجب تحديد سبب الإلغاء');
+        return;
+    }
+
+    if (!confirm(`هل أنت متأكد من إلغاء الفاتورة؟\n\nالسبب: ${reason}\nإرجاع المخزون: ${returnStock ? 'نعم' : 'لا'}`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/cancel`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ reason, return_stock: returnStock })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            alert(`✅ تم إلغاء الفاتورة بنجاح${data.stock_returned ? '\n📦 تم إرجاع المنتجات إلى المخزون' : ''}`);
+            closeCancelInvoiceModal();
+            closeInvoiceView();
+            loadInvoicesTable();
+        } else {
+            alert('❌ خطأ: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل الاتصال بالسيرفر');
+    }
 }
 
 function generateThermalInvoiceHTML(inv) {
@@ -1953,23 +2026,26 @@ async function loadInvoicesTable() {
                 <tbody>
                     ${invoices.map(inv => {
                         const isOffline = inv.id && inv.id.toString().startsWith('offline_');
+                        const isCancelled = inv.cancelled;
                         const status = inv.order_status || 'قيد التنفيذ';
                         return `
-                        <tr>
+                        <tr style="${isCancelled ? 'opacity:0.5; background:#fff5f5;' : ''}">
                             <td>
-                                <strong>${inv.invoice_number}</strong>
+                                <strong${isCancelled ? ' style="text-decoration:line-through;"' : ''}>${inv.invoice_number}</strong>
+                                ${isCancelled ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">🚫 ملغية</span>' : ''}
                                 ${isOffline ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span>' : ''}
                             </td>
                             <td>${inv.customer_name || 'عميل'}</td>
                             <td>${inv.employee_name}</td>
-                            <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
+                            <td style="color:${isCancelled ? '#dc3545' : '#28a745'}; font-weight:bold;${isCancelled ? ' text-decoration:line-through;' : ''}">${inv.total.toFixed(3)} د.ك</td>
                             <td>
+                                ${isCancelled ? '<span style="color:#dc3545; font-weight:bold; font-size:12px;">🚫 ملغية</span>' : `
                                 <select class="order-status-select status-${status === 'قيد التنفيذ' ? 'processing' : status === 'قيد التوصيل' ? 'delivering' : 'completed'}"
                                         onchange="updateOrderStatus(${inv.id}, this.value)" ${isOffline ? 'disabled' : ''}>
                                     <option value="قيد التنفيذ" ${status === 'قيد التنفيذ' ? 'selected' : ''}>⏳ قيد التنفيذ</option>
                                     <option value="قيد التوصيل" ${status === 'قيد التوصيل' ? 'selected' : ''}>🚚 قيد التوصيل</option>
                                     <option value="منجز" ${status === 'منجز' ? 'selected' : ''}>✅ منجز</option>
-                                </select>
+                                </select>`}
                             </td>
                             <td>${formatKuwaitTime(inv.created_at)}</td>
                             <td><button onclick="viewLocalInvoice('${inv.id}')" class="btn-sm">👁️</button></td>
@@ -6551,7 +6627,9 @@ function filterInvoicesByStatus() {
         return;
     }
 
-    const filtered = allInvoices.filter(inv => (inv.order_status || 'قيد التنفيذ') === status);
+    const filtered = status === 'ملغية'
+        ? allInvoices.filter(inv => inv.cancelled)
+        : allInvoices.filter(inv => !inv.cancelled && (inv.order_status || 'قيد التنفيذ') === status);
     const container = document.getElementById('invoicesListContainer');
 
     if (filtered.length === 0) {
@@ -6565,23 +6643,26 @@ function filterInvoicesByStatus() {
             <tbody>
                 ${filtered.map(inv => {
                     const isOffline = inv.id && inv.id.toString().startsWith('offline_');
+                    const isCancelled = inv.cancelled;
                     const st = inv.order_status || 'قيد التنفيذ';
                     return `
-                    <tr>
+                    <tr style="${isCancelled ? 'opacity:0.5; background:#fff5f5;' : ''}">
                         <td>
-                            <strong>${inv.invoice_number}</strong>
+                            <strong${isCancelled ? ' style="text-decoration:line-through;"' : ''}>${inv.invoice_number}</strong>
+                            ${isCancelled ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">🚫 ملغية</span>' : ''}
                             ${isOffline ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span>' : ''}
                         </td>
                         <td>${inv.customer_name || 'عميل'}</td>
                         <td>${inv.employee_name}</td>
-                        <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
+                        <td style="color:${isCancelled ? '#dc3545' : '#28a745'}; font-weight:bold;${isCancelled ? ' text-decoration:line-through;' : ''}">${inv.total.toFixed(3)} د.ك</td>
                         <td>
+                            ${isCancelled ? '<span style="color:#dc3545; font-weight:bold; font-size:12px;">🚫 ملغية</span>' : `
                             <select class="order-status-select status-${st === 'قيد التنفيذ' ? 'processing' : st === 'قيد التوصيل' ? 'delivering' : 'completed'}"
                                     onchange="updateOrderStatus(${inv.id}, this.value)" ${isOffline ? 'disabled' : ''}>
                                 <option value="قيد التنفيذ" ${st === 'قيد التنفيذ' ? 'selected' : ''}>⏳ قيد التنفيذ</option>
                                 <option value="قيد التوصيل" ${st === 'قيد التوصيل' ? 'selected' : ''}>🚚 قيد التوصيل</option>
                                 <option value="منجز" ${st === 'منجز' ? 'selected' : ''}>✅ منجز</option>
-                            </select>
+                            </select>`}
                         </td>
                         <td>${formatKuwaitTime(inv.created_at)}</td>
                         <td><button onclick="viewLocalInvoice('${inv.id}')" class="btn-sm">👁️</button></td>
