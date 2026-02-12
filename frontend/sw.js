@@ -2,8 +2,8 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v28';
-const STATIC_CACHE = 'pos-static-v28';
+const CACHE_NAME = 'pos-cache-v29';
+const STATIC_CACHE = 'pos-static-v29';
 
 // الملفات الأساسية (بدون manifest - لا يسبب فشل التثبيت)
 const STATIC_ASSETS = [
@@ -18,7 +18,7 @@ const STATIC_ASSETS = [
 
 // التثبيت - كل ملف على حدة حتى لا يفشل الكل بسبب ملف واحد
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v28...');
+    console.log('[SW] Installing v29...');
     event.waitUntil(
         caches.open(STATIC_CACHE).then(cache => {
             return Promise.allSettled(
@@ -34,7 +34,7 @@ self.addEventListener('install', (event) => {
 
 // التفعيل - حذف جميع الكاشات القديمة
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v28...');
+    console.log('[SW] Activating v29...');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
@@ -101,4 +101,4 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-console.log('[SW] Service Worker loaded v28');
+console.log('[SW] Service Worker loaded v29');
