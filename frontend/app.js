@@ -357,31 +357,48 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     }
 });
 
-// === حماية زر الخروج من الأوفلاين ===
+// === حماية زر الخروج من الأوفلاين - ممنوع نهائياً ===
 function updateLogoutButton() {
     const btn = document.getElementById('logoutBtn');
     if (!btn) return;
     if (navigator.onLine) {
         btn.disabled = false;
-        btn.style.opacity = '1';
-        btn.style.cursor = 'pointer';
+        btn.classList.remove('offline-locked');
+        btn.removeAttribute('aria-disabled');
         btn.title = '';
     } else {
         btn.disabled = true;
-        btn.style.opacity = '0.5';
-        btn.style.cursor = 'not-allowed';
-        btn.title = 'لا يمكن تسجيل الخروج بدون اتصال';
+        btn.classList.add('offline-locked');
+        btn.setAttribute('aria-disabled', 'true');
+        btn.title = 'ممنوع - لا يمكن تسجيل الخروج بدون اتصال';
+        // إزالة أي أحداث ضغط قد تتخطى disabled
+        btn.blur();
     }
 }
 window.addEventListener('online', updateLogoutButton);
 window.addEventListener('offline', updateLogoutButton);
 setInterval(updateLogoutButton, 2000);
+// تشغيل فوري عند تحميل الصفحة
+document.addEventListener('DOMContentLoaded', updateLogoutButton);
+setTimeout(updateLogoutButton, 100);
+
+// اعتراض أي نقرة على زر الخروج في وضع أوفلاين - خط دفاع إضافي
+document.addEventListener('click', function(e) {
+    if (!navigator.onLine) {
+        const btn = e.target.closest('#logoutBtn, .logout-btn');
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return false;
+        }
+    }
+}, true); // capture phase لاعتراضها قبل أي handler آخر
 
 async function logout() {
-    // منع تسجيل الخروج في وضع offline
+    // منع تسجيل الخروج في وضع offline - فحص مزدوج
     if (!navigator.onLine) {
-        alert('📴 لا يمكن تسجيل الخروج في وضع offline!\n\nالرجاء الاتصال بالإنترنت أولاً.');
-        return;
+        return; // ممنوع - بدون أي رسالة لأن الزر أصلاً غير قابل للنقر
     }
     
     if (!confirm('هل أنت متأكد من تسجيل الخروج؟')) return;
