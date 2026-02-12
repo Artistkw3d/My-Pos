@@ -1774,7 +1774,7 @@
         try {
             const c = new AbortController();
             const t = setTimeout(() => c.abort(), 3000);
-            const r = await fetch('/api/settings', { method: 'GET', cache: 'no-store', signal: c.signal });
+            const r = await fetch('/api/settings?_ping=1', { method: 'GET', cache: 'no-store', signal: c.signal });
             clearTimeout(t);
             _htmlOnlineStatus = r.ok;
         } catch(e) {
