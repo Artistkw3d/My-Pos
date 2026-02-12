@@ -997,7 +997,23 @@
                     </div>
                     
                     <div class="form-group" style="display: none;"><label>التكلفة (د.ك):</label><input type="number" id="inventoryCost" step="0.001" readonly></div>
-                    
+
+                    <!-- نظام الخصائص/المتغيرات -->
+                    <div style="background: #f0fff4; padding: 20px; border-radius: 12px; margin: 15px 0; border: 2px solid #38a169;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4 style="color: #38a169; margin: 0;">📐 خصائص المنتج (مقاسات / أحجام / أوزان)</h4>
+                            <button type="button" onclick="addVariantRow()" class="btn" style="background: #38a169; padding: 8px 16px; font-size: 14px;">
+                                ➕ إضافة خاصية
+                            </button>
+                        </div>
+                        <div id="variantsContainer">
+                            <!-- صفوف المتغيرات تضاف هنا -->
+                        </div>
+                        <div id="variantsEmptyMsg" style="text-align: center; padding: 15px; color: #999; font-size: 14px;">
+                            لا توجد خصائص - المنتج بنوع واحد فقط
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label>الفئة:</label>
                         <select id="inventoryCategory">
@@ -1698,6 +1714,20 @@
     });
     </script>
     
+    <!-- Variant Selection Modal for POS -->
+    <div class="modal" id="variantSelectModal">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h2 id="variantSelectTitle">📐 اختر الخاصية</h2>
+                <button class="close-btn" onclick="closeVariantSelect()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <div id="variantSelectProductName" style="text-align: center; font-weight: bold; font-size: 18px; margin-bottom: 15px; color: #2d3748;"></div>
+                <div id="variantSelectOptions" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
     <script src="products-search.js"></script>
 </body>

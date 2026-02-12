@@ -220,6 +220,20 @@ def migrate_database(db_path=None):
             )
         ''')
 
+        # جدول خصائص/متغيرات المنتجات
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS product_variants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                inventory_id INTEGER NOT NULL,
+                variant_name TEXT NOT NULL,
+                price REAL DEFAULT 0,
+                cost REAL DEFAULT 0,
+                barcode TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
+            )
+        ''')
+
         # إضافة عمود table_id للفواتير
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
         if cursor.fetchone():
@@ -230,6 +244,18 @@ def migrate_database(db_path=None):
                 conn.commit()
             if 'table_name' not in inv_cols2:
                 cursor.execute("ALTER TABLE invoices ADD COLUMN table_name TEXT")
+                conn.commit()
+
+        # إضافة أعمدة المتغيرات لعناصر الفاتورة
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoice_items'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(invoice_items)")
+            ii_cols = [col[1] for col in cursor.fetchall()]
+            if 'variant_id' not in ii_cols:
+                cursor.execute("ALTER TABLE invoice_items ADD COLUMN variant_id INTEGER")
+                conn.commit()
+            if 'variant_name' not in ii_cols:
+                cursor.execute("ALTER TABLE invoice_items ADD COLUMN variant_name TEXT")
                 conn.commit()
 
         conn.commit()
@@ -358,6 +384,17 @@ def create_tenant_database(slug):
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS product_variants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER NOT NULL,
+            variant_name TEXT NOT NULL,
+            price REAL DEFAULT 0,
+            cost REAL DEFAULT 0,
+            barcode TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS branch_stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             inventory_id INTEGER,
@@ -405,7 +442,9 @@ def create_tenant_database(slug):
             quantity INTEGER,
             price REAL,
             total REAL,
-            branch_stock_id INTEGER
+            branch_stock_id INTEGER,
+            variant_id INTEGER,
+            variant_name TEXT
         );
 
         CREATE TABLE IF NOT EXISTS customers (
@@ -556,6 +595,17 @@ def create_tenant_database(slug):
             status TEXT DEFAULT 'available',
             current_invoice_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS product_variants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inventory_id INTEGER NOT NULL,
+            variant_name TEXT NOT NULL,
+            price REAL DEFAULT 0,
+            cost REAL DEFAULT 0,
+            barcode TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
         );
     ''')
 
@@ -834,21 +884,19 @@ def get_products():
         branch_id = request.args.get('branch_id')
         conn = get_db()
         cursor = conn.cursor()
-        
+
         # جلب المنتجات من branch_stock مع معلومات المنتج من inventory
         if branch_id == 'all':
-            # جلب كل التوزيعات
             cursor.execute('''
-                SELECT bs.id, bs.stock, bs.branch_id, 
+                SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id,
                        i.name, i.barcode, i.category, i.price, i.cost, i.image_data
                 FROM branch_stock bs
                 JOIN inventory i ON bs.inventory_id = i.id
                 ORDER BY bs.branch_id, i.name
             ''')
         elif branch_id:
-            # جلب توزيعات فرع معين
             cursor.execute('''
-                SELECT bs.id, bs.stock, bs.branch_id,
+                SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id,
                        i.name, i.barcode, i.category, i.price, i.cost, i.image_data
                 FROM branch_stock bs
                 JOIN inventory i ON bs.inventory_id = i.id
@@ -856,17 +904,26 @@ def get_products():
                 ORDER BY i.name
             ''', (branch_id,))
         else:
-            # افتراضياً الفرع 1
             cursor.execute('''
-                SELECT bs.id, bs.stock, bs.branch_id,
+                SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id,
                        i.name, i.barcode, i.category, i.price, i.cost, i.image_data
                 FROM branch_stock bs
                 JOIN inventory i ON bs.inventory_id = i.id
                 WHERE bs.branch_id = ?
                 ORDER BY i.name
             ''', (1,))
-        
+
         products = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # جلب المتغيرات لكل منتج
+        for p in products:
+            inv_id = p.get('inventory_id')
+            if inv_id:
+                cursor.execute('SELECT * FROM product_variants WHERE inventory_id = ? ORDER BY id', (inv_id,))
+                p['variants'] = [dict_from_row(row) for row in cursor.fetchall()]
+            else:
+                p['variants'] = []
+
         conn.close()
         return jsonify({'success': True, 'products': products})
     except Exception as e:
@@ -953,12 +1010,18 @@ def delete_product(product_id):
 
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
-    """جلب جميع المنتجات الأساسية"""
+    """جلب جميع المنتجات الأساسية مع متغيراتها"""
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM inventory ORDER BY name')
         inventory = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # جلب المتغيرات لكل منتج
+        for item in inventory:
+            cursor.execute('SELECT * FROM product_variants WHERE inventory_id = ? ORDER BY id', (item['id'],))
+            item['variants'] = [dict_from_row(row) for row in cursor.fetchall()]
+
         conn.close()
         return jsonify({'success': True, 'inventory': inventory})
     except Exception as e:
@@ -1036,15 +1099,67 @@ def delete_inventory(inventory_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        # حذف التوزيعات أولاً
+        # حذف المتغيرات والتوزيعات أولاً
+        cursor.execute('DELETE FROM product_variants WHERE inventory_id=?', (inventory_id,))
         cursor.execute('DELETE FROM branch_stock WHERE inventory_id=?', (inventory_id,))
         cursor.execute('DELETE FROM inventory WHERE id=?', (inventory_id,))
         conn.commit()
         conn.close()
-        
+
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ===== API خصائص/متغيرات المنتجات =====
+
+@app.route('/api/inventory/<int:inventory_id>/variants', methods=['GET'])
+def get_variants(inventory_id):
+    """جلب متغيرات منتج"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM product_variants WHERE inventory_id = ? ORDER BY id', (inventory_id,))
+        variants = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'variants': variants})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/inventory/<int:inventory_id>/variants', methods=['POST'])
+def save_variants(inventory_id):
+    """حفظ متغيرات منتج (استبدال الكل)"""
+    conn = None
+    try:
+        data = request.json
+        variants = data.get('variants', [])
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # حذف المتغيرات القديمة
+        cursor.execute('DELETE FROM product_variants WHERE inventory_id = ?', (inventory_id,))
+
+        # إدراج الجديدة
+        for v in variants:
+            cursor.execute('''
+                INSERT INTO product_variants (inventory_id, variant_name, price, cost, barcode)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (
+                inventory_id,
+                v.get('variant_name', ''),
+                v.get('price', 0),
+                v.get('cost', 0),
+                v.get('barcode', '')
+            ))
+
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 # ===== API توزيع المخزون على الفروع =====
 
@@ -1330,9 +1445,9 @@ def create_invoice():
             branch_stock_id = item.get('branch_stock_id') or item.get('product_id')
             
             cursor.execute('''
-                INSERT INTO invoice_items 
-                (invoice_id, product_id, product_name, quantity, price, total, branch_stock_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO invoice_items
+                (invoice_id, product_id, product_name, quantity, price, total, branch_stock_id, variant_id, variant_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 invoice_id,
                 item.get('product_id'),
@@ -1340,7 +1455,9 @@ def create_invoice():
                 item.get('quantity'),
                 item.get('price'),
                 item.get('total'),
-                branch_stock_id
+                branch_stock_id,
+                item.get('variant_id'),
+                item.get('variant_name')
             ))
             
             # تحديث المخزون في branch_stock
