@@ -3,6 +3,37 @@ const API_URL = window.location.origin;
 if (typeof localDB === 'undefined') {
     window.localDB = { isReady: false, init: async()=>{}, save:async()=>{}, saveAll:async()=>{}, getAll:async()=>[], get:async()=>null, add:async()=>{}, delete:async()=>{} };
 }
+
+// === فحص الاتصال الحقيقي (بدلاً من navigator.onLine غير الموثوق) ===
+let _realOnlineStatus = navigator.onLine;
+async function checkRealConnection() {
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const resp = await fetch(`${API_URL}/api/settings`, {
+            method: 'GET',
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        _realOnlineStatus = resp.ok || resp.status < 500;
+        return _realOnlineStatus;
+    } catch (e) {
+        _realOnlineStatus = false;
+        return false;
+    }
+}
+// فحص دوري كل 5 ثواني
+setInterval(async () => {
+    const wasOnline = _realOnlineStatus;
+    await checkRealConnection();
+    // تحديث زر الخروج عند تغيير الحالة
+    if (wasOnline !== _realOnlineStatus) {
+        if (typeof _lockLogout === 'function') _lockLogout(!_realOnlineStatus);
+        if (typeof updateLogoutButton === 'function') updateLogoutButton();
+    }
+}, 5000);
+
 let currentUser = null;
 let cart = [];
 let allProducts = [];
@@ -361,30 +392,38 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 function updateLogoutButton() {
     const btn = document.getElementById('logoutBtn');
     if (!btn) return;
-    if (navigator.onLine) {
+    const isOnline = _realOnlineStatus && navigator.onLine;
+    if (isOnline) {
         btn.disabled = false;
         btn.classList.remove('offline-locked');
+        btn.style.pointerEvents = '';
+        btn.style.opacity = '';
+        btn.style.background = '';
+        btn.style.textDecoration = '';
         btn.removeAttribute('aria-disabled');
         btn.title = '';
     } else {
         btn.disabled = true;
         btn.classList.add('offline-locked');
+        btn.style.pointerEvents = 'none';
+        btn.style.opacity = '0.3';
+        btn.style.background = 'rgba(150,150,150,0.5)';
+        btn.style.textDecoration = 'line-through';
         btn.setAttribute('aria-disabled', 'true');
         btn.title = 'ممنوع - لا يمكن تسجيل الخروج بدون اتصال';
-        // إزالة أي أحداث ضغط قد تتخطى disabled
         btn.blur();
     }
 }
-window.addEventListener('online', updateLogoutButton);
-window.addEventListener('offline', updateLogoutButton);
-setInterval(updateLogoutButton, 2000);
-// تشغيل فوري عند تحميل الصفحة
-document.addEventListener('DOMContentLoaded', updateLogoutButton);
-setTimeout(updateLogoutButton, 100);
+window.addEventListener('online', () => { checkRealConnection().then(updateLogoutButton); });
+window.addEventListener('offline', () => { _realOnlineStatus = false; updateLogoutButton(); });
+setInterval(updateLogoutButton, 3000);
+document.addEventListener('DOMContentLoaded', () => { checkRealConnection().then(updateLogoutButton); });
+setTimeout(() => { checkRealConnection().then(updateLogoutButton); }, 500);
 
 // اعتراض أي نقرة على زر الخروج في وضع أوفلاين - خط دفاع إضافي
 document.addEventListener('click', function(e) {
-    if (!navigator.onLine) {
+    const isOnline = _realOnlineStatus && navigator.onLine;
+    if (!isOnline) {
         const btn = e.target.closest('#logoutBtn, .logout-btn');
         if (btn) {
             e.preventDefault();
@@ -396,9 +435,12 @@ document.addEventListener('click', function(e) {
 }, true); // capture phase لاعتراضها قبل أي handler آخر
 
 async function logout() {
-    // منع تسجيل الخروج في وضع offline - فحص مزدوج
-    if (!navigator.onLine) {
-        return; // ممنوع - بدون أي رسالة لأن الزر أصلاً غير قابل للنقر
+    // فحص الاتصال الحقيقي قبل السماح بالخروج
+    const reallyOnline = await checkRealConnection();
+    if (!reallyOnline || !navigator.onLine) {
+        alert('📴 لا يمكن تسجيل الخروج - لا يوجد اتصال بالسيرفر');
+        updateLogoutButton();
+        return;
     }
     
     if (!confirm('هل أنت متأكد من تسجيل الخروج؟')) return;
@@ -4753,7 +4795,7 @@ function searchCustomerInPOS(query) {
 }
 
 function customerResultItem(c) {
-    return `<div onclick="pickCustomerFromSearch(${c.id})" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px; display:flex; justify-content:space-between; align-items:center;"
+    return `<div onclick="pickCustomerFromSearch('${c.id}')" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px; display:flex; justify-content:space-between; align-items:center;"
         onmouseover="this.style.background='#f0f0ff'" onmouseout="this.style.background='white'">
         <span><strong>${c.name}</strong></span>
         <span style="color:#667eea; font-size:12px; direction:ltr;">${c.phone || ''}</span>
@@ -5644,24 +5686,29 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
         notes: document.getElementById('customerNotes').value
     };
     
+    // دالة مساعدة لحفظ العميل محلياً
+    async function _saveCustomerLocally() {
+        const offlineCustomer = {
+            id: 'offline_' + Date.now(),
+            ...customerData,
+            loyalty_points: 0,
+            created_at: new Date().toISOString(),
+            _offline: true
+        };
+        allCustomersDropdown.push(offlineCustomer);
+        try { await localDB.save('pending_customers', offlineCustomer); } catch(e) {}
+        alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
+        closeAddCustomer();
+    }
+
     try {
         const url = customerId ? `${API_URL}/api/customers/${customerId}` : `${API_URL}/api/customers`;
         const method = customerId ? 'PUT' : 'POST';
 
-        if (!navigator.onLine) {
-            // حفظ العميل محلياً عند عدم الاتصال + في IndexedDB
-            const offlineCustomer = {
-                id: 'offline_' + Date.now(),
-                ...customerData,
-                loyalty_points: 0,
-                created_at: new Date().toISOString(),
-                _offline: true
-            };
-            allCustomersDropdown.push(offlineCustomer);
-            try { await localDB.save('pending_customers', offlineCustomer); } catch(e) {}
-            alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
-            closeAddCustomer();
-            loadCustomers();
+        // فحص الاتصال الفعلي (ليس فقط navigator.onLine)
+        const reallyOnline = await checkRealConnection();
+        if (!reallyOnline) {
+            await _saveCustomerLocally();
             return;
         }
 
@@ -5683,19 +5730,8 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
         }
     } catch (error) {
         console.error('Error:', error);
-        // حفظ محلي كـ fallback
-        const offlineCustomer = {
-            id: 'offline_' + Date.now(),
-            ...customerData,
-            loyalty_points: 0,
-            created_at: new Date().toISOString(),
-            _offline: true
-        };
-        allCustomersDropdown.push(offlineCustomer);
-        try { await localDB.save('pending_customers', offlineCustomer); } catch(e) {}
-        alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
-        closeAddCustomer();
-        loadCustomers();
+        // حفظ محلي كـ fallback عند فشل الشبكة
+        await _saveCustomerLocally();
     }
 });
 
