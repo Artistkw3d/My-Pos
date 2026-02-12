@@ -891,8 +891,13 @@ function clearSaleForm() {
         `;
     }
     
-    // مسح بيانات الولاء
+    // مسح بيانات العميل والبحث
     document.getElementById('selectedCustomerId').value = '';
+    const csInput = document.getElementById('customerSearchInput');
+    if (csInput) csInput.value = '';
+    const csResults = document.getElementById('customerSearchResults');
+    if (csResults) csResults.style.display = 'none';
+    document.getElementById('customerDetails').style.display = 'none';
     document.getElementById('pointsToRedeem').value = '';
     document.getElementById('loyaltySection').style.display = 'none';
     document.getElementById('loyaltyDiscountRow').style.display = 'none';
@@ -1176,6 +1181,7 @@ async function completeSale() {
                 // إعادة تحميل
                 loadProducts();
                 loadInventory();
+                loadCustomersDropdown();
                 
                 // عرض الفاتورة
                 setTimeout(() => {
@@ -4665,59 +4671,92 @@ async function loadCustomersDropdown() {
 }
 
 function updateCustomerSelect() {
-    const select = document.getElementById('customerSelect');
-    if (!select) return;
-    
-    // مسح الخيارات القديمة (ماعدا الأولين)
-    while (select.options.length > 2) {
-        select.remove(2);
-    }
-    
-    // إضافة العملاء
-    allCustomersDropdown.forEach(customer => {
-        const option = document.createElement('option');
-        option.value = customer.id;
-        option.textContent = `${customer.name}${customer.phone ? ' (' + customer.phone + ')' : ''}`;
-        select.appendChild(option);
-    });
+    // التوافق - لم نعد نستخدم select بل حقل بحث
 }
 
-function selectCustomer() {
-    const selectValue = document.getElementById('customerSelect').value;
-    
-    if (selectValue === 'new') {
-        showAddCustomer();
-        document.getElementById('customerSelect').value = '';
+// بحث العميل في نقطة البيع
+function searchCustomerInPOS(query) {
+    const container = document.getElementById('customerSearchResults');
+    if (!container) return;
+
+    const q = (query || '').trim().toLowerCase();
+    if (!q) {
+        // عرض آخر 10 عملاء
+        const recent = allCustomersDropdown.slice(0, 10);
+        if (recent.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        container.innerHTML = recent.map(c => customerResultItem(c)).join('');
+        container.style.display = 'block';
         return;
     }
-    
-    if (!selectValue) {
-        clearCustomerSelection();
+
+    const filtered = allCustomersDropdown.filter(c => {
+        const name = (c.name || '').toLowerCase();
+        const phone = (c.phone || '').toLowerCase();
+        return name.includes(q) || phone.includes(q);
+    }).slice(0, 15);
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div style="padding:10px; text-align:center; color:#6c757d; font-size:13px;">لا توجد نتائج</div>';
+        container.style.display = 'block';
         return;
     }
-    
-    const customer = allCustomersDropdown.find(c => c.id == selectValue);
-    if (customer) {
-        document.getElementById('selectedCustomerId').value = customer.id;
-        document.getElementById('customerName').value = customer.name;
-        document.getElementById('customerPhone').value = customer.phone || '';
-        document.getElementById('customerAddress').value = customer.address || '';
 
-        document.getElementById('displayCustomerName').textContent = customer.name;
-        document.getElementById('displayCustomerPhone').textContent = customer.phone || '-';
-        document.getElementById('displayCustomerAddress').textContent = customer.address || '-';
-        document.getElementById('customerDetails').style.display = 'block';
+    container.innerHTML = filtered.map(c => customerResultItem(c)).join('');
+    container.style.display = 'block';
+}
 
-        // عرض قسم الولاء
-        currentCustomerData = customer;
-        document.getElementById('loyaltySection').style.display = 'block';
-        document.getElementById('customerLoyaltyPoints').textContent = customer.loyalty_points || customer.points || 0;
-        updatePointsToEarn();
+function customerResultItem(c) {
+    return `<div onclick="pickCustomerFromSearch(${c.id})" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px; display:flex; justify-content:space-between; align-items:center;"
+        onmouseover="this.style.background='#f0f0ff'" onmouseout="this.style.background='white'">
+        <span><strong>${c.name}</strong></span>
+        <span style="color:#667eea; font-size:12px; direction:ltr;">${c.phone || ''}</span>
+    </div>`;
+}
+
+function pickCustomerFromSearch(id) {
+    const customer = allCustomersDropdown.find(c => c.id == id);
+    if (!customer) return;
+
+    document.getElementById('selectedCustomerId').value = customer.id;
+    document.getElementById('customerName').value = customer.name;
+    document.getElementById('customerPhone').value = customer.phone || '';
+    document.getElementById('customerAddress').value = customer.address || '';
+
+    document.getElementById('displayCustomerName').textContent = customer.name;
+    document.getElementById('displayCustomerPhone').textContent = customer.phone || '-';
+    document.getElementById('displayCustomerAddress').textContent = customer.address || '-';
+    document.getElementById('customerDetails').style.display = 'block';
+
+    // تحديث حقل البحث
+    document.getElementById('customerSearchInput').value = customer.name;
+    document.getElementById('customerSearchResults').style.display = 'none';
+
+    // عرض قسم الولاء
+    currentCustomerData = customer;
+    document.getElementById('loyaltySection').style.display = 'block';
+    document.getElementById('customerLoyaltyPoints').textContent = customer.loyalty_points || customer.points || 0;
+    updatePointsToEarn();
+}
+
+// إغلاق نتائج البحث عند الضغط خارجها
+document.addEventListener('click', (e) => {
+    const input = document.getElementById('customerSearchInput');
+    const results = document.getElementById('customerSearchResults');
+    if (input && results && !input.contains(e.target) && !results.contains(e.target)) {
+        results.style.display = 'none';
     }
+});
+
+function showAddCustomerFromPOS() {
+    showAddCustomer();
 }
 
 function clearCustomerSelection() {
-    document.getElementById('customerSelect').value = '';
+    document.getElementById('customerSearchInput').value = '';
+    document.getElementById('customerSearchResults').style.display = 'none';
     document.getElementById('selectedCustomerId').value = '';
     document.getElementById('customerName').value = '';
     document.getElementById('customerPhone').value = '';
@@ -5577,6 +5616,7 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
             alert('✅ تم حفظ العميل بنجاح');
             closeAddCustomer();
             loadCustomers();
+            loadCustomersDropdown();
         } else {
             alert('❌ خطأ: ' + data.error);
         }
@@ -5659,6 +5699,7 @@ async function deleteCustomer(id) {
         if (data.success) {
             alert('✅ تم حذف العميل');
             loadCustomers();
+            loadCustomersDropdown();
         } else {
             alert('❌ خطأ: ' + data.error);
         }
@@ -7109,9 +7150,9 @@ console.log('[Additional Operations] Loaded ✅');
 
 // تحميل العملاء في dropdown عند بدء التشغيل
 setTimeout(() => {
-    if (document.getElementById('customerSelect')) {
+    if (document.getElementById('customerSearchInput')) {
         loadCustomersDropdown();
-        console.log('[Customers Dropdown] Loaded ✅');
+        console.log('[Customers Search] Loaded ✅');
     }
 }, 1000);
 
