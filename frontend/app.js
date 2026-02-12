@@ -174,21 +174,34 @@ async function initializeUI() {
         canViewReports: hasPerm('can_view_reports'),
         canViewAccounting: hasPerm('can_view_accounting'),
         canManageUsers: hasPerm('can_manage_users'),
-        canAccessSettings: hasPerm('can_access_settings')
+        canAccessSettings: hasPerm('can_access_settings'),
+        canViewReturns: hasPerm('can_view_returns'),
+        canViewExpenses: hasPerm('can_view_expenses'),
+        canViewSuppliers: hasPerm('can_view_suppliers'),
+        canViewCoupons: hasPerm('can_view_coupons'),
+        canViewTables: hasPerm('can_view_tables'),
+        canViewAttendance: hasPerm('can_view_attendance'),
+        canViewAdvancedReports: hasPerm('can_view_advanced_reports'),
+        canViewSystemLogs: hasPerm('can_view_system_logs'),
+        canViewDcf: hasPerm('can_view_dcf'),
+        canCancelInvoices: hasPerm('can_cancel_invoices'),
+        canViewBranches: hasPerm('can_view_branches')
     };
     
     // إخفاء/إظهار الأزرار والتبويبات
     document.getElementById('settingsBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
     document.getElementById('usersBtn').style.display = window.userPermissions.canManageUsers ? 'inline-block' : 'none';
-    document.getElementById('branchesBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('systemLogsBtn').style.display = isAdmin ? 'inline-block' : 'none';
+    document.getElementById('branchesBtn').style.display = window.userPermissions.canViewBranches ? 'inline-block' : 'none';
+    document.getElementById('systemLogsBtn').style.display = window.userPermissions.canViewSystemLogs ? 'inline-block' : 'none';
     document.getElementById('clearInvoicesBtn').style.display = window.userPermissions.canDeleteInvoices ? 'inline-block' : 'none';
-    document.getElementById('expensesBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('dcfBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('advancedReportsBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('suppliersBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('couponsBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('tablesBtn').style.display = isAdmin ? 'inline-block' : 'none';
+    document.getElementById('expensesBtn').style.display = window.userPermissions.canViewExpenses ? 'inline-block' : 'none';
+    document.getElementById('dcfBtn').style.display = window.userPermissions.canViewDcf ? 'inline-block' : 'none';
+    document.getElementById('advancedReportsBtn').style.display = window.userPermissions.canViewAdvancedReports ? 'inline-block' : 'none';
+    document.getElementById('suppliersBtn').style.display = window.userPermissions.canViewSuppliers ? 'inline-block' : 'none';
+    document.getElementById('couponsBtn').style.display = window.userPermissions.canViewCoupons ? 'inline-block' : 'none';
+    document.getElementById('tablesBtn').style.display = window.userPermissions.canViewTables ? 'inline-block' : 'none';
+    document.getElementById('returnsBtn').style.display = window.userPermissions.canViewReturns ? 'inline-block' : 'none';
+    document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
     // عرض خانة اختيار الطاولة في نقطة البيع
     loadTablesDropdown();
 
@@ -1389,7 +1402,7 @@ function displayInvoiceView(inv) {
     }
     // إخفاء/إظهار زر الإلغاء
     const cancelBtn = document.getElementById('cancelInvoiceBtn');
-    if (cancelBtn) cancelBtn.style.display = inv.cancelled ? 'none' : '';
+    if (cancelBtn) cancelBtn.style.display = (inv.cancelled || !window.userPermissions.canCancelInvoices) ? 'none' : '';
 
     const content = document.getElementById('invoiceViewContent');
     const isCancelled = inv.cancelled;
@@ -2366,6 +2379,17 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         userData.can_view_accounting = 1;
         userData.can_manage_users = 1;
         userData.can_access_settings = 1;
+        userData.can_view_returns = 1;
+        userData.can_view_expenses = 1;
+        userData.can_view_suppliers = 1;
+        userData.can_view_coupons = 1;
+        userData.can_view_tables = 1;
+        userData.can_view_attendance = 1;
+        userData.can_view_advanced_reports = 1;
+        userData.can_view_system_logs = 1;
+        userData.can_view_dcf = 1;
+        userData.can_cancel_invoices = 1;
+        userData.can_view_branches = 1;
     }
     
     if (userId && !userData.password) delete userData.password;

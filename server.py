@@ -185,6 +185,19 @@ def migrate_database(db_path=None):
 
         add_column('customers', 'loyalty_points', 'INTEGER', 0)
 
+        # === صلاحيات جديدة ===
+        add_column('users', 'can_view_returns', 'INTEGER', 0)
+        add_column('users', 'can_view_expenses', 'INTEGER', 0)
+        add_column('users', 'can_view_suppliers', 'INTEGER', 0)
+        add_column('users', 'can_view_coupons', 'INTEGER', 0)
+        add_column('users', 'can_view_tables', 'INTEGER', 0)
+        add_column('users', 'can_view_attendance', 'INTEGER', 0)
+        add_column('users', 'can_view_advanced_reports', 'INTEGER', 0)
+        add_column('users', 'can_view_system_logs', 'INTEGER', 0)
+        add_column('users', 'can_view_dcf', 'INTEGER', 0)
+        add_column('users', 'can_cancel_invoices', 'INTEGER', 0)
+        add_column('users', 'can_view_branches', 'INTEGER', 0)
+
         add_column('invoice_items', 'variant_id', 'INTEGER')
         add_column('invoice_items', 'variant_name', 'TEXT')
 
@@ -609,6 +622,9 @@ def login():
                    u.can_view_invoices, u.can_delete_invoices,
                    u.can_view_customers, u.can_add_customer, u.can_edit_customer, u.can_delete_customer,
                    u.can_view_reports, u.can_view_accounting, u.can_manage_users, u.can_access_settings,
+                   u.can_view_returns, u.can_view_expenses, u.can_view_suppliers, u.can_view_coupons,
+                   u.can_view_tables, u.can_view_attendance, u.can_view_advanced_reports,
+                   u.can_view_system_logs, u.can_view_dcf, u.can_cancel_invoices, u.can_view_branches,
                    b.name as branch_name
             FROM users u
             LEFT JOIN branches b ON u.branch_id = b.id
@@ -632,7 +648,16 @@ def get_users():
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, username, full_name, role, invoice_prefix, branch_id, is_active, created_at FROM users ORDER BY created_at DESC')
+        cursor.execute('''SELECT id, username, full_name, role, invoice_prefix, branch_id, is_active, created_at,
+                         can_view_products, can_add_products, can_edit_products, can_delete_products,
+                         can_view_inventory, can_add_inventory, can_edit_inventory, can_delete_inventory,
+                         can_view_invoices, can_delete_invoices,
+                         can_view_customers, can_add_customer, can_edit_customer, can_delete_customer,
+                         can_view_reports, can_view_accounting, can_manage_users, can_access_settings,
+                         can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
+                         can_view_tables, can_view_attendance, can_view_advanced_reports,
+                         can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches
+                         FROM users ORDER BY created_at DESC''')
         users = [dict_from_row(row) for row in cursor.fetchall()]
         conn.close()
         return jsonify({'success': True, 'users': users})
@@ -653,8 +678,11 @@ def add_user():
                              can_view_inventory, can_add_inventory, can_edit_inventory, can_delete_inventory,
                              can_view_invoices, can_delete_invoices,
                              can_view_customers, can_add_customer, can_edit_customer, can_delete_customer,
-                             can_view_reports, can_view_accounting, can_manage_users, can_access_settings)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             can_view_reports, can_view_accounting, can_manage_users, can_access_settings,
+                             can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
+                             can_view_tables, can_view_attendance, can_view_advanced_reports,
+                             can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
             data.get('password'),
@@ -679,7 +707,18 @@ def add_user():
             data.get('can_view_reports', 0),
             data.get('can_view_accounting', 0),
             data.get('can_manage_users', 0),
-            data.get('can_access_settings', 0)
+            data.get('can_access_settings', 0),
+            data.get('can_view_returns', 0),
+            data.get('can_view_expenses', 0),
+            data.get('can_view_suppliers', 0),
+            data.get('can_view_coupons', 0),
+            data.get('can_view_tables', 0),
+            data.get('can_view_attendance', 0),
+            data.get('can_view_advanced_reports', 0),
+            data.get('can_view_system_logs', 0),
+            data.get('can_view_dcf', 0),
+            data.get('can_cancel_invoices', 0),
+            data.get('can_view_branches', 0)
         ))
         
         user_id = cursor.lastrowid
@@ -773,6 +812,39 @@ def update_user(user_id):
         if 'can_access_settings' in data:
             updates.append('can_access_settings = ?')
             params.append(data['can_access_settings'])
+        if 'can_view_returns' in data:
+            updates.append('can_view_returns = ?')
+            params.append(data['can_view_returns'])
+        if 'can_view_expenses' in data:
+            updates.append('can_view_expenses = ?')
+            params.append(data['can_view_expenses'])
+        if 'can_view_suppliers' in data:
+            updates.append('can_view_suppliers = ?')
+            params.append(data['can_view_suppliers'])
+        if 'can_view_coupons' in data:
+            updates.append('can_view_coupons = ?')
+            params.append(data['can_view_coupons'])
+        if 'can_view_tables' in data:
+            updates.append('can_view_tables = ?')
+            params.append(data['can_view_tables'])
+        if 'can_view_attendance' in data:
+            updates.append('can_view_attendance = ?')
+            params.append(data['can_view_attendance'])
+        if 'can_view_advanced_reports' in data:
+            updates.append('can_view_advanced_reports = ?')
+            params.append(data['can_view_advanced_reports'])
+        if 'can_view_system_logs' in data:
+            updates.append('can_view_system_logs = ?')
+            params.append(data['can_view_system_logs'])
+        if 'can_view_dcf' in data:
+            updates.append('can_view_dcf = ?')
+            params.append(data['can_view_dcf'])
+        if 'can_cancel_invoices' in data:
+            updates.append('can_cancel_invoices = ?')
+            params.append(data['can_cancel_invoices'])
+        if 'can_view_branches' in data:
+            updates.append('can_view_branches = ?')
+            params.append(data['can_view_branches'])
         if 'is_active' in data:
             updates.append('is_active = ?')
             params.append(data['is_active'])
