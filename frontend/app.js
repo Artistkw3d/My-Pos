@@ -1349,11 +1349,9 @@ function printInvoiceFromView() {
 // طباعة فاتورة حرارية 57×40 ملم
 function printThermalInvoice() {
     if (!currentInvoice) return;
-    const printWindow = window.open('', '', 'width=300,height=500');
+    const printWindow = window.open('', '', 'width=820,height=600');
     printWindow.document.write(generateThermalInvoiceHTML(currentInvoice));
     printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
 }
 
 function generateThermalInvoiceHTML(inv) {
@@ -1375,24 +1373,62 @@ function generateThermalInvoiceHTML(inv) {
 <title>فاتورة ${inv.invoice_number}</title>
 <style>
 @page { size: 57mm 40mm; margin: 1mm; }
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: Arial, sans-serif; width: 55mm; font-size: 7px; line-height: 1.3; direction: rtl; padding: 1mm; }
-.center { text-align: center; }
-.bold { font-weight: bold; }
-.sep { border-top: 1px dashed #000; margin: 1.5mm 0; }
-.row { display: flex; justify-content: space-between; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 0.5mm 0; font-size: 6.5px; text-align: right; }
-th { border-bottom: 1px solid #000; font-size: 6px; }
-.total-row { font-size: 9px; font-weight: bold; border-top: 1px solid #000; padding-top: 1mm; margin-top: 1mm; }
+@media print {
+    .toolbar { display: none !important; }
+    .preview-wrapper { box-shadow: none !important; border: none !important; margin: 0 !important; }
+    body { background: white !important; padding: 0 !important; }
+    .receipt { width: 55mm; font-size: 7px; padding: 1mm; }
+    .receipt table th, .receipt table td { font-size: 6.5px; padding: 0.5mm 0; }
+    .receipt .r-header { font-size: 9px; }
+    .receipt .r-sub { font-size: 6px; }
+    .receipt .r-total { font-size: 9px; }
+    .receipt .r-small { font-size: 6px; }
+    .receipt .r-mid { font-size: 6.5px; }
+    .receipt table th { font-size: 6px; }
+}
+@media screen {
+    body { background: #f0f0f0; font-family: Arial, sans-serif; direction: rtl; margin: 0; padding: 20px; }
+    .toolbar { background: #333; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; position: fixed; top: 0; left: 0; right: 0; z-index: 100; border-radius: 0; }
+    .toolbar h3 { margin: 0; font-size: 16px; }
+    .toolbar-btns { display: flex; gap: 10px; }
+    .toolbar button { padding: 10px 25px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold; }
+    .btn-print { background: #28a745; color: white; }
+    .btn-print:hover { background: #218838; }
+    .btn-close { background: #dc3545; color: white; }
+    .btn-close:hover { background: #c82333; }
+    .preview-wrapper { max-width: 280px; margin: 80px auto 20px; background: white; border: 2px solid #ccc; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); padding: 15px; }
+    .receipt { width: 100%; font-size: 13px; line-height: 1.5; }
+    .receipt .r-header { font-size: 18px; font-weight: bold; }
+    .receipt .r-sub { font-size: 11px; }
+    .receipt .r-total { font-size: 17px; font-weight: bold; }
+    .receipt .r-small { font-size: 11px; }
+    .receipt .r-mid { font-size: 12px; }
+    .receipt table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    .receipt table th, .receipt table td { padding: 4px 2px; text-align: right; font-size: 12px; }
+    .receipt table th { border-bottom: 2px solid #000; font-size: 11px; font-weight: bold; }
+    .receipt table td { border-bottom: 1px solid #eee; }
+}
+.receipt .center { text-align: center; }
+.receipt .bold { font-weight: bold; }
+.receipt .sep { border-top: 1px dashed #000; margin: 6px 0; }
+.receipt .row { display: flex; justify-content: space-between; }
 </style>
 </head>
 <body>
-<div class="center bold" style="font-size:9px;">${storeName}</div>
-<div class="center" style="font-size:6px;">فاتورة مبيعات</div>
+<div class="toolbar">
+    <h3>معاينة الفاتورة الحرارية (57×40 ملم)</h3>
+    <div class="toolbar-btns">
+        <button class="btn-print" onclick="window.print()">🖨️ طباعة</button>
+        <button class="btn-close" onclick="window.close()">✖ إغلاق</button>
+    </div>
+</div>
+<div class="preview-wrapper">
+<div class="receipt">
+<div class="center r-header">${storeName}</div>
+<div class="center r-sub">فاتورة مبيعات</div>
 <div class="sep"></div>
-<div class="row"><span>${inv.invoice_number}</span><span>${formatKuwaitTime ? formatKuwaitTime(inv.created_at) : new Date(inv.created_at).toLocaleDateString('ar')}</span></div>
-${inv.customer_name ? `<div style="font-size:6px;">العميل: ${inv.customer_name}</div>` : ''}
+<div class="row r-mid"><span>${inv.invoice_number}</span><span>${typeof formatKuwaitTime === 'function' ? formatKuwaitTime(inv.created_at) : new Date(inv.created_at).toLocaleDateString('ar')}</span></div>
+${inv.customer_name ? `<div class="r-small">العميل: ${inv.customer_name}</div>` : ''}
 <div class="sep"></div>
 <table>
 <thead><tr><th>المنتج</th><th>ك</th><th>السعر</th><th>المجموع</th></tr></thead>
@@ -1401,14 +1437,16 @@ ${inv.items.map(item => `<tr><td>${item.product_name}</td><td style="text-align:
 </tbody>
 </table>
 <div class="sep"></div>
-${inv.discount > 0 ? `<div class="row" style="font-size:6px;"><span>الخصم:</span><span>-${inv.discount.toFixed(3)}</span></div>` : ''}
-${(inv.coupon_discount || 0) > 0 ? `<div class="row" style="font-size:6px;"><span>كوبون:</span><span>-${inv.coupon_discount.toFixed(3)}</span></div>` : ''}
-${(inv.loyalty_discount || 0) > 0 ? `<div class="row" style="font-size:6px;"><span>ولاء:</span><span>-${inv.loyalty_discount.toFixed(3)}</span></div>` : ''}
-${inv.delivery_fee > 0 ? `<div class="row" style="font-size:6px;"><span>توصيل:</span><span>+${inv.delivery_fee.toFixed(3)}</span></div>` : ''}
-<div class="row total-row"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
-<div style="font-size:6px; margin-top:1mm;">الدفع: ${payText}</div>
+${inv.discount > 0 ? `<div class="row r-small"><span>الخصم:</span><span>-${inv.discount.toFixed(3)}</span></div>` : ''}
+${(inv.coupon_discount || 0) > 0 ? `<div class="row r-small"><span>كوبون:</span><span>-${inv.coupon_discount.toFixed(3)}</span></div>` : ''}
+${(inv.loyalty_discount || 0) > 0 ? `<div class="row r-small"><span>ولاء:</span><span>-${inv.loyalty_discount.toFixed(3)}</span></div>` : ''}
+${inv.delivery_fee > 0 ? `<div class="row r-small"><span>توصيل:</span><span>+${inv.delivery_fee.toFixed(3)}</span></div>` : ''}
+<div class="row r-total"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
+<div class="r-small" style="margin-top:4px;">الدفع: ${payText}</div>
 <div class="sep"></div>
-<div class="center" style="font-size:6px;">شكراً لتعاملكم معنا</div>
+<div class="center r-small">شكراً لتعاملكم معنا</div>
+</div>
+</div>
 </body>
 </html>`;
 }
@@ -6209,36 +6247,72 @@ async function printThermalReturn(id) {
 <title>مرتجع #${r.id}</title>
 <style>
 @page { size: 57mm 40mm; margin: 1mm; }
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: Arial, sans-serif; width: 55mm; font-size: 7px; line-height: 1.3; direction: rtl; padding: 1mm; }
-.center { text-align: center; }
-.bold { font-weight: bold; }
-.sep { border-top: 1px dashed #000; margin: 1.5mm 0; }
-.row { display: flex; justify-content: space-between; }
+@media print {
+    .toolbar { display: none !important; }
+    .preview-wrapper { box-shadow: none !important; border: none !important; margin: 0 !important; }
+    body { background: white !important; padding: 0 !important; }
+    .receipt { width: 55mm; font-size: 7px; padding: 1mm; }
+    .receipt .r-header { font-size: 9px; }
+    .receipt .r-sub { font-size: 7px; }
+    .receipt .r-total { font-size: 9px; }
+    .receipt .r-small { font-size: 6px; }
+    .receipt .r-mid { font-size: 7px; }
+}
+@media screen {
+    body { background: #f0f0f0; font-family: Arial, sans-serif; direction: rtl; margin: 0; padding: 20px; }
+    .toolbar { background: #333; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
+    .toolbar h3 { margin: 0; font-size: 16px; }
+    .toolbar-btns { display: flex; gap: 10px; }
+    .toolbar button { padding: 10px 25px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold; }
+    .btn-print { background: #28a745; color: white; }
+    .btn-print:hover { background: #218838; }
+    .btn-close { background: #dc3545; color: white; }
+    .btn-close:hover { background: #c82333; }
+    .preview-wrapper { max-width: 280px; margin: 80px auto 20px; background: white; border: 2px solid #ccc; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); padding: 15px; }
+    .receipt { width: 100%; font-size: 14px; line-height: 1.5; }
+    .receipt .r-header { font-size: 18px; font-weight: bold; }
+    .receipt .r-sub { font-size: 14px; }
+    .receipt .r-total { font-size: 17px; font-weight: bold; }
+    .receipt .r-small { font-size: 12px; }
+    .receipt .r-mid { font-size: 13px; }
+}
+.receipt .center { text-align: center; }
+.receipt .bold { font-weight: bold; }
+.receipt .sep { border-top: 1px dashed #000; margin: 6px 0; }
+.receipt .row { display: flex; justify-content: space-between; }
 </style>
 </head>
 <body>
-<div class="center bold" style="font-size:9px;">${storeName}</div>
-<div class="center" style="font-size:7px; color:#dc3545;">إيصال مرتجع</div>
+<div class="toolbar">
+    <h3>معاينة إيصال المرتجع (57×40 ملم)</h3>
+    <div class="toolbar-btns">
+        <button class="btn-print" onclick="window.print()">🖨️ طباعة</button>
+        <button class="btn-close" onclick="window.close()">✖ إغلاق</button>
+    </div>
+</div>
+<div class="preview-wrapper">
+<div class="receipt">
+<div class="center r-header">${storeName}</div>
+<div class="center r-sub" style="color:#dc3545;">إيصال مرتجع</div>
 <div class="sep"></div>
-<div class="row"><span>رقم: #${r.id}</span><span>${date}</span></div>
-${r.invoice_number ? `<div style="font-size:6px;">الفاتورة: ${r.invoice_number}</div>` : ''}
-${r.employee_name ? `<div style="font-size:6px;">الموظف: ${r.employee_name}</div>` : ''}
+<div class="row r-mid"><span>رقم: #${r.id}</span><span>${date}</span></div>
+${r.invoice_number ? `<div class="r-small">الفاتورة: ${r.invoice_number}</div>` : ''}
+${r.employee_name ? `<div class="r-small">الموظف: ${r.employee_name}</div>` : ''}
 <div class="sep"></div>
 <div class="bold">${r.product_name}</div>
-<div class="row"><span>الكمية: ${r.quantity}</span><span>السعر: ${(r.price || 0).toFixed(3)}</span></div>
-${r.reason ? `<div style="font-size:6px;">السبب: ${r.reason}</div>` : ''}
+<div class="row r-mid"><span>الكمية: ${r.quantity}</span><span>السعر: ${(r.price || 0).toFixed(3)}</span></div>
+${r.reason ? `<div class="r-small">السبب: ${r.reason}</div>` : ''}
 <div class="sep"></div>
-<div class="row bold" style="font-size:9px;"><span>المسترجع:</span><span>${(r.total || 0).toFixed(3)} د.ك</span></div>
+<div class="row r-total"><span>المسترجع:</span><span>${(r.total || 0).toFixed(3)} د.ك</span></div>
 <div class="sep"></div>
-<div class="center" style="font-size:6px;">شكراً لتعاملكم معنا</div>
+<div class="center r-small">شكراً لتعاملكم معنا</div>
+</div>
+</div>
 </body>
 </html>`;
-            const printWindow = window.open('', '_blank', 'width=300,height=500');
+            const printWindow = window.open('', '_blank', 'width=820,height=600');
             printWindow.document.write(printContent);
             printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
         }
     } catch (error) {
         console.error('Error:', error);
