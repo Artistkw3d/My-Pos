@@ -258,6 +258,15 @@ def migrate_database(db_path=None):
                 cursor.execute("ALTER TABLE invoice_items ADD COLUMN variant_name TEXT")
                 conn.commit()
 
+        # إضافة عمود variant_id لتوزيع المخزون
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='branch_stock'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(branch_stock)")
+            bs_cols = [col[1] for col in cursor.fetchall()]
+            if 'variant_id' not in bs_cols:
+                cursor.execute("ALTER TABLE branch_stock ADD COLUMN variant_id INTEGER")
+                conn.commit()
+
         conn.commit()
     except Exception as e:
         print(f"Migration note: {e}")
@@ -399,6 +408,7 @@ def create_tenant_database(slug):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             inventory_id INTEGER,
             branch_id INTEGER,
+            variant_id INTEGER,
             stock INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -886,43 +896,48 @@ def get_products():
         cursor = conn.cursor()
 
         # جلب المنتجات من branch_stock مع معلومات المنتج من inventory
+        base_query = '''
+            SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id, bs.variant_id,
+                   i.name, i.barcode, i.category, i.price, i.cost, i.image_data,
+                   pv.variant_name, pv.price as variant_price, pv.cost as variant_cost, pv.barcode as variant_barcode
+            FROM branch_stock bs
+            JOIN inventory i ON bs.inventory_id = i.id
+            LEFT JOIN product_variants pv ON bs.variant_id = pv.id
+        '''
         if branch_id == 'all':
-            cursor.execute('''
-                SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id,
-                       i.name, i.barcode, i.category, i.price, i.cost, i.image_data
-                FROM branch_stock bs
-                JOIN inventory i ON bs.inventory_id = i.id
-                ORDER BY bs.branch_id, i.name
-            ''')
+            cursor.execute(base_query + ' ORDER BY bs.branch_id, i.name')
         elif branch_id:
-            cursor.execute('''
-                SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id,
-                       i.name, i.barcode, i.category, i.price, i.cost, i.image_data
-                FROM branch_stock bs
-                JOIN inventory i ON bs.inventory_id = i.id
-                WHERE bs.branch_id = ?
-                ORDER BY i.name
-            ''', (branch_id,))
+            cursor.execute(base_query + ' WHERE bs.branch_id = ? ORDER BY i.name', (branch_id,))
         else:
-            cursor.execute('''
-                SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id,
-                       i.name, i.barcode, i.category, i.price, i.cost, i.image_data
-                FROM branch_stock bs
-                JOIN inventory i ON bs.inventory_id = i.id
-                WHERE bs.branch_id = ?
-                ORDER BY i.name
-            ''', (1,))
+            cursor.execute(base_query + ' WHERE bs.branch_id = ? ORDER BY i.name', (1,))
 
-        products = [dict_from_row(row) for row in cursor.fetchall()]
+        products = []
+        for row in cursor.fetchall():
+            p = dict_from_row(row)
+            # إذا التوزيع لخاصية معينة، استخدم اسمها وسعرها
+            if p.get('variant_id') and p.get('variant_name'):
+                p['display_name'] = f"{p['name']} ({p['variant_name']})"
+                p['price'] = p.get('variant_price') or p['price']
+                p['cost'] = p.get('variant_cost') or p['cost']
+                if p.get('variant_barcode'):
+                    p['barcode'] = p['variant_barcode']
+            else:
+                p['display_name'] = p['name']
+            products.append(p)
 
-        # جلب المتغيرات لكل منتج
+        # جلب المتغيرات الكاملة لكل منتج (للـ POS)
+        seen_inv = set()
         for p in products:
             inv_id = p.get('inventory_id')
-            if inv_id:
+            if inv_id and inv_id not in seen_inv:
                 cursor.execute('SELECT * FROM product_variants WHERE inventory_id = ? ORDER BY id', (inv_id,))
-                p['variants'] = [dict_from_row(row) for row in cursor.fetchall()]
-            else:
-                p['variants'] = []
+                variants = [dict_from_row(row) for row in cursor.fetchall()]
+                for pp in products:
+                    if pp.get('inventory_id') == inv_id:
+                        pp['variants'] = variants
+                seen_inv.add(inv_id)
+            elif inv_id not in seen_inv if inv_id else True:
+                p['variants'] = p.get('variants', [])
 
         conn.close()
         return jsonify({'success': True, 'products': products})
@@ -1174,9 +1189,11 @@ def get_branch_stock():
         cursor = conn.cursor()
         
         query = '''
-            SELECT bs.*, i.name, i.barcode, i.category, i.price, i.cost, i.image_data
+            SELECT bs.*, i.name, i.barcode, i.category, i.price, i.cost, i.image_data,
+                   pv.variant_name, pv.price as variant_price, pv.cost as variant_cost, pv.barcode as variant_barcode
             FROM branch_stock bs
             JOIN inventory i ON bs.inventory_id = i.id
+            LEFT JOIN product_variants pv ON bs.variant_id = pv.id
             WHERE 1=1
         '''
         params = []
@@ -1206,17 +1223,24 @@ def add_branch_stock():
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
-        
-        # التحقق من وجود التوزيع
-        cursor.execute('''
-            SELECT id, stock FROM branch_stock 
-            WHERE inventory_id = ? AND branch_id = ?
-        ''', (data.get('inventory_id'), data.get('branch_id')))
-        
+
+        variant_id = data.get('variant_id')
+
+        # التحقق من وجود التوزيع (مع variant_id)
+        if variant_id:
+            cursor.execute('''
+                SELECT id, stock FROM branch_stock
+                WHERE inventory_id = ? AND branch_id = ? AND variant_id = ?
+            ''', (data.get('inventory_id'), data.get('branch_id'), variant_id))
+        else:
+            cursor.execute('''
+                SELECT id, stock FROM branch_stock
+                WHERE inventory_id = ? AND branch_id = ? AND (variant_id IS NULL OR variant_id = 0)
+            ''', (data.get('inventory_id'), data.get('branch_id')))
+
         existing = cursor.fetchone()
-        
+
         if existing:
-            # تحديث الكمية
             new_stock = existing['stock'] + data.get('stock', 0)
             cursor.execute('''
                 UPDATE branch_stock SET stock = ?, updated_at = CURRENT_TIMESTAMP
@@ -1224,20 +1248,20 @@ def add_branch_stock():
             ''', (new_stock, existing['id']))
             stock_id = existing['id']
         else:
-            # إضافة جديد
             cursor.execute('''
-                INSERT INTO branch_stock (inventory_id, branch_id, stock)
-                VALUES (?, ?, ?)
+                INSERT INTO branch_stock (inventory_id, branch_id, variant_id, stock)
+                VALUES (?, ?, ?, ?)
             ''', (
                 data.get('inventory_id'),
                 data.get('branch_id'),
+                variant_id,
                 data.get('stock', 0)
             ))
             stock_id = cursor.lastrowid
-        
+
         conn.commit()
         conn.close()
-        
+
         return jsonify({'success': True, 'id': stock_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
