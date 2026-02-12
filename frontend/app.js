@@ -1346,6 +1346,73 @@ function printInvoiceFromView() {
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
 }
 
+// طباعة فاتورة حرارية 57×40 ملم
+function printThermalInvoice() {
+    if (!currentInvoice) return;
+    const printWindow = window.open('', '', 'width=300,height=500');
+    printWindow.document.write(generateThermalInvoiceHTML(currentInvoice));
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+}
+
+function generateThermalInvoiceHTML(inv) {
+    const paymentMethods = {'cash':'نقداً','knet':'كي نت','visa':'فيزا','other':'أخرى'};
+    if (!inv.payments && inv.transaction_number) {
+        try {
+            const parsed = JSON.parse(inv.transaction_number);
+            if (Array.isArray(parsed)) { inv.payments = parsed; }
+        } catch(e) {}
+    }
+    const storeName = document.getElementById('storeName')?.value || 'متجر';
+    const payText = inv.payments && inv.payments.length > 0
+        ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} ${parseFloat(p.amount).toFixed(3)}`).join(' + ')
+        : (paymentMethods[inv.payment_method] || 'نقداً');
+    return `<!DOCTYPE html>
+<html dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>فاتورة ${inv.invoice_number}</title>
+<style>
+@page { size: 57mm 40mm; margin: 1mm; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: Arial, sans-serif; width: 55mm; font-size: 7px; line-height: 1.3; direction: rtl; padding: 1mm; }
+.center { text-align: center; }
+.bold { font-weight: bold; }
+.sep { border-top: 1px dashed #000; margin: 1.5mm 0; }
+.row { display: flex; justify-content: space-between; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.5mm 0; font-size: 6.5px; text-align: right; }
+th { border-bottom: 1px solid #000; font-size: 6px; }
+.total-row { font-size: 9px; font-weight: bold; border-top: 1px solid #000; padding-top: 1mm; margin-top: 1mm; }
+</style>
+</head>
+<body>
+<div class="center bold" style="font-size:9px;">${storeName}</div>
+<div class="center" style="font-size:6px;">فاتورة مبيعات</div>
+<div class="sep"></div>
+<div class="row"><span>${inv.invoice_number}</span><span>${formatKuwaitTime ? formatKuwaitTime(inv.created_at) : new Date(inv.created_at).toLocaleDateString('ar')}</span></div>
+${inv.customer_name ? `<div style="font-size:6px;">العميل: ${inv.customer_name}</div>` : ''}
+<div class="sep"></div>
+<table>
+<thead><tr><th>المنتج</th><th>ك</th><th>السعر</th><th>المجموع</th></tr></thead>
+<tbody>
+${inv.items.map(item => `<tr><td>${item.product_name}</td><td style="text-align:center;">${item.quantity}</td><td>${item.price.toFixed(3)}</td><td>${item.total.toFixed(3)}</td></tr>`).join('')}
+</tbody>
+</table>
+<div class="sep"></div>
+${inv.discount > 0 ? `<div class="row" style="font-size:6px;"><span>الخصم:</span><span>-${inv.discount.toFixed(3)}</span></div>` : ''}
+${(inv.coupon_discount || 0) > 0 ? `<div class="row" style="font-size:6px;"><span>كوبون:</span><span>-${inv.coupon_discount.toFixed(3)}</span></div>` : ''}
+${(inv.loyalty_discount || 0) > 0 ? `<div class="row" style="font-size:6px;"><span>ولاء:</span><span>-${inv.loyalty_discount.toFixed(3)}</span></div>` : ''}
+${inv.delivery_fee > 0 ? `<div class="row" style="font-size:6px;"><span>توصيل:</span><span>+${inv.delivery_fee.toFixed(3)}</span></div>` : ''}
+<div class="row total-row"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
+<div style="font-size:6px; margin-top:1mm;">الدفع: ${payText}</div>
+<div class="sep"></div>
+<div class="center" style="font-size:6px;">شكراً لتعاملكم معنا</div>
+</body>
+</html>`;
+}
+
 function generateCompactInvoiceHTML(inv) {
     const paymentMethods = {'cash':'💵 نقداً','knet':'💳 كي نت','visa':'💳 فيزا','other':'💰 أخرى'};
     if (!inv.payments && inv.transaction_number) {
@@ -5855,6 +5922,7 @@ function displayReturnsTable(returns) {
                 <td>
                     <button onclick="viewReturnDetails(${r.id})" class="btn-sm" style="background: #0ea5e9;" title="عرض التفاصيل">👁️</button>
                     <button onclick="printReturn(${r.id})" class="btn-sm" style="background: #667eea;" title="طباعة">🖨️</button>
+                    <button onclick="printThermalReturn(${r.id})" class="btn-sm" style="background: #e67e22; font-size:10px;" title="طباعة 57×40">🧾</button>
                     <button onclick="deleteReturnConfirm(${r.id})" class="btn-sm btn-danger" title="حذف">🗑️</button>
                 </td>
             </tr>
@@ -6118,6 +6186,59 @@ async function printReturn(id) {
             printWindow.document.write(printContent);
             printWindow.document.close();
             printWindow.print();
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل الطباعة');
+    }
+}
+
+// طباعة مرتجع حراري 57×40 ملم
+async function printThermalReturn(id) {
+    try {
+        const response = await fetch(`${API_URL}/api/returns/${id}`);
+        const data = await response.json();
+        if (data.success) {
+            const r = data.return;
+            const date = new Date(r.created_at).toLocaleString('ar-EG');
+            const storeName = document.getElementById('storeName')?.value || 'متجر';
+            const printContent = `<!DOCTYPE html>
+<html dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>مرتجع #${r.id}</title>
+<style>
+@page { size: 57mm 40mm; margin: 1mm; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: Arial, sans-serif; width: 55mm; font-size: 7px; line-height: 1.3; direction: rtl; padding: 1mm; }
+.center { text-align: center; }
+.bold { font-weight: bold; }
+.sep { border-top: 1px dashed #000; margin: 1.5mm 0; }
+.row { display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="center bold" style="font-size:9px;">${storeName}</div>
+<div class="center" style="font-size:7px; color:#dc3545;">إيصال مرتجع</div>
+<div class="sep"></div>
+<div class="row"><span>رقم: #${r.id}</span><span>${date}</span></div>
+${r.invoice_number ? `<div style="font-size:6px;">الفاتورة: ${r.invoice_number}</div>` : ''}
+${r.employee_name ? `<div style="font-size:6px;">الموظف: ${r.employee_name}</div>` : ''}
+<div class="sep"></div>
+<div class="bold">${r.product_name}</div>
+<div class="row"><span>الكمية: ${r.quantity}</span><span>السعر: ${(r.price || 0).toFixed(3)}</span></div>
+${r.reason ? `<div style="font-size:6px;">السبب: ${r.reason}</div>` : ''}
+<div class="sep"></div>
+<div class="row bold" style="font-size:9px;"><span>المسترجع:</span><span>${(r.total || 0).toFixed(3)} د.ك</span></div>
+<div class="sep"></div>
+<div class="center" style="font-size:6px;">شكراً لتعاملكم معنا</div>
+</body>
+</html>`;
+            const printWindow = window.open('', '_blank', 'width=300,height=500');
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
         }
     } catch (error) {
         console.error('Error:', error);
