@@ -35,6 +35,43 @@ window.fetch = function(url, options = {}) {
     }
 })();
 
+// ===== وضع العرض (كمبيوتر / موبايل) =====
+function selectViewMode(mode) {
+    localStorage.setItem('pos_view_mode', mode);
+    applyViewMode(mode);
+    // تحديث الأزرار
+    document.getElementById('desktopModeBtn')?.classList.toggle('active', mode === 'desktop');
+    document.getElementById('mobileModeBtn')?.classList.toggle('active', mode === 'mobile');
+}
+
+function applyViewMode(mode) {
+    if (mode === 'mobile') {
+        document.body.classList.add('mobile-mode');
+        // تحديث viewport للموبايل
+        let viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes');
+        }
+    } else {
+        document.body.classList.remove('mobile-mode');
+        let viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+        }
+    }
+}
+
+// استعادة وضع العرض المحفوظ
+(function() {
+    const savedMode = localStorage.getItem('pos_view_mode') || 'desktop';
+    applyViewMode(savedMode);
+    // تحديث الأزرار عند تحميل الصفحة
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('desktopModeBtn')?.classList.toggle('active', savedMode === 'desktop');
+        document.getElementById('mobileModeBtn')?.classList.toggle('active', savedMode === 'mobile');
+    });
+})();
+
 // استعادة المستخدم من localStorage
 function restoreUser() {
     const savedUser = localStorage.getItem('pos_current_user');

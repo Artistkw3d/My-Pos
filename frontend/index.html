@@ -19,6 +19,20 @@
         <div class="login-box">
             <div class="login-logo">🛍️</div>
             <h1 class="login-title">نظام نقاط البيع</h1>
+            <!-- اختيار وضع العرض -->
+            <div class="view-mode-selector" id="viewModeSelector">
+                <div class="view-mode-label">اختر وضع العرض</div>
+                <div class="view-mode-buttons">
+                    <button type="button" class="view-mode-btn active" id="desktopModeBtn" onclick="selectViewMode('desktop')">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                        <span>كمبيوتر</span>
+                    </button>
+                    <button type="button" class="view-mode-btn" id="mobileModeBtn" onclick="selectViewMode('mobile')">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                        <span>موبايل / آيباد</span>
+                    </button>
+                </div>
+            </div>
             <form class="login-form" id="loginForm">
                 <div class="login-form-group">
                     <label>🏢 معرف المتجر</label>
