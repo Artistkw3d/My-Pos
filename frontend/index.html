@@ -1051,10 +1051,16 @@
                 <div id="currentDistributions" style="margin-bottom: 20px;"></div>
                 
                 <h3>إضافة توزيع جديد:</h3>
-                <form id="distributionForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+                <form id="distributionForm" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;">
                     <div>
                         <label>الفرع:</label>
                         <select id="distributionBranch" required style="width: 100%; padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px;">
+                        </select>
+                    </div>
+                    <div id="distributionVariantGroup" style="display: none;">
+                        <label>الخاصية:</label>
+                        <select id="distributionVariant" style="width: 100%; padding: 10px; border: 2px solid #38a169; border-radius: 6px; background: #f0fff4;">
+                            <option value="">المنتج الأساسي</option>
                         </select>
                     </div>
                     <div>

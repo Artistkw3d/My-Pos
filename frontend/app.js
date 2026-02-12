@@ -573,7 +573,7 @@ function displayProducts(products) {
         return `
         <div class="product-card">
             ${imgDisplay}
-            <div class="product-card-name">${p.name}</div>
+            <div class="product-card-name">${p.display_name || p.name}</div>
             <div class="product-card-price">${p.price.toFixed(3)} د.ك</div>
             ${variantBadge}
             <div class="product-card-stock">المخزون: ${p.stock}</div>
@@ -621,15 +621,20 @@ function addToCart(productId, variantId = null) {
         return;
     }
 
-    // إذا المنتج له خصائص ولم يتم تحديد واحدة، اعرض نافذة الاختيار
-    if (product.variants && product.variants.length > 0 && !variantId) {
+    // إذا المنتج موزع كخاصية محددة، استخدم بياناتها مباشرة
+    if (product.variant_id && !variantId) {
+        variantId = product.variant_id;
+    }
+
+    // إذا المنتج له خصائص ولم يتم تحديد واحدة ولم يكن موزع كخاصية، اعرض نافذة الاختيار
+    if (product.variants && product.variants.length > 0 && !variantId && !product.variant_id) {
         showVariantSelectModal(product);
         return;
     }
 
     // تحديد السعر والاسم حسب الخاصية المختارة
     let itemPrice = product.price;
-    let itemName = product.name;
+    let itemName = product.display_name || product.name;
     let selectedVariantId = null;
     let selectedVariantName = null;
 
@@ -3074,6 +3079,18 @@ async function distributeToBranch(inventoryId) {
         </div>
     `;
 
+    // تحميل قائمة الخصائص في التوزيع
+    const variantGroup = document.getElementById('distributionVariantGroup');
+    const variantSelect = document.getElementById('distributionVariant');
+    if (product.variants && product.variants.length > 0) {
+        variantGroup.style.display = 'block';
+        variantSelect.innerHTML = '<option value="">المنتج الأساسي</option>' +
+            product.variants.map(v => `<option value="${v.id}">${v.variant_name} (${v.price.toFixed(3)} د.ك)</option>`).join('');
+    } else {
+        variantGroup.style.display = 'none';
+        variantSelect.innerHTML = '<option value="">المنتج الأساسي</option>';
+    }
+
     // تحميل الفروع
     await loadBranchesForDistribution();
 
@@ -3115,13 +3132,17 @@ async function loadCurrentDistributions(inventoryId) {
                 branchesData.branches.forEach(b => branches[b.id] = b.name);
             }
             
-            let html = '<table class="data-table"><thead><tr><th>الفرع</th><th>الكمية</th><th>إجراءات</th></tr></thead><tbody>';
-            
+            let html = '<table class="data-table"><thead><tr><th>الفرع</th><th>الخاصية</th><th>الكمية</th><th>إجراءات</th></tr></thead><tbody>';
+
             data.stock.forEach(s => {
                 const branchName = branches[s.branch_id] || 'غير محدد';
+                const variantLabel = s.variant_name
+                    ? `<span style="background:#38a169; color:white; padding:2px 8px; border-radius:12px; font-size:12px;">📐 ${s.variant_name}</span>`
+                    : '<span style="color:#999;">الأساسي</span>';
                 html += `
                     <tr>
                         <td>🏢 ${branchName}</td>
+                        <td>${variantLabel}</td>
                         <td><strong>${s.stock}</strong></td>
                         <td>
                             <button onclick="editDistribution(${s.id}, ${s.stock})" class="btn-sm">✏️ تعديل</button>
@@ -3152,10 +3173,12 @@ document.getElementById('distributionForm').addEventListener('submit', async (e)
     
     if (!currentDistributionProduct) return;
     
+    const variantVal = document.getElementById('distributionVariant')?.value;
     const distributionData = {
         inventory_id: currentDistributionProduct.id,
         branch_id: parseInt(document.getElementById('distributionBranch').value),
-        stock: parseInt(document.getElementById('distributionStock').value)
+        stock: parseInt(document.getElementById('distributionStock').value),
+        variant_id: variantVal ? parseInt(variantVal) : null
     };
     
     try {
@@ -3167,7 +3190,8 @@ document.getElementById('distributionForm').addEventListener('submit', async (e)
         const data = await response.json();
         if (data.success) {
             // تسجيل في السجل
-            await logAction('distribute', `توزيع ${distributionData.stock} من ${currentDistributionProduct.name}`, data.id);
+            const variantName = document.getElementById('distributionVariant')?.selectedOptions[0]?.textContent || '';
+            await logAction('distribute', `توزيع ${distributionData.stock} من ${currentDistributionProduct.name} ${variantName}`, data.id);
             alert('✅ تم التوزيع');
             document.getElementById('distributionForm').reset();
             await loadCurrentDistributions(currentDistributionProduct.id);
