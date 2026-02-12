@@ -828,7 +828,7 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    if (e.key.length === 1) {
+    if (e.key && e.key.length === 1) {
         scanBuffer += e.key;
         document.getElementById('barcodeInput').value = scanBuffer;
         clearTimeout(scanTimeout);
