@@ -2,10 +2,10 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v23';
-const STATIC_CACHE = 'pos-static-v23';
+const CACHE_NAME = 'pos-cache-v24';
+const STATIC_CACHE = 'pos-static-v24';
 
-// الملفات الأساسية
+// الملفات الأساسية (بدون manifest - لا يسبب فشل التثبيت)
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -13,23 +13,28 @@ const STATIC_ASSETS = [
     '/style.css',
     '/products-search.js',
     '/localdb.js',
-    '/sync-manager.js',
-    '/manifest.json'
+    '/sync-manager.js'
 ];
 
-// التثبيت
+// التثبيت - كل ملف على حدة حتى لا يفشل الكل بسبب ملف واحد
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing...');
+    console.log('[SW] Installing v24...');
     event.waitUntil(
-        caches.open(STATIC_CACHE)
-            .then(cache => cache.addAll(STATIC_ASSETS))
-            .then(() => self.skipWaiting())
+        caches.open(STATIC_CACHE).then(cache => {
+            return Promise.allSettled(
+                STATIC_ASSETS.map(url =>
+                    cache.add(url).catch(err => {
+                        console.warn('[SW] Failed to cache:', url, err.message);
+                    })
+                )
+            );
+        }).then(() => self.skipWaiting())
     );
 });
 
-// التفعيل
+// التفعيل - حذف جميع الكاشات القديمة
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating...');
+    console.log('[SW] Activating v24...');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
@@ -54,7 +59,6 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then(response => {
-                    // حفظ النسخة في cache
                     const responseClone = response.clone();
                     caches.open(CACHE_NAME).then(cache => {
                         cache.put(request, responseClone);
@@ -62,12 +66,27 @@ self.addEventListener('fetch', (event) => {
                     return response;
                 })
                 .catch(() => {
-                    // Offline: جرب من cache
                     return caches.match(request);
                 })
         );
-    } 
-    // Static Files - Cache First
+    }
+    // ملفات JS/CSS/HTML - Network First ثم Cache (لضمان التحديثات)
+    else if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.html') || url.pathname === '/') {
+        event.respondWith(
+            fetch(request)
+                .then(response => {
+                    const responseClone = response.clone();
+                    caches.open(STATIC_CACHE).then(cache => {
+                        cache.put(request, responseClone);
+                    });
+                    return response;
+                })
+                .catch(() => {
+                    return caches.match(request);
+                })
+        );
+    }
+    // باقي الملفات (صور وغيرها) - Cache First
     else {
         event.respondWith(
             caches.match(request)
@@ -76,4 +95,4 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-console.log('[SW] Service Worker loaded');
+console.log('[SW] Service Worker loaded v24');
