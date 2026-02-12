@@ -1663,10 +1663,26 @@
             navigator.serviceWorker.register('/sw.js')
                 .then(reg => {
                     console.log('[PWA] Service Worker registered ✅');
+                    // إذا تم تثبيت نسخة جديدة - إعادة تحميل الصفحة تلقائياً
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'activated') {
+                                console.log('[PWA] New SW activated - reloading...');
+                                location.reload();
+                            }
+                        });
+                    });
                 })
                 .catch(err => {
                     console.error('[PWA] Service Worker registration failed:', err);
                 });
+
+            // إعادة تحميل فورية عند تغيير المتحكم
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                console.log('[PWA] Controller changed - reloading...');
+                location.reload();
+            });
         });
     }
     
@@ -1713,12 +1729,58 @@
         console.log('[PWA] Online ✅');
         syncManager.showStatus('🌐 متصل - جاري المزامنة...', 'info');
         setTimeout(() => syncManager.sync(), 1000);
+        // مزامنة العملاء المحفوظين محلياً
+        setTimeout(() => { if (typeof syncOfflineCustomers === 'function') syncOfflineCustomers(); }, 3000);
+        // تفعيل زر الخروج
+        _lockLogout(false);
     });
 
     window.addEventListener('offline', () => {
         console.log('[PWA] Offline 📴');
         syncManager.showStatus('📴 غير متصل - الوضع المحلي', 'info');
+        // تعطيل زر الخروج فوراً
+        _lockLogout(true);
     });
+
+    // === حماية زر الخروج مباشرة في HTML (تعمل حتى لو app.js قديم) ===
+    function _lockLogout(lock) {
+        const btn = document.getElementById('logoutBtn');
+        if (!btn) return;
+        if (lock) {
+            btn.disabled = true;
+            btn.classList.add('offline-locked');
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.3';
+            btn.style.background = 'rgba(150,150,150,0.5)';
+            btn.style.textDecoration = 'line-through';
+            btn.setAttribute('aria-disabled', 'true');
+            btn.title = 'ممنوع - لا يمكن تسجيل الخروج بدون اتصال';
+        } else {
+            btn.disabled = false;
+            btn.classList.remove('offline-locked');
+            btn.style.pointerEvents = '';
+            btn.style.opacity = '';
+            btn.style.background = '';
+            btn.style.textDecoration = '';
+            btn.removeAttribute('aria-disabled');
+            btn.title = '';
+        }
+    }
+
+    // فحص دوري كل ثانية
+    setInterval(() => { _lockLogout(!navigator.onLine); }, 1000);
+    // فحص فوري عند تحميل الصفحة
+    document.addEventListener('DOMContentLoaded', () => { _lockLogout(!navigator.onLine); });
+    // فحص إضافي بعد ثانية
+    setTimeout(() => { _lockLogout(!navigator.onLine); }, 500);
+
+    // اعتراض أي نقرة على زر الخروج في وضع أوفلاين
+    document.addEventListener('click', function(e) {
+        if (!navigator.onLine) {
+            const btn = e.target.closest('#logoutBtn, .logout-btn');
+            if (btn) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return false; }
+        }
+    }, true);
     </script>
     
     <!-- Variant Selection Modal for POS -->
