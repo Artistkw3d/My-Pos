@@ -2,8 +2,8 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v29';
-const STATIC_CACHE = 'pos-static-v29';
+const CACHE_NAME = 'pos-cache-v30';
+const STATIC_CACHE = 'pos-static-v30';
 
 // الملفات الأساسية (بدون manifest - لا يسبب فشل التثبيت)
 const STATIC_ASSETS = [
@@ -18,7 +18,7 @@ const STATIC_ASSETS = [
 
 // التثبيت - كل ملف على حدة حتى لا يفشل الكل بسبب ملف واحد
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v29...');
+    console.log('[SW] Installing v30...');
     event.waitUntil(
         caches.open(STATIC_CACHE).then(cache => {
             return Promise.allSettled(
@@ -34,7 +34,7 @@ self.addEventListener('install', (event) => {
 
 // التفعيل - حذف جميع الكاشات القديمة
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v29...');
+    console.log('[SW] Activating v30...');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
@@ -53,6 +53,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
+
+    // طلبات فحص الاتصال (ping) - شبكة فقط بدون كاش أبداً
+    if (url.searchParams.has('_ping')) {
+        event.respondWith(fetch(request));
+        return;
+    }
 
     // API Requests - Network First (GET only for caching)
     if (url.pathname.startsWith('/api/')) {
@@ -101,4 +107,4 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-console.log('[SW] Service Worker loaded v29');
+console.log('[SW] Service Worker loaded v30');
