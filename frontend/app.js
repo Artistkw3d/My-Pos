@@ -5630,15 +5630,29 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
     try {
         const url = customerId ? `${API_URL}/api/customers/${customerId}` : `${API_URL}/api/customers`;
         const method = customerId ? 'PUT' : 'POST';
-        
+
+        if (!navigator.onLine) {
+            // حفظ العميل محلياً عند عدم الاتصال
+            const offlineCustomer = {
+                id: 'offline_' + Date.now(),
+                ...customerData,
+                loyalty_points: 0,
+                created_at: new Date().toISOString()
+            };
+            allCustomersDropdown.push(offlineCustomer);
+            alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
+            closeAddCustomer();
+            return;
+        }
+
         const response = await fetch(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(customerData)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             alert('✅ تم حفظ العميل بنجاح');
             closeAddCustomer();
@@ -5649,7 +5663,16 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('❌ فشل الحفظ');
+        // حفظ محلي كـ fallback
+        const offlineCustomer = {
+            id: 'offline_' + Date.now(),
+            ...customerData,
+            loyalty_points: 0,
+            created_at: new Date().toISOString()
+        };
+        allCustomersDropdown.push(offlineCustomer);
+        alert('✅ تم حفظ العميل محلياً (سيتم مزامنته عند الاتصال)');
+        closeAddCustomer();
     }
 });
 

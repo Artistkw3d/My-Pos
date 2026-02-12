@@ -103,173 +103,103 @@ def init_master_db():
 init_master_db()
 
 def migrate_database(db_path=None):
-    """ترقية قاعدة البيانات - إضافة أعمدة جديدة"""
+    """ترقية قاعدة البيانات - إضافة أعمدة وجداول جديدة"""
     target_path = db_path or DB_PATH
     if not os.path.exists(target_path):
         return
     conn = sqlite3.connect(target_path)
     cursor = conn.cursor()
+
+    def safe_exec(sql, msg=""):
+        try:
+            cursor.execute(sql)
+            conn.commit()
+        except Exception as e:
+            if 'duplicate column' not in str(e).lower() and 'already exists' not in str(e).lower():
+                print(f"[Migration] {msg}: {e}")
+
+    def add_column(table, column, col_type, default=None):
+        try:
+            cursor.execute(f"PRAGMA table_info({table})")
+            cols = [c[1] for c in cursor.fetchall()]
+            if column not in cols:
+                ddl = f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                if default is not None:
+                    ddl += f" DEFAULT {default}"
+                cursor.execute(ddl)
+                conn.commit()
+                print(f"[Migration] Added {table}.{column}")
+        except Exception as e:
+            print(f"[Migration] {table}.{column}: {e}")
+
     try:
-        # التحقق من وجود جدول invoices
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
-        if cursor.fetchone():
-            cursor.execute("PRAGMA table_info(invoices)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'order_status' not in columns:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN order_status TEXT DEFAULT 'قيد التنفيذ'")
-                conn.commit()
+        # === جداول جديدة ===
+        safe_exec('''CREATE TABLE IF NOT EXISTS suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT,
+            email TEXT, address TEXT, company TEXT, notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''', 'suppliers')
 
-        # جدول الموردين
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS suppliers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                phone TEXT,
-                email TEXT,
-                address TEXT,
-                company TEXT,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        safe_exec('''CREATE TABLE IF NOT EXISTS supplier_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id INTEGER NOT NULL,
+            invoice_number TEXT, amount REAL DEFAULT 0, file_name TEXT, file_data TEXT,
+            file_type TEXT, notes TEXT, invoice_date TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE)''', 'supplier_invoices')
 
-        # جدول فواتير الموردين
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS supplier_invoices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                supplier_id INTEGER NOT NULL,
-                invoice_number TEXT,
-                amount REAL DEFAULT 0,
-                file_name TEXT,
-                file_data TEXT,
-                file_type TEXT,
-                notes TEXT,
-                invoice_date TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
-            )
-        ''')
+        safe_exec('''CREATE TABLE IF NOT EXISTS coupons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL,
+            discount_type TEXT NOT NULL DEFAULT 'amount', discount_value REAL NOT NULL DEFAULT 0,
+            min_amount REAL DEFAULT 0, max_uses INTEGER DEFAULT 0, used_count INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1, expiry_date TEXT, notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''', 'coupons')
 
-        # إضافة عمود نقاط الولاء للعملاء
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'")
-        if cursor.fetchone():
-            cursor.execute("PRAGMA table_info(customers)")
-            cust_columns = [col[1] for col in cursor.fetchall()]
-            if 'loyalty_points' not in cust_columns:
-                cursor.execute("ALTER TABLE customers ADD COLUMN loyalty_points INTEGER DEFAULT 0")
-                conn.commit()
+        safe_exec('''CREATE TABLE IF NOT EXISTS restaurant_tables (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, seats INTEGER DEFAULT 4,
+            pos_x INTEGER DEFAULT 50, pos_y INTEGER DEFAULT 50, status TEXT DEFAULT 'available',
+            current_invoice_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''', 'restaurant_tables')
 
-        # إضافة أعمدة الكوبون والولاء للفواتير
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
-        if cursor.fetchone():
-            cursor.execute("PRAGMA table_info(invoices)")
-            inv_columns = [col[1] for col in cursor.fetchall()]
-            if 'coupon_discount' not in inv_columns:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_discount REAL DEFAULT 0")
-                conn.commit()
-            if 'coupon_code' not in inv_columns:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN coupon_code TEXT")
-                conn.commit()
-            if 'loyalty_discount' not in inv_columns:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_discount REAL DEFAULT 0")
-                conn.commit()
-            if 'loyalty_points_earned' not in inv_columns:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_earned INTEGER DEFAULT 0")
-                conn.commit()
-            if 'loyalty_points_redeemed' not in inv_columns:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN loyalty_points_redeemed INTEGER DEFAULT 0")
-                conn.commit()
+        safe_exec('''CREATE TABLE IF NOT EXISTS product_variants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, inventory_id INTEGER NOT NULL,
+            variant_name TEXT NOT NULL, price REAL DEFAULT 0, cost REAL DEFAULT 0, barcode TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE)''', 'product_variants')
 
-        # إضافة إعدادات الولاء الافتراضية
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
-        if cursor.fetchone():
+        safe_exec('''CREATE TABLE IF NOT EXISTS salary_details (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, expense_id INTEGER NOT NULL,
+            employee_name TEXT NOT NULL, monthly_salary REAL DEFAULT 0,
+            FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE)''', 'salary_details')
+
+        # === أعمدة جديدة في الجداول الموجودة ===
+        add_column('invoices', 'order_status', 'TEXT', "'قيد التنفيذ'")
+        add_column('invoices', 'coupon_discount', 'REAL', 0)
+        add_column('invoices', 'coupon_code', 'TEXT')
+        add_column('invoices', 'loyalty_discount', 'REAL', 0)
+        add_column('invoices', 'loyalty_points_earned', 'INTEGER', 0)
+        add_column('invoices', 'loyalty_points_redeemed', 'INTEGER', 0)
+        add_column('invoices', 'table_id', 'INTEGER')
+        add_column('invoices', 'table_name', 'TEXT')
+
+        add_column('customers', 'loyalty_points', 'INTEGER', 0)
+
+        add_column('invoice_items', 'variant_id', 'INTEGER')
+        add_column('invoice_items', 'variant_name', 'TEXT')
+
+        add_column('branch_stock', 'variant_id', 'INTEGER')
+
+        # إعدادات الولاء الافتراضية
+        try:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_invoice', '10')")
                 cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '0.1')")
                 cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')")
                 conn.commit()
+        except Exception as e:
+            print(f"[Migration] loyalty settings: {e}")
 
-        # جدول الكوبونات
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS coupons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                code TEXT UNIQUE NOT NULL,
-                discount_type TEXT NOT NULL DEFAULT 'amount',
-                discount_value REAL NOT NULL DEFAULT 0,
-                min_amount REAL DEFAULT 0,
-                max_uses INTEGER DEFAULT 0,
-                used_count INTEGER DEFAULT 0,
-                is_active INTEGER DEFAULT 1,
-                expiry_date TEXT,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        # جدول طاولات المطاعم
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS restaurant_tables (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                seats INTEGER DEFAULT 4,
-                pos_x INTEGER DEFAULT 50,
-                pos_y INTEGER DEFAULT 50,
-                status TEXT DEFAULT 'available',
-                current_invoice_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # جدول خصائص/متغيرات المنتجات
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS product_variants (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                inventory_id INTEGER NOT NULL,
-                variant_name TEXT NOT NULL,
-                price REAL DEFAULT 0,
-                cost REAL DEFAULT 0,
-                barcode TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
-            )
-        ''')
-
-        # إضافة عمود table_id للفواتير
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'")
-        if cursor.fetchone():
-            cursor.execute("PRAGMA table_info(invoices)")
-            inv_cols2 = [col[1] for col in cursor.fetchall()]
-            if 'table_id' not in inv_cols2:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN table_id INTEGER")
-                conn.commit()
-            if 'table_name' not in inv_cols2:
-                cursor.execute("ALTER TABLE invoices ADD COLUMN table_name TEXT")
-                conn.commit()
-
-        # إضافة أعمدة المتغيرات لعناصر الفاتورة
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='invoice_items'")
-        if cursor.fetchone():
-            cursor.execute("PRAGMA table_info(invoice_items)")
-            ii_cols = [col[1] for col in cursor.fetchall()]
-            if 'variant_id' not in ii_cols:
-                cursor.execute("ALTER TABLE invoice_items ADD COLUMN variant_id INTEGER")
-                conn.commit()
-            if 'variant_name' not in ii_cols:
-                cursor.execute("ALTER TABLE invoice_items ADD COLUMN variant_name TEXT")
-                conn.commit()
-
-        # إضافة عمود variant_id لتوزيع المخزون
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='branch_stock'")
-        if cursor.fetchone():
-            cursor.execute("PRAGMA table_info(branch_stock)")
-            bs_cols = [col[1] for col in cursor.fetchall()]
-            if 'variant_id' not in bs_cols:
-                cursor.execute("ALTER TABLE branch_stock ADD COLUMN variant_id INTEGER")
-                conn.commit()
-
-        conn.commit()
+        print(f"[Migration] ✅ {target_path}")
     except Exception as e:
-        print(f"Migration note: {e}")
+        print(f"[Migration] ❌ Error: {e}")
     finally:
         conn.close()
 
