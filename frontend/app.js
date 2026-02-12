@@ -27,10 +27,23 @@ async function checkRealConnection() {
 setInterval(async () => {
     const wasOnline = _realOnlineStatus;
     await checkRealConnection();
-    // تحديث زر الخروج عند تغيير الحالة
+    // عند تغيير الحالة
     if (wasOnline !== _realOnlineStatus) {
         if (typeof _lockLogout === 'function') _lockLogout(!_realOnlineStatus);
         if (typeof updateLogoutButton === 'function') updateLogoutButton();
+        // عند العودة أونلاين - مزامنة فورية!
+        if (_realOnlineStatus && !wasOnline) {
+            console.log('[Connection] Back online - syncing immediately...');
+            if (typeof syncManager !== 'undefined') {
+                try { syncManager.sync(); } catch(e) {}
+            }
+            if (typeof syncOfflineCustomers === 'function') {
+                try { syncOfflineCustomers(); } catch(e) {}
+            }
+            if (typeof loadCustomersDropdown === 'function') {
+                try { loadCustomersDropdown(); } catch(e) {}
+            }
+        }
     }
 }, 5000);
 
