@@ -649,6 +649,19 @@ def get_users():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def ensure_user_permission_columns(cursor):
+    """إضافة أعمدة الصلاحيات الجديدة إذا لم تكن موجودة"""
+    new_cols = [
+        'can_view_returns', 'can_view_expenses', 'can_view_suppliers', 'can_view_coupons',
+        'can_view_tables', 'can_view_attendance', 'can_view_advanced_reports',
+        'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches'
+    ]
+    for col in new_cols:
+        try:
+            cursor.execute(f'ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 0')
+        except:
+            pass
+
 @app.route('/api/users', methods=['POST'])
 def add_user():
     """إضافة مستخدم جديد"""
@@ -656,7 +669,11 @@ def add_user():
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
-        
+
+        # إضافة الأعمدة الجديدة تلقائياً إذا لم تكن موجودة
+        ensure_user_permission_columns(cursor)
+        conn.commit()
+
         cursor.execute('''
             INSERT INTO users (username, password, full_name, role, invoice_prefix, branch_id,
                              can_view_products, can_add_products, can_edit_products, can_delete_products,
@@ -723,7 +740,11 @@ def update_user(user_id):
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
-        
+
+        # إضافة الأعمدة الجديدة تلقائياً إذا لم تكن موجودة
+        ensure_user_permission_columns(cursor)
+        conn.commit()
+
         # بناء الاستعلام ديناميكياً
         updates = []
         params = []
