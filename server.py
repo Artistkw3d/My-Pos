@@ -1557,6 +1557,19 @@ def cancel_invoice(invoice_id):
         conn = get_db()
         cursor = conn.cursor()
 
+        # إضافة الأعمدة إذا لم تكن موجودة
+        for col_sql in [
+            "ALTER TABLE invoices ADD COLUMN cancelled INTEGER DEFAULT 0",
+            "ALTER TABLE invoices ADD COLUMN cancel_reason TEXT",
+            "ALTER TABLE invoices ADD COLUMN cancelled_at TIMESTAMP",
+            "ALTER TABLE invoices ADD COLUMN stock_returned INTEGER DEFAULT 0"
+        ]:
+            try:
+                cursor.execute(col_sql)
+                conn.commit()
+            except:
+                pass
+
         # التحقق من الفاتورة
         cursor.execute('SELECT * FROM invoices WHERE id = ?', (invoice_id,))
         invoice = cursor.fetchone()
@@ -1564,7 +1577,8 @@ def cancel_invoice(invoice_id):
             conn.close()
             return jsonify({'success': False, 'error': 'الفاتورة غير موجودة'}), 404
 
-        if invoice['cancelled']:
+        inv = dict_from_row(invoice)
+        if inv.get('cancelled'):
             conn.close()
             return jsonify({'success': False, 'error': 'الفاتورة ملغية مسبقاً'}), 400
 
@@ -1593,10 +1607,10 @@ def cancel_invoice(invoice_id):
         ''', (cancel_reason, stock_returned, invoice_id))
 
         # إرجاع نقاط الولاء للعميل
-        customer_id = invoice['customer_id']
+        customer_id = inv.get('customer_id')
         if customer_id:
-            points_earned = invoice['loyalty_points_earned'] or 0
-            points_redeemed = invoice['loyalty_points_redeemed'] or 0
+            points_earned = inv.get('loyalty_points_earned') or 0
+            points_redeemed = inv.get('loyalty_points_redeemed') or 0
             net_reverse = points_redeemed - points_earned
             if net_reverse != 0:
                 cursor.execute('''
