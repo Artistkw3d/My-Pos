@@ -350,7 +350,18 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 canViewReports: hasPerm('can_view_reports'),
                 canViewAccounting: hasPerm('can_view_accounting'),
                 canManageUsers: hasPerm('can_manage_users'),
-                canAccessSettings: hasPerm('can_access_settings')
+                canAccessSettings: hasPerm('can_access_settings'),
+                canViewReturns: hasPerm('can_view_returns'),
+                canViewExpenses: hasPerm('can_view_expenses'),
+                canViewSuppliers: hasPerm('can_view_suppliers'),
+                canViewCoupons: hasPerm('can_view_coupons'),
+                canViewTables: hasPerm('can_view_tables'),
+                canViewAttendance: hasPerm('can_view_attendance'),
+                canViewAdvancedReports: hasPerm('can_view_advanced_reports'),
+                canViewSystemLogs: hasPerm('can_view_system_logs'),
+                canViewDcf: hasPerm('can_view_dcf'),
+                canCancelInvoices: hasPerm('can_cancel_invoices'),
+                canViewBranches: hasPerm('can_view_branches')
             };
             
             // إخفاء/إظهار الأزرار والتبويبات
