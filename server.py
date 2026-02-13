@@ -3984,9 +3984,13 @@ def gdrive_save_credentials():
         data = request.json
         client_id = data.get('client_id', '').strip()
         client_secret = data.get('client_secret', '').strip()
+        base_url = data.get('base_url', '').strip().rstrip('/')
 
         if not client_id or not client_secret:
             return jsonify({'success': False, 'error': 'يرجى إدخال Client ID و Client Secret'}), 400
+
+        # بناء redirect_uri من عنوان التطبيق
+        redirect_uri = f'{base_url}/api/backup/gdrive/callback' if base_url else f'{request.host_url.rstrip("/")}/api/backup/gdrive/callback'
 
         tenant_slug = get_tenant_slug()
         db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
@@ -3997,13 +4001,15 @@ def gdrive_save_credentials():
                        ('gdrive_client_id', client_id, datetime.now().isoformat()))
         cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
                        ('gdrive_client_secret', client_secret, datetime.now().isoformat()))
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                       ('gdrive_redirect_uri', redirect_uri, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
         # إنشاء رابط التفويض
         params = urllib.parse.urlencode({
             'client_id': client_id,
-            'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
+            'redirect_uri': redirect_uri,
             'response_type': 'code',
             'scope': GOOGLE_DRIVE_SCOPE,
             'access_type': 'offline',
@@ -4011,13 +4017,124 @@ def gdrive_save_credentials():
         })
         auth_url = f'{GOOGLE_OAUTH_AUTH_URL}?{params}'
 
-        return jsonify({'success': True, 'auth_url': auth_url})
+        return jsonify({'success': True, 'auth_url': auth_url, 'redirect_uri': redirect_uri})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _gdrive_exchange_code(auth_code, tenant_slug=None):
+    """تبادل كود التفويض بالتوكن - دالة مشتركة"""
+    db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
+    row = cursor.fetchone()
+    client_id = row['value'] if row else None
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_secret'")
+    row = cursor.fetchone()
+    client_secret = row['value'] if row else None
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_redirect_uri'")
+    row = cursor.fetchone()
+    redirect_uri = row['value'] if row else None
+    conn.close()
+
+    if not client_id or not client_secret:
+        raise ValueError('لم يتم العثور على بيانات الاعتماد')
+
+    if not redirect_uri:
+        raise ValueError('لم يتم العثور على redirect_uri - أعد إدخال بيانات الاعتماد')
+
+    # تبادل الكود بالتوكن
+    token_data = urllib.parse.urlencode({
+        'code': auth_code,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': redirect_uri,
+        'grant_type': 'authorization_code'
+    }).encode()
+
+    req = urllib.request.Request(GOOGLE_OAUTH_TOKEN_URL, data=token_data)
+    req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+    response = urllib.request.urlopen(req)
+    tokens = json.loads(response.read().decode())
+
+    if 'access_token' not in tokens:
+        raise ValueError('فشل الحصول على التوكن')
+
+    # حفظ التوكنات
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                   ('gdrive_access_token', tokens['access_token'], datetime.now().isoformat()))
+    cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                   ('gdrive_refresh_token', tokens.get('refresh_token', ''), datetime.now().isoformat()))
+    cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                   ('gdrive_token_expiry', str(time.time() + tokens.get('expires_in', 3600)), datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+    return tokens
+
+@app.route('/api/backup/gdrive/callback')
+def gdrive_callback():
+    """صفحة استقبال كود التفويض من Google - يتم التوجيه إليها تلقائياً"""
+    auth_code = request.args.get('code', '')
+    error = request.args.get('error', '')
+
+    if error:
+        return f'''<!DOCTYPE html>
+<html dir="rtl"><head><meta charset="utf-8"><title>خطأ في ربط Google Drive</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px;">
+<h2 style="color:#ef4444;">❌ فشل ربط Google Drive</h2>
+<p>الخطأ: {error}</p>
+<p>يمكنك إغلاق هذه النافذة والمحاولة مرة أخرى.</p>
+<script>setTimeout(function(){{ window.close(); }}, 5000);</script>
+</body></html>''', 400
+
+    if not auth_code:
+        return '''<!DOCTYPE html>
+<html dir="rtl"><head><meta charset="utf-8"><title>خطأ</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px;">
+<h2 style="color:#ef4444;">❌ لم يتم استلام كود التفويض</h2>
+<p>يمكنك إغلاق هذه النافذة والمحاولة مرة أخرى.</p>
+</body></html>''', 400
+
+    try:
+        tenant_slug = get_tenant_slug()
+        _gdrive_exchange_code(auth_code, tenant_slug)
+
+        return '''<!DOCTYPE html>
+<html dir="rtl"><head><meta charset="utf-8"><title>تم ربط Google Drive</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px;">
+<h2 style="color:#22c55e;">✅ تم ربط Google Drive بنجاح!</h2>
+<p>سيتم إغلاق هذه النافذة تلقائياً...</p>
+<script>
+if (window.opener) { window.opener.postMessage('gdrive_connected', '*'); }
+setTimeout(function(){ window.close(); }, 2000);
+</script>
+</body></html>'''
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        return f'''<!DOCTYPE html>
+<html dir="rtl"><head><meta charset="utf-8"><title>خطأ</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px;">
+<h2 style="color:#ef4444;">❌ فشل ربط Google Drive</h2>
+<p>خطأ من Google: {error_body}</p>
+<script>setTimeout(function(){{ window.close(); }}, 8000);</script>
+</body></html>''', 400
+    except Exception as e:
+        return f'''<!DOCTYPE html>
+<html dir="rtl"><head><meta charset="utf-8"><title>خطأ</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px;">
+<h2 style="color:#ef4444;">❌ فشل ربط Google Drive</h2>
+<p>{str(e)}</p>
+<script>setTimeout(function(){{ window.close(); }}, 8000);</script>
+</body></html>''', 400
+
 @app.route('/api/backup/gdrive/connect', methods=['POST'])
 def gdrive_connect():
-    """ربط Google Drive باستخدام كود التفويض"""
+    """ربط Google Drive باستخدام كود التفويض - طريقة يدوية احتياطية"""
     try:
         data = request.json
         auth_code = data.get('code', '').strip()
@@ -4026,50 +4143,7 @@ def gdrive_connect():
             return jsonify({'success': False, 'error': 'يرجى إدخال كود التفويض'}), 400
 
         tenant_slug = get_tenant_slug()
-        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
-
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
-        row = cursor.fetchone()
-        client_id = row['value'] if row else None
-        cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_secret'")
-        row = cursor.fetchone()
-        client_secret = row['value'] if row else None
-        conn.close()
-
-        if not client_id or not client_secret:
-            return jsonify({'success': False, 'error': 'لم يتم العثور على بيانات الاعتماد'}), 400
-
-        # تبادل الكود بالتوكن
-        token_data = urllib.parse.urlencode({
-            'code': auth_code,
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
-            'grant_type': 'authorization_code'
-        }).encode()
-
-        req = urllib.request.Request(GOOGLE_OAUTH_TOKEN_URL, data=token_data)
-        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
-        response = urllib.request.urlopen(req)
-        tokens = json.loads(response.read().decode())
-
-        if 'access_token' not in tokens:
-            return jsonify({'success': False, 'error': 'فشل الحصول على التوكن'}), 400
-
-        # حفظ التوكنات
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                       ('gdrive_access_token', tokens['access_token'], datetime.now().isoformat()))
-        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                       ('gdrive_refresh_token', tokens.get('refresh_token', ''), datetime.now().isoformat()))
-        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                       ('gdrive_token_expiry', str(time.time() + tokens.get('expires_in', 3600)), datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        _gdrive_exchange_code(auth_code, tenant_slug)
 
         return jsonify({'success': True, 'message': 'تم ربط Google Drive بنجاح'})
     except urllib.error.HTTPError as e:

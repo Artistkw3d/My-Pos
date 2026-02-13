@@ -874,7 +874,8 @@
                             <ol style="margin: 10px 0 0 0; padding-right: 20px; line-height: 2;">
                                 <li>انتقل إلى <a href="https://console.cloud.google.com/" target="_blank" style="color: #4285f4;">Google Cloud Console</a></li>
                                 <li>أنشئ مشروعاً جديداً وفعّل Google Drive API</li>
-                                <li>أنشئ OAuth 2.0 Credentials (نوع Desktop App)</li>
+                                <li>أنشئ OAuth 2.0 Credentials (نوع <strong>Web Application</strong>)</li>
+                                <li>أضف Redirect URI المعروض أدناه بعد الضغط على زر التفويض</li>
                                 <li>أدخل Client ID و Client Secret أدناه</li>
                             </ol>
                         </div>
@@ -892,12 +893,22 @@
 
                         <button onclick="gdriveStartAuth()" class="btn" style="background: #4285f4; padding: 12px 25px; margin-bottom: 15px;">🔗 الحصول على رابط التفويض</button>
 
+                        <div id="gdriveRedirectUriSection" style="display: none; margin-top: 15px;">
+                            <div style="background: #fffbeb; padding: 15px; border-radius: 10px; border-right: 4px solid #f59e0b; margin-bottom: 15px;">
+                                <strong>⚠️ مهم:</strong> أضف هذا الرابط كـ <strong>Authorized redirect URI</strong> في Google Cloud Console:
+                                <div style="background: #fef3c7; padding: 10px; border-radius: 6px; margin-top: 8px; direction: ltr; font-family: monospace; font-size: 14px; word-break: break-all; cursor: pointer;" onclick="navigator.clipboard.writeText(this.textContent).then(()=>alert('تم النسخ!'))" title="اضغط للنسخ">
+                                    <span id="gdriveRedirectUriDisplay"></span>
+                                </div>
+                                <small style="color: #92400e; margin-top: 5px; display: block;">اضغط على الرابط لنسخه - ثم أضفه في Google Cloud Console قبل الموافقة</small>
+                            </div>
+                        </div>
+
                         <div id="gdriveAuthCodeSection" style="display: none; margin-top: 15px;">
                             <div style="background: #f0fdf4; padding: 15px; border-radius: 10px; border-right: 4px solid #22c55e; margin-bottom: 15px;">
-                                <strong>✅ تم فتح نافذة التفويض.</strong> بعد الموافقة، انسخ الكود والصقه هنا:
+                                <strong>✅ تم فتح نافذة التفويض.</strong> بعد الموافقة سيتم الربط تلقائياً. إذا لم يعمل تلقائياً، انسخ الكود من الرابط والصقه هنا:
                             </div>
                             <div style="display: flex; gap: 10px;">
-                                <input type="text" id="gdriveAuthCode" placeholder="الصق كود التفويض هنا" style="flex: 1; padding: 10px; border: 2px solid #22c55e; border-radius: 6px; direction: ltr;">
+                                <input type="text" id="gdriveAuthCode" placeholder="الصق كود التفويض هنا (اختياري)" style="flex: 1; padding: 10px; border: 2px solid #22c55e; border-radius: 6px; direction: ltr;">
                                 <button onclick="gdriveConnect()" class="btn" style="background: #22c55e; padding: 12px 25px;">✅ ربط</button>
                             </div>
                         </div>

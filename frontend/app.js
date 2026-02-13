@@ -8724,6 +8724,13 @@ async function loadGDriveStatus() {
     }
 }
 
+// استقبال رسالة نجاح الربط من نافذة callback
+window.addEventListener('message', function(event) {
+    if (event.data === 'gdrive_connected') {
+        loadGDriveStatus();
+    }
+});
+
 async function gdriveStartAuth() {
     const clientId = document.getElementById('gdriveClientId').value.trim();
     const clientSecret = document.getElementById('gdriveClientSecret').value.trim();
@@ -8737,10 +8744,19 @@ async function gdriveStartAuth() {
         const response = await fetch(`${API_URL}/api/backup/gdrive/save-credentials`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({client_id: clientId, client_secret: clientSecret})
+            body: JSON.stringify({
+                client_id: clientId,
+                client_secret: clientSecret,
+                base_url: window.location.origin
+            })
         });
         const data = await response.json();
         if (data.success && data.auth_url) {
+            // عرض redirect_uri للمستخدم لإضافته في Google Cloud Console
+            if (data.redirect_uri) {
+                document.getElementById('gdriveRedirectUriDisplay').textContent = data.redirect_uri;
+                document.getElementById('gdriveRedirectUriSection').style.display = 'block';
+            }
             window.open(data.auth_url, '_blank');
             document.getElementById('gdriveAuthCodeSection').style.display = 'block';
         } else {
