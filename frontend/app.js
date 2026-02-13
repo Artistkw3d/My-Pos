@@ -190,6 +190,7 @@ async function initializeUI() {
     
     // إخفاء/إظهار الأزرار والتبويبات
     document.getElementById('settingsBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
+    document.getElementById('backupBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
     document.getElementById('usersBtn').style.display = window.userPermissions.canManageUsers ? 'inline-block' : 'none';
     document.getElementById('branchesBtn').style.display = window.userPermissions.canViewBranches ? 'inline-block' : 'none';
     document.getElementById('systemLogsBtn').style.display = window.userPermissions.canViewSystemLogs ? 'inline-block' : 'none';
@@ -354,6 +355,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             
             // إخفاء/إظهار الأزرار والتبويبات
             document.getElementById('settingsBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
+            document.getElementById('backupBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
             document.getElementById('usersBtn').style.display = window.userPermissions.canManageUsers ? 'inline-block' : 'none';
             document.getElementById('branchesBtn').style.display = isAdmin ? 'inline-block' : 'none';
             document.getElementById('systemLogsBtn').style.display = isAdmin ? 'inline-block' : 'none';
@@ -553,7 +555,8 @@ function showTab(tabName) {
         'suppliers': 'suppliersTab',
         'coupons': 'couponsTab',
         'tables': 'tablesTab',
-        'settings': 'settingsTab'
+        'settings': 'settingsTab',
+        'backup': 'backupTab'
     };
     
     const tabId = tabMap[tabName];
@@ -619,6 +622,7 @@ function showTab(tabName) {
         if (tabName === 'branches') loadBranchesTable();
         if (tabName === 'attendance') loadAttendanceLog();
         if (tabName === 'settings') loadSettings();
+        if (tabName === 'backup') loadBackupTab();
         if (tabName === 'accounting') loadAccounting();
     }
 }
@@ -8462,6 +8466,425 @@ async function deleteSubInvoice(invoiceId, tenantId) {
 })();
 
 console.log('[Multi-Tenancy] System Loaded ✅');
+
+// ===== نظام النسخ الاحتياطي =====
+
+async function loadBackupTab() {
+    await loadBackupsList();
+    await loadGDriveStatus();
+    await loadBackupSchedule();
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async function loadBackupsList() {
+    try {
+        const response = await fetch(`${API_URL}/api/backup/list`, {
+            headers: {}
+        });
+        const data = await response.json();
+        if (!data.success) return;
+
+        const container = document.getElementById('backupsList');
+        if (!data.backups || data.backups.length === 0) {
+            container.innerHTML = '<div style="padding: 30px; text-align: center; color: #a0aec0;">لا توجد نسخ احتياطية بعد</div>';
+            return;
+        }
+
+        let html = '';
+        data.backups.forEach(b => {
+            const date = new Date(b.created_at);
+            const dateStr = date.toLocaleDateString('ar', {year: 'numeric', month: 'long', day: 'numeric'});
+            const timeStr = date.toLocaleTimeString('ar', {hour: '2-digit', minute: '2-digit'});
+            html += `
+                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: bold; color: #2d3748;">${b.filename}</div>
+                        <div style="font-size: 13px; color: #718096;">${dateStr} - ${timeStr} | ${formatFileSize(b.size)}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="downloadBackup('${b.filename}')" class="btn" style="background: #38a169; padding: 6px 12px; font-size: 13px;" title="تحميل">📥</button>
+                        <button onclick="uploadBackupToGDrive('${b.filename}')" class="btn gdrive-upload-btn" style="background: #4285f4; padding: 6px 12px; font-size: 13px; display: none;" title="رفع إلى Google Drive">☁️</button>
+                        <button onclick="restoreFromLocal('${b.filename}')" class="btn" style="background: #e67e00; padding: 6px 12px; font-size: 13px;" title="استعادة">🔄</button>
+                        <button onclick="deleteBackup('${b.filename}')" class="btn" style="background: #e53e3e; padding: 6px 12px; font-size: 13px;" title="حذف">🗑️</button>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+
+        // إظهار أزرار Google Drive إذا كان متصلاً
+        if (window._gdriveConnected) {
+            document.querySelectorAll('.gdrive-upload-btn').forEach(btn => btn.style.display = 'inline-block');
+        }
+
+        // تحديث إعدادات الجدولة من البيانات
+        if (data.schedule) {
+            document.getElementById('backupScheduleEnabled').value = data.schedule.enabled ? 'true' : 'false';
+            document.getElementById('backupScheduleTime').value = data.schedule.time || '03:00';
+            document.getElementById('backupKeepDays').value = data.schedule.keep_days || 30;
+            document.getElementById('backupGDriveAuto').value = data.schedule.gdrive_auto ? 'true' : 'false';
+        }
+
+    } catch (error) {
+        console.error('[Backup] Error loading backups:', error);
+    }
+}
+
+async function createBackup() {
+    const progress = document.getElementById('backupProgress');
+    const progressText = document.getElementById('backupProgressText');
+    progress.style.display = 'block';
+    progressText.textContent = 'جاري إنشاء النسخة الاحتياطية...';
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/create`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await response.json();
+        if (data.success) {
+            progressText.textContent = `تم إنشاء النسخة بنجاح: ${data.backup.filename} (${formatFileSize(data.backup.size)})`;
+            setTimeout(() => { progress.style.display = 'none'; }, 3000);
+            await loadBackupsList();
+        } else {
+            progressText.textContent = `خطأ: ${data.error}`;
+            setTimeout(() => { progress.style.display = 'none'; }, 5000);
+        }
+    } catch (error) {
+        progressText.textContent = 'فشل إنشاء النسخة الاحتياطية';
+        setTimeout(() => { progress.style.display = 'none'; }, 5000);
+    }
+}
+
+async function downloadBackup(filename) {
+    try {
+        const response = await fetch(`${API_URL}/api/backup/download/${filename}`, {
+            headers: {}
+        });
+        if (!response.ok) {
+            alert('خطأ في تحميل الملف');
+            return;
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        alert('فشل تحميل النسخة الاحتياطية');
+    }
+}
+
+async function deleteBackup(filename) {
+    if (!confirm(`هل تريد حذف النسخة الاحتياطية ${filename}؟`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/delete/${filename}`, {
+            method: 'DELETE',
+            headers: {}
+        });
+        const data = await response.json();
+        if (data.success) {
+            await loadBackupsList();
+        } else {
+            alert(data.error || 'فشل الحذف');
+        }
+    } catch (error) {
+        alert('فشل حذف النسخة');
+    }
+}
+
+async function restoreBackup() {
+    const fileInput = document.getElementById('restoreFileInput');
+    if (!fileInput.files || !fileInput.files[0]) {
+        alert('يرجى اختيار ملف النسخة الاحتياطية');
+        return;
+    }
+
+    if (!confirm('⚠️ هل أنت متأكد من استعادة هذه النسخة؟\nسيتم استبدال جميع البيانات الحالية.\nسيتم إنشاء نسخة احتياطية تلقائية قبل الاستعادة.')) return;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/restore`, {
+            method: 'POST',
+            headers: {},
+            body: formData
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تمت الاستعادة بنجاح!\nسيتم إعادة تحميل الصفحة.');
+            location.reload();
+        } else {
+            alert(data.error || 'فشل الاستعادة');
+        }
+    } catch (error) {
+        alert('فشل استعادة النسخة الاحتياطية');
+    }
+}
+
+async function restoreFromLocal(filename) {
+    if (!confirm(`⚠️ هل أنت متأكد من استعادة النسخة ${filename}؟\nسيتم استبدال جميع البيانات الحالية.\nسيتم إنشاء نسخة احتياطية تلقائية قبل الاستعادة.`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/restore`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filename: filename})
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تمت الاستعادة بنجاح!\nسيتم إعادة تحميل الصفحة.');
+            location.reload();
+        } else {
+            alert(data.error || 'فشل الاستعادة');
+        }
+    } catch (error) {
+        alert('فشل استعادة النسخة الاحتياطية');
+    }
+}
+
+async function saveBackupSchedule() {
+    try {
+        const response = await fetch(`${API_URL}/api/backup/schedule`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                enabled: document.getElementById('backupScheduleEnabled').value === 'true',
+                time: document.getElementById('backupScheduleTime').value,
+                keep_days: parseInt(document.getElementById('backupKeepDays').value) || 30,
+                gdrive_auto: document.getElementById('backupGDriveAuto').value === 'true'
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم حفظ إعدادات الجدولة');
+        } else {
+            alert(data.error || 'فشل الحفظ');
+        }
+    } catch (error) {
+        alert('فشل حفظ الإعدادات');
+    }
+}
+
+async function loadBackupSchedule() {
+    // يتم تحميلها مع قائمة النسخ
+}
+
+// ===== Google Drive Integration =====
+
+window._gdriveConnected = false;
+
+async function loadGDriveStatus() {
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/status`, {
+            headers: {}
+        });
+        const data = await response.json();
+        if (!data.success) return;
+
+        window._gdriveConnected = data.connected;
+        const badge = document.getElementById('gdriveStatusBadge');
+        const setupSection = document.getElementById('gdriveSetupSection');
+        const connectedSection = document.getElementById('gdriveConnectedSection');
+        const gdriveBtn = document.getElementById('backupToGDriveBtn');
+
+        if (data.connected) {
+            badge.textContent = 'متصل';
+            badge.style.background = '#dcfce7';
+            badge.style.color = '#16a34a';
+            setupSection.style.display = 'none';
+            connectedSection.style.display = 'block';
+            if (gdriveBtn) gdriveBtn.style.display = 'inline-block';
+            document.querySelectorAll('.gdrive-upload-btn').forEach(btn => btn.style.display = 'inline-block');
+            await loadGDriveFiles();
+        } else {
+            badge.textContent = 'غير متصل';
+            badge.style.background = '#fee2e2';
+            badge.style.color = '#ef4444';
+            setupSection.style.display = 'block';
+            connectedSection.style.display = 'none';
+            if (gdriveBtn) gdriveBtn.style.display = 'none';
+            document.querySelectorAll('.gdrive-upload-btn').forEach(btn => btn.style.display = 'none');
+        }
+    } catch (error) {
+        console.error('[GDrive] Status check error:', error);
+    }
+}
+
+async function gdriveStartAuth() {
+    const clientId = document.getElementById('gdriveClientId').value.trim();
+    const clientSecret = document.getElementById('gdriveClientSecret').value.trim();
+
+    if (!clientId || !clientSecret) {
+        alert('يرجى إدخال Client ID و Client Secret');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/save-credentials`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({client_id: clientId, client_secret: clientSecret})
+        });
+        const data = await response.json();
+        if (data.success && data.auth_url) {
+            window.open(data.auth_url, '_blank');
+            document.getElementById('gdriveAuthCodeSection').style.display = 'block';
+        } else {
+            alert(data.error || 'فشل حفظ البيانات');
+        }
+    } catch (error) {
+        alert('فشل الاتصال بالخادم');
+    }
+}
+
+async function gdriveConnect() {
+    const code = document.getElementById('gdriveAuthCode').value.trim();
+    if (!code) {
+        alert('يرجى إدخال كود التفويض');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/connect`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({code: code})
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم ربط Google Drive بنجاح!');
+            await loadGDriveStatus();
+        } else {
+            alert(data.error || 'فشل الربط');
+        }
+    } catch (error) {
+        alert('فشل ربط Google Drive');
+    }
+}
+
+async function gdriveDisconnect() {
+    if (!confirm('هل تريد قطع اتصال Google Drive؟')) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/disconnect`, {
+            method: 'POST',
+            headers: {}
+        });
+        const data = await response.json();
+        if (data.success) {
+            await loadGDriveStatus();
+        }
+    } catch (error) {
+        alert('فشل قطع الاتصال');
+    }
+}
+
+async function createAndUploadGDrive() {
+    const progress = document.getElementById('backupProgress');
+    const progressText = document.getElementById('backupProgressText');
+    progress.style.display = 'block';
+    progressText.textContent = 'جاري إنشاء النسخة ورفعها إلى Google Drive...';
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/upload`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        const data = await response.json();
+        if (data.success) {
+            progressText.textContent = `✅ ${data.message}`;
+            setTimeout(() => { progress.style.display = 'none'; }, 3000);
+            await loadBackupsList();
+            await loadGDriveFiles();
+        } else {
+            progressText.textContent = `خطأ: ${data.error}`;
+            setTimeout(() => { progress.style.display = 'none'; }, 5000);
+        }
+    } catch (error) {
+        progressText.textContent = 'فشل الرفع إلى Google Drive';
+        setTimeout(() => { progress.style.display = 'none'; }, 5000);
+    }
+}
+
+async function uploadBackupToGDrive(filename) {
+    const progress = document.getElementById('backupProgress');
+    const progressText = document.getElementById('backupProgressText');
+    progress.style.display = 'block';
+    progressText.textContent = `جاري رفع ${filename} إلى Google Drive...`;
+
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/upload`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filename: filename})
+        });
+        const data = await response.json();
+        if (data.success) {
+            progressText.textContent = `✅ ${data.message}`;
+            setTimeout(() => { progress.style.display = 'none'; }, 3000);
+            await loadGDriveFiles();
+        } else {
+            progressText.textContent = `خطأ: ${data.error}`;
+            setTimeout(() => { progress.style.display = 'none'; }, 5000);
+        }
+    } catch (error) {
+        progressText.textContent = 'فشل الرفع إلى Google Drive';
+        setTimeout(() => { progress.style.display = 'none'; }, 5000);
+    }
+}
+
+async function loadGDriveFiles() {
+    try {
+        const response = await fetch(`${API_URL}/api/backup/gdrive/files`, {
+            headers: {}
+        });
+        const data = await response.json();
+        const container = document.getElementById('gdriveFilesList');
+
+        if (!data.success || !data.files || data.files.length === 0) {
+            container.innerHTML = '<div style="padding: 30px; text-align: center; color: #a0aec0;">لا توجد نسخ في Google Drive</div>';
+            return;
+        }
+
+        let html = '';
+        data.files.forEach(f => {
+            const date = new Date(f.created_at);
+            const dateStr = date.toLocaleDateString('ar', {year: 'numeric', month: 'long', day: 'numeric'});
+            const timeStr = date.toLocaleTimeString('ar', {hour: '2-digit', minute: '2-digit'});
+            html += `
+                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: bold; color: #2d3748; font-size: 13px;">${f.name}</div>
+                        <div style="font-size: 12px; color: #718096;">${dateStr} - ${timeStr} | ${formatFileSize(f.size)}</div>
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <span style="color: #4285f4; font-size: 20px;">☁️</span>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('[GDrive] Load files error:', error);
+    }
+}
+
+console.log('[Backup System] Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 

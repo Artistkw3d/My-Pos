@@ -7,11 +7,16 @@ Flask + SQLite
 نظام Multi-Tenancy بقواعد بيانات منفصلة
 """
 
-from flask import Flask, request, jsonify, send_from_directory, g
+from flask import Flask, request, jsonify, send_from_directory, g, send_file
 from flask_cors import CORS
 import sqlite3
 import os
-from datetime import datetime
+import shutil
+import threading
+import time
+import urllib.request
+import urllib.parse
+from datetime import datetime, timedelta
 import json
 import re
 import hashlib
@@ -27,6 +32,8 @@ TENANTS_DB_DIR = 'database/tenants'
 # إنشاء المجلدات اللازمة
 os.makedirs('database', exist_ok=True)
 os.makedirs(TENANTS_DB_DIR, exist_ok=True)
+BACKUPS_DIR = 'database/backups'
+os.makedirs(BACKUPS_DIR, exist_ok=True)
 
 # ===== نظام Multi-Tenancy =====
 
@@ -3731,11 +3738,736 @@ def super_admin_change_password():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ===== نظام النسخ الاحتياطي =====
+
+def get_backup_dir(tenant_slug=None):
+    """الحصول على مجلد النسخ الاحتياطية للمستأجر"""
+    if tenant_slug:
+        safe_slug = re.sub(r'[^a-zA-Z0-9_-]', '', tenant_slug)
+        backup_dir = os.path.join(BACKUPS_DIR, safe_slug)
+    else:
+        backup_dir = os.path.join(BACKUPS_DIR, 'default')
+    os.makedirs(backup_dir, exist_ok=True)
+    return backup_dir
+
+def create_backup_file(tenant_slug=None):
+    """إنشاء نسخة احتياطية من قاعدة البيانات"""
+    db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+    if not os.path.exists(db_path):
+        return None, 'قاعدة البيانات غير موجودة'
+
+    backup_dir = get_backup_dir(tenant_slug)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_filename = f'backup_{timestamp}.db'
+    backup_path = os.path.join(backup_dir, backup_filename)
+
+    try:
+        # استخدام SQLite backup API للتأكد من سلامة النسخة
+        source = sqlite3.connect(db_path)
+        dest = sqlite3.connect(backup_path)
+        source.backup(dest)
+        dest.close()
+        source.close()
+
+        file_size = os.path.getsize(backup_path)
+        return {
+            'filename': backup_filename,
+            'path': backup_path,
+            'size': file_size,
+            'created_at': datetime.now().isoformat(),
+            'tenant': tenant_slug or 'default'
+        }, None
+    except Exception as e:
+        return None, str(e)
+
+@app.route('/api/backup/create', methods=['POST'])
+def create_backup():
+    """إنشاء نسخة احتياطية جديدة"""
+    try:
+        tenant_slug = get_tenant_slug()
+        backup_info, error = create_backup_file(tenant_slug)
+        if error:
+            return jsonify({'success': False, 'error': error}), 500
+        return jsonify({'success': True, 'backup': backup_info})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/list', methods=['GET'])
+def list_backups():
+    """قائمة النسخ الاحتياطية"""
+    try:
+        tenant_slug = get_tenant_slug()
+        backup_dir = get_backup_dir(tenant_slug)
+        backups = []
+
+        if os.path.exists(backup_dir):
+            for f in sorted(os.listdir(backup_dir), reverse=True):
+                if f.endswith('.db'):
+                    fpath = os.path.join(backup_dir, f)
+                    stat = os.stat(fpath)
+                    backups.append({
+                        'filename': f,
+                        'size': stat.st_size,
+                        'created_at': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+
+        # جلب إعدادات الجدولة
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+        schedule = {'enabled': False, 'time': '03:00', 'keep_days': 30, 'gdrive_auto': False}
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM settings WHERE key LIKE 'backup_%'")
+            for row in cursor.fetchall():
+                k = row['key'].replace('backup_', '')
+                if k == 'schedule_enabled':
+                    schedule['enabled'] = row['value'] == 'true'
+                elif k == 'schedule_time':
+                    schedule['time'] = row['value']
+                elif k == 'keep_days':
+                    schedule['keep_days'] = int(row['value'])
+                elif k == 'gdrive_auto':
+                    schedule['gdrive_auto'] = row['value'] == 'true'
+            conn.close()
+        except:
+            pass
+
+        return jsonify({'success': True, 'backups': backups, 'schedule': schedule})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/download/<filename>', methods=['GET'])
+def download_backup(filename):
+    """تحميل نسخة احتياطية"""
+    try:
+        # التحقق من اسم الملف (منع path traversal)
+        safe_filename = re.sub(r'[^a-zA-Z0-9_.\-]', '', filename)
+        if safe_filename != filename or '..' in filename:
+            return jsonify({'success': False, 'error': 'اسم ملف غير صالح'}), 400
+
+        tenant_slug = get_tenant_slug()
+        backup_dir = get_backup_dir(tenant_slug)
+        filepath = os.path.join(backup_dir, safe_filename)
+
+        if not os.path.exists(filepath):
+            return jsonify({'success': False, 'error': 'الملف غير موجود'}), 404
+
+        return send_file(filepath, as_attachment=True, download_name=safe_filename)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/delete/<filename>', methods=['DELETE'])
+def delete_backup(filename):
+    """حذف نسخة احتياطية"""
+    try:
+        safe_filename = re.sub(r'[^a-zA-Z0-9_.\-]', '', filename)
+        if safe_filename != filename or '..' in filename:
+            return jsonify({'success': False, 'error': 'اسم ملف غير صالح'}), 400
+
+        tenant_slug = get_tenant_slug()
+        backup_dir = get_backup_dir(tenant_slug)
+        filepath = os.path.join(backup_dir, safe_filename)
+
+        if not os.path.exists(filepath):
+            return jsonify({'success': False, 'error': 'الملف غير موجود'}), 404
+
+        os.remove(filepath)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/restore', methods=['POST'])
+def restore_backup():
+    """استعادة نسخة احتياطية"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        # التحقق من وجود ملف مرفوع أو اسم ملف
+        if 'file' in request.files:
+            file = request.files['file']
+            if not file.filename.endswith('.db'):
+                return jsonify({'success': False, 'error': 'يجب أن يكون الملف بصيغة .db'}), 400
+
+            # إنشاء نسخة احتياطية قبل الاستعادة
+            pre_restore_info, _ = create_backup_file(tenant_slug)
+
+            # حفظ الملف المرفوع كنسخة مؤقتة والتحقق منه
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+                file.save(tmp.name)
+                tmp_path = tmp.name
+
+            # التحقق من صحة قاعدة البيانات
+            try:
+                test_conn = sqlite3.connect(tmp_path)
+                test_conn.execute('SELECT count(*) FROM sqlite_master')
+                test_conn.close()
+            except:
+                os.unlink(tmp_path)
+                return jsonify({'success': False, 'error': 'الملف ليس قاعدة بيانات صالحة'}), 400
+
+            # استعادة القاعدة
+            source = sqlite3.connect(tmp_path)
+            dest = sqlite3.connect(db_path)
+            source.backup(dest)
+            dest.close()
+            source.close()
+            os.unlink(tmp_path)
+
+        elif request.json and request.json.get('filename'):
+            filename = request.json['filename']
+            safe_filename = re.sub(r'[^a-zA-Z0-9_.\-]', '', filename)
+            backup_dir = get_backup_dir(tenant_slug)
+            filepath = os.path.join(backup_dir, safe_filename)
+
+            if not os.path.exists(filepath):
+                return jsonify({'success': False, 'error': 'النسخة الاحتياطية غير موجودة'}), 404
+
+            # إنشاء نسخة احتياطية قبل الاستعادة
+            pre_restore_info, _ = create_backup_file(tenant_slug)
+
+            source = sqlite3.connect(filepath)
+            dest = sqlite3.connect(db_path)
+            source.backup(dest)
+            dest.close()
+            source.close()
+        else:
+            return jsonify({'success': False, 'error': 'لم يتم تحديد ملف'}), 400
+
+        return jsonify({'success': True, 'message': 'تمت الاستعادة بنجاح. تم إنشاء نسخة احتياطية تلقائية قبل الاستعادة.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/schedule', methods=['PUT'])
+def update_backup_schedule():
+    """تحديث جدولة النسخ الاحتياطي التلقائي"""
+    try:
+        data = request.json
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        settings = {
+            'backup_schedule_enabled': 'true' if data.get('enabled') else 'false',
+            'backup_schedule_time': data.get('time', '03:00'),
+            'backup_keep_days': str(data.get('keep_days', 30)),
+            'backup_gdrive_auto': 'true' if data.get('gdrive_auto') else 'false'
+        }
+
+        for key, value in settings.items():
+            cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                           (key, value, datetime.now().isoformat()))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ===== Google Drive Integration =====
+
+GOOGLE_OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
+GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
+GOOGLE_DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
+GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+
+@app.route('/api/backup/gdrive/save-credentials', methods=['POST'])
+def gdrive_save_credentials():
+    """حفظ بيانات اعتماد Google Drive"""
+    try:
+        data = request.json
+        client_id = data.get('client_id', '').strip()
+        client_secret = data.get('client_secret', '').strip()
+
+        if not client_id or not client_secret:
+            return jsonify({'success': False, 'error': 'يرجى إدخال Client ID و Client Secret'}), 400
+
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                       ('gdrive_client_id', client_id, datetime.now().isoformat()))
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                       ('gdrive_client_secret', client_secret, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+        # إنشاء رابط التفويض
+        params = urllib.parse.urlencode({
+            'client_id': client_id,
+            'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
+            'response_type': 'code',
+            'scope': GOOGLE_DRIVE_SCOPE,
+            'access_type': 'offline',
+            'prompt': 'consent'
+        })
+        auth_url = f'{GOOGLE_OAUTH_AUTH_URL}?{params}'
+
+        return jsonify({'success': True, 'auth_url': auth_url})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/gdrive/connect', methods=['POST'])
+def gdrive_connect():
+    """ربط Google Drive باستخدام كود التفويض"""
+    try:
+        data = request.json
+        auth_code = data.get('code', '').strip()
+
+        if not auth_code:
+            return jsonify({'success': False, 'error': 'يرجى إدخال كود التفويض'}), 400
+
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
+        row = cursor.fetchone()
+        client_id = row['value'] if row else None
+        cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_secret'")
+        row = cursor.fetchone()
+        client_secret = row['value'] if row else None
+        conn.close()
+
+        if not client_id or not client_secret:
+            return jsonify({'success': False, 'error': 'لم يتم العثور على بيانات الاعتماد'}), 400
+
+        # تبادل الكود بالتوكن
+        token_data = urllib.parse.urlencode({
+            'code': auth_code,
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
+            'grant_type': 'authorization_code'
+        }).encode()
+
+        req = urllib.request.Request(GOOGLE_OAUTH_TOKEN_URL, data=token_data)
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        response = urllib.request.urlopen(req)
+        tokens = json.loads(response.read().decode())
+
+        if 'access_token' not in tokens:
+            return jsonify({'success': False, 'error': 'فشل الحصول على التوكن'}), 400
+
+        # حفظ التوكنات
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                       ('gdrive_access_token', tokens['access_token'], datetime.now().isoformat()))
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                       ('gdrive_refresh_token', tokens.get('refresh_token', ''), datetime.now().isoformat()))
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                       ('gdrive_token_expiry', str(time.time() + tokens.get('expires_in', 3600)), datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'تم ربط Google Drive بنجاح'})
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        return jsonify({'success': False, 'error': f'خطأ من Google: {error_body}'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def refresh_gdrive_token(db_path):
+    """تجديد توكن Google Drive"""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
+    row = cursor.fetchone()
+    client_id = row['value'] if row else None
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_secret'")
+    row = cursor.fetchone()
+    client_secret = row['value'] if row else None
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_refresh_token'")
+    row = cursor.fetchone()
+    refresh_token = row['value'] if row else None
+    conn.close()
+
+    if not all([client_id, client_secret, refresh_token]):
+        return None
+
+    token_data = urllib.parse.urlencode({
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'refresh_token': refresh_token,
+        'grant_type': 'refresh_token'
+    }).encode()
+
+    try:
+        req = urllib.request.Request(GOOGLE_OAUTH_TOKEN_URL, data=token_data)
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        response = urllib.request.urlopen(req)
+        tokens = json.loads(response.read().decode())
+
+        new_token = tokens.get('access_token')
+        if new_token:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                           ('gdrive_access_token', new_token, datetime.now().isoformat()))
+            cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+                           ('gdrive_token_expiry', str(time.time() + tokens.get('expires_in', 3600)), datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+            return new_token
+    except:
+        pass
+    return None
+
+def get_gdrive_token(db_path):
+    """الحصول على توكن Google Drive صالح"""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_access_token'")
+    row = cursor.fetchone()
+    access_token = row['value'] if row else None
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_token_expiry'")
+    row = cursor.fetchone()
+    expiry = float(row['value']) if row else 0
+    conn.close()
+
+    if not access_token:
+        return None
+
+    # تجديد التوكن إذا انتهت صلاحيته
+    if time.time() >= expiry - 60:
+        access_token = refresh_gdrive_token(db_path)
+
+    return access_token
+
+@app.route('/api/backup/gdrive/status', methods=['GET'])
+def gdrive_status():
+    """حالة اتصال Google Drive"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_refresh_token'")
+        row = cursor.fetchone()
+        has_token = bool(row and row['value'])
+
+        cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
+        row = cursor.fetchone()
+        has_credentials = bool(row and row['value'])
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'connected': has_token,
+            'has_credentials': has_credentials
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/gdrive/disconnect', methods=['POST'])
+def gdrive_disconnect():
+    """قطع اتصال Google Drive"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        for key in ['gdrive_client_id', 'gdrive_client_secret', 'gdrive_access_token', 'gdrive_refresh_token', 'gdrive_token_expiry']:
+            cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/backup/gdrive/upload', methods=['POST'])
+def gdrive_upload():
+    """رفع نسخة احتياطية إلى Google Drive"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        token = get_gdrive_token(db_path)
+        if not token:
+            return jsonify({'success': False, 'error': 'Google Drive غير متصل. يرجى الربط أولاً.'}), 400
+
+        data = request.json or {}
+        filename = data.get('filename')
+
+        if filename:
+            safe_filename = re.sub(r'[^a-zA-Z0-9_.\-]', '', filename)
+            backup_dir = get_backup_dir(tenant_slug)
+            filepath = os.path.join(backup_dir, safe_filename)
+            if not os.path.exists(filepath):
+                return jsonify({'success': False, 'error': 'الملف غير موجود'}), 404
+        else:
+            # إنشاء نسخة احتياطية جديدة ورفعها
+            backup_info, error = create_backup_file(tenant_slug)
+            if error:
+                return jsonify({'success': False, 'error': error}), 500
+            filepath = backup_info['path']
+            safe_filename = backup_info['filename']
+
+        # إنشاء/البحث عن مجلد POS-Backups في Google Drive
+        folder_id = _gdrive_find_or_create_folder(token, tenant_slug)
+
+        # رفع الملف
+        store_name = tenant_slug or 'default'
+        upload_name = f'POS_{store_name}_{safe_filename}'
+
+        boundary = '----BackupBoundary'
+        metadata = json.dumps({
+            'name': upload_name,
+            'parents': [folder_id] if folder_id else []
+        })
+
+        with open(filepath, 'rb') as f:
+            file_data = f.read()
+
+        body = (
+            f'--{boundary}\r\n'
+            f'Content-Type: application/json; charset=UTF-8\r\n\r\n'
+            f'{metadata}\r\n'
+            f'--{boundary}\r\n'
+            f'Content-Type: application/x-sqlite3\r\n\r\n'
+        ).encode() + file_data + f'\r\n--{boundary}--'.encode()
+
+        req = urllib.request.Request(
+            f'{GOOGLE_DRIVE_UPLOAD_URL}?uploadType=multipart',
+            data=body,
+            method='POST'
+        )
+        req.add_header('Authorization', f'Bearer {token}')
+        req.add_header('Content-Type', f'multipart/related; boundary={boundary}')
+
+        response = urllib.request.urlopen(req)
+        result = json.loads(response.read().decode())
+
+        return jsonify({
+            'success': True,
+            'message': f'تم رفع النسخة إلى Google Drive بنجاح',
+            'file_id': result.get('id'),
+            'file_name': upload_name
+        })
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        if e.code == 401:
+            return jsonify({'success': False, 'error': 'انتهت صلاحية التوكن. يرجى إعادة ربط Google Drive.'}), 401
+        return jsonify({'success': False, 'error': f'خطأ في Google Drive: {error_body}'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def _gdrive_find_or_create_folder(token, tenant_slug=None):
+    """البحث عن مجلد POS-Backups أو إنشاؤه"""
+    folder_name = f'POS-Backups-{tenant_slug}' if tenant_slug else 'POS-Backups'
+    try:
+        query = urllib.parse.quote(f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false")
+        req = urllib.request.Request(f'{GOOGLE_DRIVE_FILES_URL}?q={query}')
+        req.add_header('Authorization', f'Bearer {token}')
+        response = urllib.request.urlopen(req)
+        result = json.loads(response.read().decode())
+
+        if result.get('files'):
+            return result['files'][0]['id']
+
+        # إنشاء المجلد
+        metadata = json.dumps({
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }).encode()
+
+        req = urllib.request.Request(GOOGLE_DRIVE_FILES_URL, data=metadata, method='POST')
+        req.add_header('Authorization', f'Bearer {token}')
+        req.add_header('Content-Type', 'application/json')
+        response = urllib.request.urlopen(req)
+        result = json.loads(response.read().decode())
+        return result.get('id')
+    except:
+        return None
+
+@app.route('/api/backup/gdrive/files', methods=['GET'])
+def gdrive_list_files():
+    """قائمة النسخ الاحتياطية في Google Drive"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        token = get_gdrive_token(db_path)
+        if not token:
+            return jsonify({'success': False, 'error': 'Google Drive غير متصل'}), 400
+
+        folder_name = f'POS-Backups-{tenant_slug}' if tenant_slug else 'POS-Backups'
+        query = urllib.parse.quote(f"name contains 'POS_' and trashed=false")
+        req = urllib.request.Request(
+            f'{GOOGLE_DRIVE_FILES_URL}?q={query}&orderBy=createdTime desc&fields=files(id,name,size,createdTime)'
+        )
+        req.add_header('Authorization', f'Bearer {token}')
+        response = urllib.request.urlopen(req)
+        result = json.loads(response.read().decode())
+
+        files = []
+        for f in result.get('files', []):
+            files.append({
+                'id': f['id'],
+                'name': f['name'],
+                'size': int(f.get('size', 0)),
+                'created_at': f.get('createdTime', '')
+            })
+
+        return jsonify({'success': True, 'files': files})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ===== مجدول النسخ الاحتياطي التلقائي =====
+
+_backup_scheduler_running = False
+
+def backup_scheduler_loop():
+    """حلقة المجدول - تعمل في خيط منفصل"""
+    global _backup_scheduler_running
+    _backup_scheduler_running = True
+    print("[Backup Scheduler] تم بدء مجدول النسخ الاحتياطي التلقائي")
+
+    while _backup_scheduler_running:
+        try:
+            now = datetime.now()
+            current_time = now.strftime('%H:%M')
+
+            # فحص كل قواعد البيانات (الافتراضية + المستأجرين)
+            db_paths = [('', DB_PATH)]
+            if os.path.exists(TENANTS_DB_DIR):
+                for f in os.listdir(TENANTS_DB_DIR):
+                    if f.endswith('.db'):
+                        slug = f[:-3]
+                        db_paths.append((slug, os.path.join(TENANTS_DB_DIR, f)))
+
+            for tenant_slug, db_path in db_paths:
+                try:
+                    conn = sqlite3.connect(db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+
+                    cursor.execute("SELECT value FROM settings WHERE key = 'backup_schedule_enabled'")
+                    row = cursor.fetchone()
+                    enabled = row and row['value'] == 'true'
+
+                    if not enabled:
+                        conn.close()
+                        continue
+
+                    cursor.execute("SELECT value FROM settings WHERE key = 'backup_schedule_time'")
+                    row = cursor.fetchone()
+                    schedule_time = row['value'] if row else '03:00'
+
+                    cursor.execute("SELECT value FROM settings WHERE key = 'backup_keep_days'")
+                    row = cursor.fetchone()
+                    keep_days = int(row['value']) if row else 30
+
+                    cursor.execute("SELECT value FROM settings WHERE key = 'backup_gdrive_auto'")
+                    row = cursor.fetchone()
+                    gdrive_auto = row and row['value'] == 'true'
+                    conn.close()
+
+                    # التحقق من الوقت (مع هامش دقيقة واحدة)
+                    if current_time == schedule_time:
+                        slug_label = tenant_slug or 'default'
+                        print(f"[Backup Scheduler] بدء نسخ احتياطي تلقائي لـ {slug_label}")
+
+                        backup_info, error = create_backup_file(tenant_slug if tenant_slug else None)
+                        if error:
+                            print(f"[Backup Scheduler] خطأ: {error}")
+                        else:
+                            print(f"[Backup Scheduler] تم إنشاء نسخة: {backup_info['filename']}")
+
+                            # رفع تلقائي إلى Google Drive
+                            if gdrive_auto:
+                                try:
+                                    token = get_gdrive_token(db_path)
+                                    if token:
+                                        folder_id = _gdrive_find_or_create_folder(token, tenant_slug if tenant_slug else None)
+                                        store_name = tenant_slug or 'default'
+                                        upload_name = f'POS_{store_name}_{backup_info["filename"]}'
+
+                                        boundary = '----BackupBoundary'
+                                        metadata = json.dumps({
+                                            'name': upload_name,
+                                            'parents': [folder_id] if folder_id else []
+                                        })
+
+                                        with open(backup_info['path'], 'rb') as bf:
+                                            file_data = bf.read()
+
+                                        body = (
+                                            f'--{boundary}\r\n'
+                                            f'Content-Type: application/json; charset=UTF-8\r\n\r\n'
+                                            f'{metadata}\r\n'
+                                            f'--{boundary}\r\n'
+                                            f'Content-Type: application/x-sqlite3\r\n\r\n'
+                                        ).encode() + file_data + f'\r\n--{boundary}--'.encode()
+
+                                        req = urllib.request.Request(
+                                            f'{GOOGLE_DRIVE_UPLOAD_URL}?uploadType=multipart',
+                                            data=body, method='POST'
+                                        )
+                                        req.add_header('Authorization', f'Bearer {token}')
+                                        req.add_header('Content-Type', f'multipart/related; boundary={boundary}')
+                                        urllib.request.urlopen(req)
+                                        print(f"[Backup Scheduler] تم رفع النسخة إلى Google Drive")
+                                except Exception as ge:
+                                    print(f"[Backup Scheduler] خطأ في رفع Google Drive: {ge}")
+
+                        # حذف النسخ القديمة
+                        _cleanup_old_backups(tenant_slug if tenant_slug else None, keep_days)
+
+                except Exception as te:
+                    print(f"[Backup Scheduler] خطأ للمستأجر: {te}")
+
+        except Exception as e:
+            print(f"[Backup Scheduler] خطأ عام: {e}")
+
+        # الانتظار 60 ثانية قبل الفحص التالي
+        time.sleep(60)
+
+def _cleanup_old_backups(tenant_slug, keep_days):
+    """حذف النسخ الاحتياطية الأقدم من عدد الأيام المحدد"""
+    backup_dir = get_backup_dir(tenant_slug)
+    cutoff = time.time() - (keep_days * 86400)
+
+    for f in os.listdir(backup_dir):
+        if f.endswith('.db'):
+            fpath = os.path.join(backup_dir, f)
+            if os.path.getmtime(fpath) < cutoff:
+                os.remove(fpath)
+                print(f"[Backup Cleanup] تم حذف نسخة قديمة: {f}")
+
 if __name__ == '__main__':
     print("🚀 تشغيل خادم POS (Multi-Tenancy)...")
     print("📍 العنوان: http://0.0.0.0:5000")
     print("💡 يمكنك الوصول من أي جهاز على الشبكة المحلية")
     print("🏢 نظام تعدد المستأجرين مفعل")
+    print("💾 نظام النسخ الاحتياطي مفعل")
     print("⏹️  لإيقاف الخادم: اضغط Ctrl+C")
-    
+
+    # بدء مجدول النسخ الاحتياطي
+    scheduler_thread = threading.Thread(target=backup_scheduler_loop, daemon=True)
+    scheduler_thread.start()
+
     app.run(host='0.0.0.0', port=5000, debug=False)
