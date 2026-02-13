@@ -239,6 +239,7 @@
                 <button class="header-btn" onclick="showTab('branches')" data-tab="branches" id="branchesBtn" style="display: none;">🏢 الفروع</button>
                 <button class="header-btn" onclick="showTab('attendance')" data-tab="attendance" id="attendanceBtn" style="display: none;">⏰ الحضور</button>
                 <button class="header-btn" onclick="showTab('settings')" data-tab="settings" id="settingsBtn" style="display: none;">⚙️ إعدادات</button>
+                <button class="header-btn" onclick="showTab('backup')" data-tab="backup" id="backupBtn" style="display: none;">💾 النسخ الاحتياطي</button>
             </div>
             <div class="header-center">
                 <h1>🛍️ نظام نقاط البيع</h1>
@@ -769,6 +770,149 @@
                             <div id="loyaltyPreviewText" style="font-size: 14px; line-height: 2;"></div>
                         </div>
                         <button onclick="saveLoyaltySettings()" class="btn" style="background: #0ea5e9;">💾 حفظ إعدادات الولاء</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backup Tab -->
+        <div class="tab-content" id="backupTab" style="display: none;">
+            <div style="padding: 20px;">
+                <h2>💾 النسخ الاحتياطي</h2>
+
+                <!-- إنشاء نسخة احتياطية -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; border-radius: 16px; margin-bottom: 25px; color: white;">
+                    <h3 style="margin: 0 0 15px; font-size: 20px;">📦 إنشاء نسخة احتياطية</h3>
+                    <p style="opacity: 0.9; margin-bottom: 20px;">إنشاء نسخة احتياطية من قاعدة البيانات الكاملة تشمل المنتجات، الفواتير، العملاء، والإعدادات.</p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button onclick="createBackup()" class="btn" style="background: rgba(255,255,255,0.2); border: 2px solid white; color: white; padding: 12px 25px; font-size: 16px;">
+                            💾 إنشاء نسخة احتياطية الآن
+                        </button>
+                        <button onclick="createAndUploadGDrive()" class="btn" id="backupToGDriveBtn" style="background: rgba(255,255,255,0.2); border: 2px solid #34a853; color: white; padding: 12px 25px; font-size: 16px; display: none;">
+                            ☁️ نسخ احتياطي إلى Google Drive
+                        </button>
+                    </div>
+                    <div id="backupProgress" style="display: none; margin-top: 15px; background: rgba(255,255,255,0.2); padding: 15px; border-radius: 10px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="spinner" style="border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;"></div>
+                            <span id="backupProgressText">جاري إنشاء النسخة الاحتياطية...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- استعادة نسخة احتياطية -->
+                <div style="background: #fff3cd; padding: 20px; border-radius: 16px; margin-bottom: 25px; border: 2px solid #ffc107;">
+                    <h3 style="margin: 0 0 15px; color: #856404;">🔄 استعادة نسخة احتياطية</h3>
+                    <p style="color: #856404; margin-bottom: 15px;">رفع ملف نسخة احتياطية (.db) لاستعادة البيانات. سيتم إنشاء نسخة احتياطية تلقائية قبل الاستعادة.</p>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <input type="file" id="restoreFileInput" accept=".db" style="flex: 1; min-width: 200px; padding: 10px; border: 2px dashed #ffc107; border-radius: 8px; background: white;">
+                        <button onclick="restoreBackup()" class="btn" style="background: #e67e00; padding: 12px 25px;">🔄 استعادة</button>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+                    <!-- النسخ المحلية -->
+                    <div style="min-width: 0;">
+                        <h3 style="color: #4a5568; margin-bottom: 15px;">📁 النسخ الاحتياطية المحلية</h3>
+                        <div id="backupsList" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
+                            <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                        </div>
+                    </div>
+
+                    <!-- النسخ في Google Drive -->
+                    <div style="min-width: 0;">
+                        <h3 style="color: #4a5568; margin-bottom: 15px;">☁️ النسخ في Google Drive</h3>
+                        <div id="gdriveFilesList" style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
+                            <div style="padding: 30px; text-align: center; color: #a0aec0;">غير متصل بـ Google Drive</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- إعدادات الجدولة -->
+                <div style="background: white; padding: 25px; border-radius: 16px; margin-top: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h3 style="color: #667eea; margin: 0 0 20px;">⏰ النسخ الاحتياطي التلقائي</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                        <div class="form-group">
+                            <label>تفعيل النسخ التلقائي:</label>
+                            <select id="backupScheduleEnabled" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="false">معطل</option>
+                                <option value="true">مفعل</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>وقت النسخ اليومي:</label>
+                            <input type="time" id="backupScheduleTime" value="03:00" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                        </div>
+                        <div class="form-group">
+                            <label>الاحتفاظ بالنسخ (أيام):</label>
+                            <input type="number" id="backupKeepDays" value="30" min="1" max="365" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                        </div>
+                        <div class="form-group">
+                            <label>رفع تلقائي لـ Google Drive:</label>
+                            <select id="backupGDriveAuto" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="false">معطل</option>
+                                <option value="true">مفعل</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="saveBackupSchedule()" class="btn" style="margin-top: 15px; padding: 12px 30px;">💾 حفظ إعدادات الجدولة</button>
+                </div>
+
+                <!-- ربط Google Drive -->
+                <div style="background: white; padding: 25px; border-radius: 16px; margin-top: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h3 style="color: #4285f4; margin: 0 0 20px;">
+                        <span style="display: inline-flex; align-items: center; gap: 8px;">
+                            ☁️ ربط Google Drive
+                            <span id="gdriveStatusBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 20px; background: #fee2e2; color: #ef4444;">غير متصل</span>
+                        </span>
+                    </h3>
+
+                    <!-- خطوات الربط -->
+                    <div id="gdriveSetupSection">
+                        <div style="background: #f0f9ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-right: 4px solid #4285f4;">
+                            <strong>📋 خطوات الإعداد:</strong>
+                            <ol style="margin: 10px 0 0 0; padding-right: 20px; line-height: 2;">
+                                <li>انتقل إلى <a href="https://console.cloud.google.com/" target="_blank" style="color: #4285f4;">Google Cloud Console</a></li>
+                                <li>أنشئ مشروعاً جديداً وفعّل Google Drive API</li>
+                                <li>أنشئ OAuth 2.0 Credentials (نوع Desktop App)</li>
+                                <li>أدخل Client ID و Client Secret أدناه</li>
+                            </ol>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label>Client ID:</label>
+                                <input type="text" id="gdriveClientId" placeholder="xxxx.apps.googleusercontent.com" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr;">
+                            </div>
+                            <div class="form-group">
+                                <label>Client Secret:</label>
+                                <input type="password" id="gdriveClientSecret" placeholder="GOCSPX-xxxx" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr;">
+                            </div>
+                        </div>
+
+                        <button onclick="gdriveStartAuth()" class="btn" style="background: #4285f4; padding: 12px 25px; margin-bottom: 15px;">🔗 الحصول على رابط التفويض</button>
+
+                        <div id="gdriveAuthCodeSection" style="display: none; margin-top: 15px;">
+                            <div style="background: #f0fdf4; padding: 15px; border-radius: 10px; border-right: 4px solid #22c55e; margin-bottom: 15px;">
+                                <strong>✅ تم فتح نافذة التفويض.</strong> بعد الموافقة، انسخ الكود والصقه هنا:
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="gdriveAuthCode" placeholder="الصق كود التفويض هنا" style="flex: 1; padding: 10px; border: 2px solid #22c55e; border-radius: 6px; direction: ltr;">
+                                <button onclick="gdriveConnect()" class="btn" style="background: #22c55e; padding: 12px 25px;">✅ ربط</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- حالة الاتصال -->
+                    <div id="gdriveConnectedSection" style="display: none;">
+                        <div style="background: #f0fdf4; padding: 20px; border-radius: 10px; border: 2px solid #22c55e; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-size: 24px;">✅</span>
+                                <strong style="color: #16a34a; font-size: 18px; margin-right: 10px;">Google Drive متصل</strong>
+                                <p style="color: #4ade80; margin: 5px 0 0;">النسخ الاحتياطية سترفع تلقائياً إلى مجلد POS-Backups</p>
+                            </div>
+                            <button onclick="gdriveDisconnect()" class="btn" style="background: #ef4444; padding: 10px 20px;">قطع الاتصال</button>
+                        </div>
                     </div>
                 </div>
             </div>
