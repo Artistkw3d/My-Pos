@@ -368,17 +368,19 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('settingsBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
             document.getElementById('backupBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
             document.getElementById('usersBtn').style.display = window.userPermissions.canManageUsers ? 'inline-block' : 'none';
-            document.getElementById('branchesBtn').style.display = isAdmin ? 'inline-block' : 'none';
-            document.getElementById('systemLogsBtn').style.display = isAdmin ? 'inline-block' : 'none';
+            document.getElementById('branchesBtn').style.display = window.userPermissions.canViewBranches ? 'inline-block' : 'none';
+            document.getElementById('systemLogsBtn').style.display = window.userPermissions.canViewSystemLogs ? 'inline-block' : 'none';
             document.getElementById('clearInvoicesBtn').style.display = window.userPermissions.canDeleteInvoices ? 'inline-block' : 'none';
-            document.getElementById('expensesBtn').style.display = isAdmin ? 'inline-block' : 'none';
-            document.getElementById('dcfBtn').style.display = isAdmin ? 'inline-block' : 'none';
-            document.getElementById('advancedReportsBtn').style.display = isAdmin ? 'inline-block' : 'none';
-            document.getElementById('suppliersBtn').style.display = isAdmin ? 'inline-block' : 'none';
-            document.getElementById('couponsBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    document.getElementById('tablesBtn').style.display = isAdmin ? 'inline-block' : 'none';
-    // عرض خانة اختيار الطاولة في نقطة البيع
-    loadTablesDropdown();
+            document.getElementById('expensesBtn').style.display = window.userPermissions.canViewExpenses ? 'inline-block' : 'none';
+            document.getElementById('dcfBtn').style.display = window.userPermissions.canViewDcf ? 'inline-block' : 'none';
+            document.getElementById('advancedReportsBtn').style.display = window.userPermissions.canViewAdvancedReports ? 'inline-block' : 'none';
+            document.getElementById('suppliersBtn').style.display = window.userPermissions.canViewSuppliers ? 'inline-block' : 'none';
+            document.getElementById('couponsBtn').style.display = window.userPermissions.canViewCoupons ? 'inline-block' : 'none';
+            document.getElementById('tablesBtn').style.display = window.userPermissions.canViewTables ? 'inline-block' : 'none';
+            document.getElementById('returnsBtn').style.display = window.userPermissions.canViewReturns ? 'inline-block' : 'none';
+            document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
+            // عرض خانة اختيار الطاولة في نقطة البيع
+            loadTablesDropdown();
 
             // التبويبات
             const customersTab = document.querySelector('[data-tab="customers"]');
@@ -644,7 +646,7 @@ async function loadProducts() {
         const branchId = currentUser?.branch_id || 1;
         
         // محاولة التحميل من السيرفر
-        if (navigator.onLine) {
+        if (_realOnlineStatus) {
             const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
             const data = await response.json();
             if (data.success) {
@@ -1190,7 +1192,7 @@ async function completeSale() {
     
     // حفظ العميل إذا كان لديه بيانات (فقط online)
     let customerId = document.getElementById('selectedCustomerId').value || null;
-    if (!customerId && (customerName || customerPhone) && navigator.onLine) {
+    if (!customerId && (customerName || customerPhone) && _realOnlineStatus) {
         try {
             const customerResponse = await fetch(`${API_URL}/api/customers`, {
                 method: 'POST',
@@ -1252,7 +1254,7 @@ async function completeSale() {
     };
     
     // === حفظ الفاتورة ===
-    if (navigator.onLine) {
+    if (_realOnlineStatus) {
         // Online: محاولة إرسال للسيرفر
         try {
             const response = await fetch(`${API_URL}/api/invoices`, {
@@ -2020,7 +2022,7 @@ async function loadInvoicesTable() {
         let invoices = [];
         
         // Online: جلب من السيرفر
-        if (navigator.onLine) {
+        if (_realOnlineStatus) {
             const response = await fetch(`${API_URL}/api/invoices?limit=200`);
             const data = await response.json();
             if (data.success) {
@@ -2029,7 +2031,7 @@ async function loadInvoicesTable() {
         }
         
         // Offline أو Fallback: جلب من المحلي
-        if (!navigator.onLine || invoices.length === 0) {
+        if (!_realOnlineStatus || invoices.length === 0) {
             if (localDB.isReady) {
                 const localInvoices = await localDB.getAll('local_invoices');
                 if (localInvoices.length > 0) {
@@ -2124,7 +2126,7 @@ async function loadInvoicesTable() {
 async function viewLocalInvoice(invoiceId) {
     try {
         // محاولة من السيرفر أولاً (إذا online ورقم عادي)
-        if (navigator.onLine && !invoiceId.toString().startsWith('offline_')) {
+        if (_realOnlineStatus && !invoiceId.toString().startsWith('offline_')) {
             const response = await fetch(`${API_URL}/api/invoices/${invoiceId}`);
             const data = await response.json();
             if (data.success) {
@@ -6008,7 +6010,7 @@ async function searchCustomerByPhone() {
         return;
     }
 
-    if (!navigator.onLine) {
+    if (!_realOnlineStatus) {
         // أوفلاين: البحث في القائمة المحملة مسبقاً
         const found = allCustomersDropdown.find(c => c.phone === phone);
         if (found) {
@@ -6723,7 +6725,7 @@ let allSuppliers = [];
 let currentSupplierId = null;
 
 async function loadSuppliers() {
-    if (!navigator.onLine) {
+    if (!_realOnlineStatus) {
         const container = document.getElementById('suppliersContainer');
         if (container) container.innerHTML = '<div style="text-align:center; padding:40px; color:#92400e;"><div style="font-size:48px; margin-bottom:10px;">📴</div><p>غير متصل - لا يمكن تحميل الموردين</p></div>';
         return;
@@ -7055,7 +7057,7 @@ let appliedCouponDiscount = 0;
 let appliedCouponId = null;
 
 async function loadCoupons() {
-    if (!navigator.onLine) {
+    if (!_realOnlineStatus) {
         const container = document.getElementById('couponsContainer');
         if (container) container.innerHTML = '<div style="text-align:center; padding:40px; color:#92400e;"><div style="font-size:48px; margin-bottom:10px;">📴</div><p>غير متصل - لا يمكن تحميل الكوبونات</p></div>';
         return;
@@ -7263,7 +7265,7 @@ async function applyCouponCode() {
         return;
     }
 
-    if (!navigator.onLine) {
+    if (!_realOnlineStatus) {
         resultDiv.style.display = 'block';
         resultDiv.style.background = '#fef3c7';
         resultDiv.style.color = '#92400e';
@@ -7426,7 +7428,7 @@ setTimeout(() => {
     if (document.getElementById('customerSearchInput')) {
         loadCustomersDropdown();
         // مزامنة العملاء المعلقين إذا أونلاين
-        if (navigator.onLine) setTimeout(syncOfflineCustomers, 2000);
+        if (_realOnlineStatus) setTimeout(syncOfflineCustomers, 2000);
         console.log('[Customers Search] Loaded ✅');
     }
 }, 1000);
@@ -7444,7 +7446,7 @@ async function loadTablesDropdown() {
     if (!select || !section) return;
 
     try {
-        if (!navigator.onLine) {
+        if (!_realOnlineStatus) {
             // في وضع أوفلاين: إخفاء اختيار الطاولة
             section.style.display = 'none';
             return;
@@ -7470,7 +7472,7 @@ async function loadTablesDropdown() {
 
 // تحميل الطاولات لتبويب الطاولات
 async function loadTables() {
-    if (!navigator.onLine) {
+    if (!_realOnlineStatus) {
         alert('لا يوجد اتصال بالإنترنت', 'warning');
         return;
     }

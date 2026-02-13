@@ -204,6 +204,7 @@ def migrate_database(db_path=None):
         add_column('users', 'can_view_dcf', 'INTEGER', 0)
         add_column('users', 'can_cancel_invoices', 'INTEGER', 0)
         add_column('users', 'can_view_branches', 'INTEGER', 0)
+        add_column('users', 'last_login', 'TIMESTAMP')
 
         add_column('invoice_items', 'variant_id', 'INTEGER')
         add_column('invoice_items', 'variant_name', 'TEXT')
@@ -304,7 +305,8 @@ def create_tenant_database(slug):
             can_view_customers INTEGER DEFAULT 1,
             can_add_customer INTEGER DEFAULT 1,
             can_edit_customer INTEGER DEFAULT 0,
-            can_delete_customer INTEGER DEFAULT 0
+            can_delete_customer INTEGER DEFAULT 0,
+            last_login TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS branches (
@@ -395,7 +397,11 @@ def create_tenant_database(slug):
             loyalty_points_earned INTEGER DEFAULT 0,
             loyalty_points_redeemed INTEGER DEFAULT 0,
             table_id INTEGER,
-            table_name TEXT
+            table_name TEXT,
+            cancelled INTEGER DEFAULT 0,
+            cancel_reason TEXT,
+            cancelled_at TIMESTAMP,
+            stock_returned INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS invoice_items (
@@ -622,22 +628,33 @@ def login():
         conn = get_db()
         cursor = conn.cursor()
 
+        hashed_pw = hash_password(password)
         cursor.execute('''
             SELECT u.*, b.name as branch_name
             FROM users u
             LEFT JOIN branches b ON u.branch_id = b.id
-            WHERE u.username = ? AND u.password = ? AND u.is_active = 1
-        ''', (username, password))
+            WHERE u.username = ? AND u.is_active = 1
+        ''', (username,))
 
         user = cursor.fetchone()
-        conn.close()
 
         if user:
-            user_data = dict_from_row(user)
-            user_data.pop('password', None)
-            return jsonify({'success': True, 'user': user_data})
-        else:
-            return jsonify({'success': False, 'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
+            stored_pw = user['password']
+            # دعم كلمات المرور القديمة (نص عادي) والجديدة (مشفرة)
+            if stored_pw == hashed_pw or stored_pw == password:
+                # ترقية كلمة المرور القديمة إلى مشفرة تلقائياً
+                if stored_pw == password and stored_pw != hashed_pw:
+                    cursor.execute('UPDATE users SET password = ? WHERE id = ?', (hashed_pw, user['id']))
+                # تحديث وقت آخر دخول
+                cursor.execute('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', (user['id'],))
+                conn.commit()
+                conn.close()
+                user_data = dict_from_row(user)
+                user_data.pop('password', None)
+                return jsonify({'success': True, 'user': user_data})
+
+        conn.close()
+        return jsonify({'success': False, 'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -694,7 +711,7 @@ def add_user():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
-            data.get('password'),
+            hash_password(data.get('password')),
             data.get('full_name'),
             data.get('role', 'cashier'),
             data.get('invoice_prefix', ''),
@@ -758,7 +775,7 @@ def update_user(user_id):
         
         if 'password' in data and data['password']:
             updates.append('password = ?')
-            params.append(data['password'])
+            params.append(hash_password(data['password']))
         if 'full_name' in data:
             updates.append('full_name = ?')
             params.append(data['full_name'])
