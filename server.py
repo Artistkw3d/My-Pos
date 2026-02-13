@@ -4006,14 +4006,15 @@ def gdrive_save_credentials():
         conn.commit()
         conn.close()
 
-        # إنشاء رابط التفويض
+        # إنشاء رابط التفويض مع تمرير tenant_slug في state
         params = urllib.parse.urlencode({
             'client_id': client_id,
             'redirect_uri': redirect_uri,
             'response_type': 'code',
             'scope': GOOGLE_DRIVE_SCOPE,
             'access_type': 'offline',
-            'prompt': 'consent'
+            'prompt': 'consent',
+            'state': tenant_slug or ''
         })
         auth_url = f'{GOOGLE_OAUTH_AUTH_URL}?{params}'
 
@@ -4101,7 +4102,8 @@ def gdrive_callback():
 </body></html>''', 400
 
     try:
-        tenant_slug = get_tenant_slug()
+        # استخراج tenant_slug من state parameter (لأن الـ callback redirect ما فيه X-Tenant-ID header)
+        tenant_slug = request.args.get('state', '').strip()
         _gdrive_exchange_code(auth_code, tenant_slug)
 
         return '''<!DOCTYPE html>
