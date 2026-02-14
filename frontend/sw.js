@@ -18,7 +18,7 @@ const STATIC_ASSETS = [
 
 // التثبيت - كل ملف على حدة حتى لا يفشل الكل بسبب ملف واحد
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v32...');
+    console.log('[SW] Installing v33...');
     event.waitUntil(
         caches.open(STATIC_CACHE).then(cache => {
             return Promise.allSettled(
@@ -34,7 +34,7 @@ self.addEventListener('install', (event) => {
 
 // التفعيل - حذف جميع الكاشات القديمة
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v32...');
+    console.log('[SW] Activating v33...');
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
@@ -107,4 +107,4 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
-console.log('[SW] Service Worker loaded v32');
+console.log('[SW] Service Worker loaded v33');

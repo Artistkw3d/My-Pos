@@ -12,8 +12,8 @@ class SyncManager {
     // بدء المزامنة التلقائية
     start(intervalMinutes = 5) {
         this.autoSyncInterval = setInterval(() => {
-            if (navigator.onLine && !this.isSyncing) {
-                this.sync();
+            if (typeof _realOnlineStatus !== 'undefined' ? _realOnlineStatus : navigator.onLine) {
+                if (!this.isSyncing) this.sync();
             }
         }, intervalMinutes * 60 * 1000);
         
@@ -35,7 +35,8 @@ class SyncManager {
             return;
         }
         
-        if (!navigator.onLine) {
+        const isOnline = typeof _realOnlineStatus !== 'undefined' ? _realOnlineStatus : navigator.onLine;
+        if (!isOnline) {
             console.log('[Sync] Offline - skipped');
             return;
         }
