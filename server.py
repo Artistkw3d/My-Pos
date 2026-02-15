@@ -1046,28 +1046,6 @@ def get_products():
             elif inv_id not in seen_inv if inv_id else True:
                 p['variants'] = p.get('variants', [])
 
-        # إذا طُلب بيانات التوفر في الفروع الأخرى
-        include_cross_branch = request.args.get('include_cross_branch')
-        if include_cross_branch and branch_id and branch_id != 'all':
-            for p in products:
-                inv_id = p.get('inventory_id')
-                if inv_id:
-                    cursor.execute('''
-                        SELECT bs.stock, bs.branch_id, b.name as branch_name
-                        FROM branch_stock bs
-                        JOIN branches b ON bs.branch_id = b.id
-                        WHERE bs.inventory_id = ? AND bs.branch_id != ? AND bs.stock > 0 AND b.is_active = 1
-                    ''', (inv_id, branch_id))
-                    other_branches = []
-                    for row in cursor.fetchall():
-                        ob = dict_from_row(row)
-                        other_branches.append({
-                            'branch_id': ob['branch_id'],
-                            'branch_name': ob['branch_name'],
-                            'stock': ob['stock']
-                        })
-                    p['other_branches_stock'] = other_branches
-
         conn.close()
         return jsonify({'success': True, 'products': products})
     except Exception as e:
@@ -1319,10 +1297,12 @@ def get_branch_stock():
         
         query = '''
             SELECT bs.*, i.name, i.barcode, i.category, i.price, i.cost, i.image_data,
-                   pv.variant_name, pv.price as variant_price, pv.cost as variant_cost, pv.barcode as variant_barcode
+                   pv.variant_name, pv.price as variant_price, pv.cost as variant_cost, pv.barcode as variant_barcode,
+                   b.name as branch_name
             FROM branch_stock bs
             JOIN inventory i ON bs.inventory_id = i.id
             LEFT JOIN product_variants pv ON bs.variant_id = pv.id
+            LEFT JOIN branches b ON bs.branch_id = b.id
             WHERE 1=1
         '''
         params = []

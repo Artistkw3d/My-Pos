@@ -649,8 +649,7 @@ async function loadProducts() {
         
         // محاولة التحميل من السيرفر
         if (_realOnlineStatus) {
-            const crossBranchParam = window.userPermissions?.canViewCrossBranchStock ? '&include_cross_branch=1' : '';
-            const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}${crossBranchParam}`);
+            const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
             const data = await response.json();
             if (data.success) {
                 allProducts = data.products;
@@ -739,25 +738,88 @@ function displayProducts(products) {
             `;
         }
 
-        // عرض التوفر في الفروع الأخرى
+        // أيقونة عرض التوفر في الفروع الأخرى (عند الطلب)
         let crossBranchHTML = '';
-        if (p.other_branches_stock && p.other_branches_stock.length > 0) {
-            const branchList = p.other_branches_stock.map(b => `${b.branch_name}: ${b.stock}`).join('، ');
-            crossBranchHTML = `<div style="font-size:10px; color:#3b82f6; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:3px 6px; margin-top:3px; text-align:center;" title="${branchList}">🏢 متوفر في ${p.other_branches_stock.length > 1 ? p.other_branches_stock.length + ' فروع' : p.other_branches_stock[0].branch_name}</div>`;
+        if (window.userPermissions?.canViewCrossBranchStock && p.inventory_id) {
+            crossBranchHTML = `<button class="branch-stock-btn" onclick="event.stopPropagation(); showBranchStock(${p.inventory_id}, '${(p.display_name || p.name).replace(/'/g, "\\'")}')" title="عرض التوفر في الفروع الأخرى">🏢</button>`;
         }
 
         return `
-        <div class="product-card">
+        <div class="product-card" style="position:relative;">
+            ${crossBranchHTML}
             ${imgDisplay}
             <div class="product-card-name">${p.display_name || p.name}</div>
             <div class="product-card-price">${p.price.toFixed(3)} د.ك</div>
             ${variantBadge}
             <div class="product-card-stock">المخزون: ${p.stock}</div>
-            ${crossBranchHTML}
             ${counterHTML}
         </div>
         `;
     }).join('');
+}
+
+// عرض توفر المنتج في الفروع الأخرى
+async function showBranchStock(inventoryId, productName) {
+    const branchId = currentUser?.branch_id || 1;
+
+    // إنشاء المودال
+    let modal = document.getElementById('branchStockModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'branchStockModal';
+        modal.className = 'modal';
+        modal.onclick = (e) => { if (e.target === modal) modal.classList.remove('active'); };
+        document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:450px;">
+            <div class="modal-header">
+                <h2>🏢 التوفر في الفروع</h2>
+                <button class="close-btn" onclick="document.getElementById('branchStockModal').classList.remove('active')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:20px;">
+                <div style="text-align:center; font-weight:600; margin-bottom:15px; color:#333;">${productName}</div>
+                <div style="text-align:center; padding:30px;"><div class="spinner"></div> جاري التحميل...</div>
+            </div>
+        </div>
+    `;
+    modal.classList.add('active');
+
+    try {
+        const response = await fetch(`${API_URL}/api/branch-stock?inventory_id=${inventoryId}`);
+        const data = await response.json();
+
+        if (data.success && data.stock) {
+            // تصفية الفروع الأخرى فقط (استبعاد الفرع الحالي)
+            const otherBranches = data.stock.filter(s => s.branch_id != branchId && s.stock > 0);
+
+            let bodyHTML = `<div style="text-align:center; font-weight:600; margin-bottom:15px; color:#333;">${productName}</div>`;
+
+            if (otherBranches.length === 0) {
+                bodyHTML += `<div style="text-align:center; padding:20px; color:#999;">غير متوفر في فروع أخرى</div>`;
+            } else {
+                bodyHTML += `<div class="branch-stock-list">`;
+                otherBranches.forEach(b => {
+                    // نحتاج اسم الفرع - نجلبه من branches endpoint أو نستخدم branch_id
+                    const stockClass = b.stock > 10 ? 'high' : b.stock > 3 ? 'medium' : 'low';
+                    bodyHTML += `
+                        <div class="branch-stock-item">
+                            <span class="branch-stock-name">🏪 ${b.branch_name || 'فرع ' + b.branch_id}</span>
+                            <span class="branch-stock-qty ${stockClass}">${b.stock}</span>
+                        </div>
+                    `;
+                });
+                bodyHTML += `</div>`;
+            }
+
+            modal.querySelector('.modal-body').innerHTML = `<div style="padding:20px;">${bodyHTML}</div>`;
+        } else {
+            modal.querySelector('.modal-body').innerHTML = `<div style="padding:20px; text-align:center; color:#999;">غير متوفر في فروع أخرى</div>`;
+        }
+    } catch (err) {
+        modal.querySelector('.modal-body').innerHTML = `<div style="padding:20px; text-align:center; color:#e74c3c;">خطأ في تحميل البيانات</div>`;
+    }
 }
 
 function removeLastFromCart(productId) {
