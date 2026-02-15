@@ -287,6 +287,82 @@ body {
     font-size: 13px;
 }
 
+/* زر عرض التوفر في الفروع */
+.branch-stock-btn {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: #eff6ff;
+    color: #3b82f6;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    z-index: 2;
+    padding: 0;
+    line-height: 1;
+}
+
+.branch-stock-btn:hover {
+    background: #3b82f6;
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+}
+
+/* قائمة مخزون الفروع */
+.branch-stock-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.branch-stock-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+}
+
+.branch-stock-name {
+    font-weight: 500;
+    color: #333;
+    font-size: 14px;
+}
+
+.branch-stock-qty {
+    font-weight: 700;
+    font-size: 15px;
+    min-width: 36px;
+    text-align: center;
+    padding: 3px 10px;
+    border-radius: 8px;
+}
+
+.branch-stock-qty.high {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.branch-stock-qty.medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.branch-stock-qty.low {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
 /* زر إضافة للسلة */
 .add-to-cart-btn {
     width: 100%;
