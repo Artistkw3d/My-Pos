@@ -678,7 +678,8 @@ def ensure_user_permission_columns(cursor):
     new_cols = [
         'can_view_returns', 'can_view_expenses', 'can_view_suppliers', 'can_view_coupons',
         'can_view_tables', 'can_view_attendance', 'can_view_advanced_reports',
-        'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches'
+        'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches',
+        'can_view_cross_branch_stock'
     ]
     for col in new_cols:
         try:
@@ -1044,6 +1045,28 @@ def get_products():
                 seen_inv.add(inv_id)
             elif inv_id not in seen_inv if inv_id else True:
                 p['variants'] = p.get('variants', [])
+
+        # إذا طُلب بيانات التوفر في الفروع الأخرى
+        include_cross_branch = request.args.get('include_cross_branch')
+        if include_cross_branch and branch_id and branch_id != 'all':
+            for p in products:
+                inv_id = p.get('inventory_id')
+                if inv_id:
+                    cursor.execute('''
+                        SELECT bs.stock, bs.branch_id, b.name as branch_name
+                        FROM branch_stock bs
+                        JOIN branches b ON bs.branch_id = b.id
+                        WHERE bs.inventory_id = ? AND bs.branch_id != ? AND bs.stock > 0 AND b.is_active = 1
+                    ''', (inv_id, branch_id))
+                    other_branches = []
+                    for row in cursor.fetchall():
+                        ob = dict_from_row(row)
+                        other_branches.append({
+                            'branch_id': ob['branch_id'],
+                            'branch_name': ob['branch_name'],
+                            'stock': ob['stock']
+                        })
+                    p['other_branches_stock'] = other_branches
 
         conn.close()
         return jsonify({'success': True, 'products': products})
@@ -3151,6 +3174,28 @@ def release_table(table_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/tables/<int:table_id>/reserve', methods=['POST'])
+def reserve_table(table_id):
+    """حجز طاولة"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT status FROM restaurant_tables WHERE id = ?', (table_id,))
+        table = cursor.fetchone()
+        if not table:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطاولة غير موجودة'}), 404
+        if table['status'] == 'occupied':
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن حجز طاولة مشغولة'}), 400
+        cursor.execute('UPDATE restaurant_tables SET status = ? WHERE id = ?',
+                       ('reserved', table_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ===== API الكوبونات =====
 
 @app.route('/api/coupons', methods=['GET'])
@@ -3752,6 +3797,111 @@ def super_admin_change_password():
                 'role': 'super_admin'
             }
         })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/backup/tenant/<int:tenant_id>', methods=['POST'])
+def super_admin_backup_tenant(tenant_id):
+    """إنشاء نسخة احتياطية لمتجر معين من السوبر أدمن"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tenants WHERE id = ?', (tenant_id,))
+        tenant = cursor.fetchone()
+        conn.close()
+        if not tenant:
+            return jsonify({'success': False, 'error': 'المتجر غير موجود'}), 404
+        slug = tenant['slug']
+        backup_info, error = create_backup_file(slug)
+        if error:
+            return jsonify({'success': False, 'error': error}), 500
+        backup_info['tenant_name'] = tenant['name']
+        return jsonify({'success': True, 'backup': backup_info})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/backup/all', methods=['POST'])
+def super_admin_backup_all():
+    """إنشاء نسخ احتياطية لجميع المتاجر"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tenants WHERE is_active = 1 ORDER BY id')
+        tenants = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+
+        results = []
+        errors = []
+
+        # نسخة احتياطية للقاعدة الرئيسية (default)
+        backup_info, error = create_backup_file(None)
+        if error:
+            errors.append({'tenant': 'default', 'error': error})
+        else:
+            backup_info['tenant_name'] = 'القاعدة الرئيسية'
+            results.append(backup_info)
+
+        # نسخ احتياطية لكل متجر
+        for tenant in tenants:
+            backup_info, error = create_backup_file(tenant['slug'])
+            if error:
+                errors.append({'tenant': tenant['name'], 'error': error})
+            else:
+                backup_info['tenant_name'] = tenant['name']
+                results.append(backup_info)
+
+        return jsonify({
+            'success': True,
+            'backups': results,
+            'errors': errors,
+            'total': len(results),
+            'failed': len(errors)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/super-admin/backup/list', methods=['GET'])
+def super_admin_list_all_backups():
+    """قائمة النسخ الاحتياطية لجميع المتاجر"""
+    try:
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, name, slug FROM tenants ORDER BY id')
+        tenants = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+
+        all_backups = {}
+
+        # نسخ القاعدة الرئيسية
+        default_dir = get_backup_dir(None)
+        default_backups = []
+        if os.path.exists(default_dir):
+            for f in sorted(os.listdir(default_dir), reverse=True):
+                if f.endswith('.db'):
+                    fp = os.path.join(default_dir, f)
+                    default_backups.append({
+                        'filename': f,
+                        'size': os.path.getsize(fp),
+                        'created_at': datetime.fromtimestamp(os.path.getmtime(fp)).isoformat()
+                    })
+        all_backups['default'] = {'name': 'القاعدة الرئيسية', 'backups': default_backups}
+
+        # نسخ كل متجر
+        for tenant in tenants:
+            tenant_dir = get_backup_dir(tenant['slug'])
+            tenant_backups = []
+            if os.path.exists(tenant_dir):
+                for f in sorted(os.listdir(tenant_dir), reverse=True):
+                    if f.endswith('.db'):
+                        fp = os.path.join(tenant_dir, f)
+                        tenant_backups.append({
+                            'filename': f,
+                            'size': os.path.getsize(fp),
+                            'created_at': datetime.fromtimestamp(os.path.getmtime(fp)).isoformat()
+                        })
+            all_backups[tenant['slug']] = {'name': tenant['name'], 'backups': tenant_backups}
+
+        return jsonify({'success': True, 'all_backups': all_backups})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

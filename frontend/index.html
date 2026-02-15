@@ -69,9 +69,12 @@
             <div id="saStatsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px;"></div>
 
             <!-- إضافة مستأجر -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                 <h3 style="margin: 0;">🏢 المتاجر (المستأجرين)</h3>
-                <button onclick="showAddTenant()" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px;">➕ إضافة متجر جديد</button>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button onclick="superAdminBackupAll()" style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px;">💾 نسخ احتياطي للكل</button>
+                    <button onclick="showAddTenant()" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px;">➕ إضافة متجر جديد</button>
+                </div>
             </div>
 
             <!-- جدول المستأجرين -->
@@ -1504,6 +1507,16 @@
                                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
                                         <input type="checkbox" name="can_view_coupons" style="width: 18px; height: 18px;">
                                         <span>👁️ عرض الكوبونات</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #cbd5e0;">
+                                <strong style="color: #667eea; font-size: 14px;">🏢 الفروع والمخزون</strong>
+                                <div style="margin: 10px 0 5px 20px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_view_cross_branch_stock" style="width: 18px; height: 18px;">
+                                        <span>🏢 عرض توفر المنتجات في الفروع الأخرى</span>
                                     </label>
                                 </div>
                             </div>
