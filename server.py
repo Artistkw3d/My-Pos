@@ -628,6 +628,10 @@ def login():
         conn = get_db()
         cursor = conn.cursor()
 
+        # إضافة أعمدة الصلاحيات الجديدة تلقائياً عند تسجيل الدخول
+        ensure_user_permission_columns(cursor)
+        conn.commit()
+
         hashed_pw = hash_password(password)
         cursor.execute('''
             SELECT u.*, b.name as branch_name
@@ -1411,21 +1415,47 @@ def delete_branch_stock(stock_id):
 
 @app.route('/api/products/search', methods=['GET'])
 def search_products():
-    """البحث عن منتج بالاسم أو الباركود"""
+    """البحث عن منتج بالاسم أو الباركود - من branch_stock مع فلترة بالفرع"""
     try:
         query = request.args.get('q', '')
+        branch_id = request.args.get('branch_id')
         conn = get_db()
         cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT * FROM products 
-            WHERE name LIKE ? OR barcode LIKE ?
-            LIMIT 20
-        ''', (f'%{query}%', f'%{query}%'))
-        
-        products = [dict_from_row(row) for row in cursor.fetchall()]
+
+        base_query = '''
+            SELECT bs.id, bs.stock, bs.branch_id, bs.inventory_id, bs.variant_id,
+                   i.name, i.barcode, i.category, i.price, i.cost, i.image_data,
+                   pv.variant_name, pv.price as variant_price, pv.cost as variant_cost, pv.barcode as variant_barcode
+            FROM branch_stock bs
+            JOIN inventory i ON bs.inventory_id = i.id
+            LEFT JOIN product_variants pv ON bs.variant_id = pv.id
+            WHERE (i.name LIKE ? OR i.barcode LIKE ? OR pv.barcode LIKE ? OR pv.variant_name LIKE ?)
+        '''
+        params = [f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%']
+
+        if branch_id and branch_id != 'all':
+            base_query += ' AND bs.branch_id = ?'
+            params.append(branch_id)
+
+        base_query += ' ORDER BY i.name LIMIT 20'
+
+        cursor.execute(base_query, params)
+
+        products = []
+        for row in cursor.fetchall():
+            p = dict_from_row(row)
+            if p.get('variant_id') and p.get('variant_name'):
+                p['display_name'] = f"{p['name']} ({p['variant_name']})"
+                p['price'] = p.get('variant_price') or p['price']
+                p['cost'] = p.get('variant_cost') or p['cost']
+                if p.get('variant_barcode'):
+                    p['barcode'] = p['variant_barcode']
+            else:
+                p['display_name'] = p['name']
+            products.append(p)
+
         conn.close()
-        
+
         return jsonify({'success': True, 'products': products})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

@@ -738,9 +738,9 @@ function displayProducts(products) {
             `;
         }
 
-        // أيقونة عرض التوفر في الفروع الأخرى (عند الطلب)
+        // أيقونة عرض التوفر في الفروع الأخرى (معلوماتية للجميع)
         let crossBranchHTML = '';
-        if (window.userPermissions?.canViewCrossBranchStock && p.inventory_id) {
+        if (p.inventory_id) {
             crossBranchHTML = `<button class="branch-stock-btn" onclick="event.stopPropagation(); showBranchStock(${p.inventory_id}, '${(p.display_name || p.name).replace(/'/g, "\\'")}')" title="عرض التوفر في الفروع الأخرى">🏢</button>`;
         }
 
@@ -837,19 +837,18 @@ function removeLastFromCart(productId) {
     }
 }
 
-async function searchProducts() {
-    const query = document.getElementById('searchInput').value;
+function searchProducts() {
+    const query = (document.getElementById('searchInput').value || '').trim().toLowerCase();
     if (!query) {
         displayProducts(allProducts);
         return;
     }
-    try {
-        const response = await fetch(`${API_URL}/api/products/search?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
-        if (data.success) displayProducts(data.products);
-    } catch (error) {
-        console.error('خطأ:', error);
-    }
+    const filtered = allProducts.filter(p =>
+        (p.display_name || p.name || '').toLowerCase().includes(query) ||
+        (p.barcode || '').toLowerCase().includes(query) ||
+        (p.category || '').toLowerCase().includes(query)
+    );
+    displayProducts(filtered);
 }
 
 // Cart
