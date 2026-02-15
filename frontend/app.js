@@ -185,7 +185,8 @@ async function initializeUI() {
         canViewSystemLogs: hasPerm('can_view_system_logs'),
         canViewDcf: hasPerm('can_view_dcf'),
         canCancelInvoices: hasPerm('can_cancel_invoices'),
-        canViewBranches: hasPerm('can_view_branches')
+        canViewBranches: hasPerm('can_view_branches'),
+        canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock')
     };
     
     // إخفاء/إظهار الأزرار والتبويبات
@@ -361,9 +362,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 canViewSystemLogs: hasPerm('can_view_system_logs'),
                 canViewDcf: hasPerm('can_view_dcf'),
                 canCancelInvoices: hasPerm('can_cancel_invoices'),
-                canViewBranches: hasPerm('can_view_branches')
+                canViewBranches: hasPerm('can_view_branches'),
+                canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock')
             };
-            
+
             // إخفاء/إظهار الأزرار والتبويبات
             document.getElementById('settingsBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
             document.getElementById('backupBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
@@ -647,7 +649,8 @@ async function loadProducts() {
         
         // محاولة التحميل من السيرفر
         if (_realOnlineStatus) {
-            const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
+            const crossBranchParam = window.userPermissions?.canViewCrossBranchStock ? '&include_cross_branch=1' : '';
+            const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}${crossBranchParam}`);
             const data = await response.json();
             if (data.success) {
                 allProducts = data.products;
@@ -736,6 +739,13 @@ function displayProducts(products) {
             `;
         }
 
+        // عرض التوفر في الفروع الأخرى
+        let crossBranchHTML = '';
+        if (p.other_branches_stock && p.other_branches_stock.length > 0) {
+            const branchList = p.other_branches_stock.map(b => `${b.branch_name}: ${b.stock}`).join('، ');
+            crossBranchHTML = `<div style="font-size:10px; color:#3b82f6; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:3px 6px; margin-top:3px; text-align:center;" title="${branchList}">🏢 متوفر في ${p.other_branches_stock.length > 1 ? p.other_branches_stock.length + ' فروع' : p.other_branches_stock[0].branch_name}</div>`;
+        }
+
         return `
         <div class="product-card">
             ${imgDisplay}
@@ -743,6 +753,7 @@ function displayProducts(products) {
             <div class="product-card-price">${p.price.toFixed(3)} د.ك</div>
             ${variantBadge}
             <div class="product-card-stock">المخزون: ${p.stock}</div>
+            ${crossBranchHTML}
             ${counterHTML}
         </div>
         `;
@@ -2407,6 +2418,7 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         userData.can_view_dcf = 1;
         userData.can_cancel_invoices = 1;
         userData.can_view_branches = 1;
+        userData.can_view_cross_branch_stock = 1;
     }
     
     if (userId && !userData.password) delete userData.password;
@@ -7457,8 +7469,9 @@ async function loadTablesDropdown() {
             allTables = data.tables;
             select.innerHTML = '<option value="">-- بدون طاولة --</option>';
             data.tables.forEach(t => {
-                const statusText = t.status === 'occupied' ? ' (مشغولة)' : '';
-                select.innerHTML += `<option value="${t.id}" ${t.status === 'occupied' ? 'disabled' : ''}>${t.name}${statusText}</option>`;
+                const statusText = t.status === 'occupied' ? ' (مشغولة)' : t.status === 'reserved' ? ' (محجوزة)' : '';
+                const isDisabled = t.status === 'occupied' || t.status === 'reserved';
+                select.innerHTML += `<option value="${t.id}" ${isDisabled ? 'disabled' : ''}>${t.name}${statusText}</option>`;
             });
             section.style.display = 'block';
         } else {
@@ -7498,6 +7511,7 @@ function displayTablesStats() {
     const total = allTables.length;
     const available = allTables.filter(t => t.status === 'available').length;
     const occupied = allTables.filter(t => t.status === 'occupied').length;
+    const reserved = allTables.filter(t => t.status === 'reserved').length;
     const totalSeats = allTables.reduce((sum, t) => sum + (t.seats || 0), 0);
 
     container.innerHTML = `
@@ -7514,6 +7528,10 @@ function displayTablesStats() {
             <div style="font-size: 13px; opacity: 0.9;">مشغولة</div>
         </div>
         <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold;">${reserved}</div>
+            <div style="font-size: 13px; opacity: 0.9;">محجوزة</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; padding: 16px; border-radius: 12px; text-align: center;">
             <div style="font-size: 28px; font-weight: bold;">${totalSeats}</div>
             <div style="font-size: 13px; opacity: 0.9;">إجمالي المقاعد</div>
         </div>
@@ -7534,17 +7552,24 @@ function displayTablesFloorPlan() {
 
     allTables.forEach(table => {
         const isOccupied = table.status === 'occupied';
+        const isReserved = table.status === 'reserved';
         const tableEl = document.createElement('div');
         tableEl.className = 'table-card';
         tableEl.dataset.id = table.id;
+
+        let bgColor, borderColor;
+        if (isOccupied) { bgColor = 'linear-gradient(135deg, #fecaca, #fca5a5)'; borderColor = '#ef4444'; }
+        else if (isReserved) { bgColor = 'linear-gradient(135deg, #fef3c7, #fde68a)'; borderColor = '#f59e0b'; }
+        else { bgColor = 'linear-gradient(135deg, #d1fae5, #a7f3d0)'; borderColor = '#10b981'; }
+
         tableEl.style.cssText = `
             position: absolute;
             left: ${table.pos_x || 50}px;
             top: ${table.pos_y || 50}px;
             width: 130px;
             min-height: 120px;
-            background: ${isOccupied ? 'linear-gradient(135deg, #fecaca, #fca5a5)' : 'linear-gradient(135deg, #d1fae5, #a7f3d0)'};
-            border: 3px solid ${isOccupied ? '#ef4444' : '#10b981'};
+            background: ${bgColor};
+            border: 3px solid ${borderColor};
             border-radius: 16px;
             padding: 12px;
             cursor: grab;
@@ -7559,12 +7584,31 @@ function displayTablesFloorPlan() {
             transition: box-shadow 0.2s;
         `;
 
+        let statusIcon, statusText, statusColor;
+        if (isOccupied) { statusIcon = '🔴'; statusText = '🍽️ مشغولة'; statusColor = '#dc2626'; }
+        else if (isReserved) { statusIcon = '🟡'; statusText = '🔒 محجوزة'; statusColor = '#d97706'; }
+        else { statusIcon = '🟢'; statusText = '✅ متاحة'; statusColor = '#059669'; }
+
+        let actionButtons = '';
+        if (isOccupied) {
+            actionButtons = `
+                <button onclick="event.stopPropagation(); viewTableInvoice(${table.id})" style="background: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📄 الفاتورة</button>
+                <button onclick="event.stopPropagation(); releaseTableAction(${table.id})" style="background: #10b981; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔓 تحرير</button>`;
+        } else if (isReserved) {
+            actionButtons = `
+                <button onclick="event.stopPropagation(); unreserveTableAction(${table.id})" style="background: #10b981; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔓 إلغاء الحجز</button>`;
+        } else {
+            actionButtons = `
+                <button onclick="event.stopPropagation(); showAssignInvoice(${table.id})" style="background: #8b5cf6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📎 ربط</button>
+                <button onclick="event.stopPropagation(); reserveTableAction(${table.id})" style="background: #f59e0b; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔒 حجز</button>`;
+        }
+
         tableEl.innerHTML = `
-            <div style="font-size: 24px; margin-bottom: 6px;">${isOccupied ? '🔴' : '🟢'}</div>
+            <div style="font-size: 24px; margin-bottom: 6px;">${statusIcon}</div>
             <div style="font-weight: bold; font-size: 14px; color: #1e293b;">${table.name}</div>
             <div style="font-size: 11px; color: #64748b; margin-top: 2px;">🪑 ${table.seats} مقاعد</div>
-            <div style="font-size: 11px; color: ${isOccupied ? '#dc2626' : '#059669'}; margin-top: 4px; font-weight: bold;">
-                ${isOccupied ? '🍽️ مشغولة' : '✅ متاحة'}
+            <div style="font-size: 11px; color: ${statusColor}; margin-top: 4px; font-weight: bold;">
+                ${statusText}
             </div>
             ${isOccupied && table.invoice_number ? `
                 <div style="background: rgba(255,255,255,0.8); border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin-top: 6px; font-size: 10px; width: 100%;">
@@ -7573,13 +7617,8 @@ function displayTablesFloorPlan() {
                     ${table.invoice_total ? `<div style="color: #059669; font-weight: bold;">${parseFloat(table.invoice_total).toFixed(3)} د.ك</div>` : ''}
                 </div>
             ` : ''}
-            <div style="display: flex; gap: 4px; margin-top: 8px;">
-                ${isOccupied ?
-                    `<button onclick="event.stopPropagation(); viewTableInvoice(${table.id})" style="background: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📄 الفاتورة</button>
-                     <button onclick="event.stopPropagation(); releaseTableAction(${table.id})" style="background: #10b981; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔓 تحرير</button>`
-                    :
-                    `<button onclick="event.stopPropagation(); showAssignInvoice(${table.id})" style="background: #8b5cf6; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">📎 ربط</button>`
-                }
+            <div style="display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; justify-content: center;">
+                ${actionButtons}
                 <button onclick="event.stopPropagation(); editTable(${table.id})" style="background: #f59e0b; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">✏️</button>
                 <button onclick="event.stopPropagation(); deleteTable(${table.id})" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;">🗑️</button>
             </div>
@@ -7886,6 +7925,44 @@ async function releaseTableAction(tableId) {
     }
 }
 
+// حجز طاولة
+async function reserveTableAction(tableId) {
+    if (!confirm('هل تريد حجز هذه الطاولة؟')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/tables/${tableId}/reserve`, { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            alert('تم حجز الطاولة', 'success');
+            loadTables();
+            loadTablesDropdown();
+        } else {
+            alert(data.error || 'فشل حجز الطاولة', 'error');
+        }
+    } catch (e) {
+        console.error('[Tables] Reserve error:', e);
+        alert('خطأ في حجز الطاولة', 'error');
+    }
+}
+
+// إلغاء حجز طاولة
+async function unreserveTableAction(tableId) {
+    if (!confirm('هل تريد إلغاء حجز هذه الطاولة؟')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            alert('تم إلغاء حجز الطاولة', 'success');
+            loadTables();
+            loadTablesDropdown();
+        } else {
+            alert('فشل إلغاء حجز الطاولة', 'error');
+        }
+    } catch (e) {
+        console.error('[Tables] Unreserve error:', e);
+        alert('خطأ في إلغاء حجز الطاولة', 'error');
+    }
+}
+
 // ربط فاتورة بطاولة من تبويب الطاولات
 async function showAssignInvoice(tableId) {
     const table = allTables.find(t => t.id === tableId);
@@ -8087,6 +8164,7 @@ async function loadSuperAdminDashboard() {
                             <div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
                                 <button onclick="openSubscriptionModal(${t.id})" style="background: #8b5cf6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="الاشتراك">💳</button>
                                 <button onclick="viewTenantStats(${t.id})" style="background: #3b82f6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="إحصائيات">📊</button>
+                                <button onclick="superAdminBackupTenant(${t.id}, '${t.name}')" style="background: #10b981; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="نسخ احتياطي">💾</button>
                                 <button onclick="editTenant(${t.id})" style="background: #f59e0b; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="تعديل">✏️</button>
                                 <button onclick="toggleTenant(${t.id}, ${t.is_active ? 0 : 1})" style="background: ${t.is_active ? '#ef4444' : '#10b981'}; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="${t.is_active ? 'تعطيل' : 'تفعيل'}">${t.is_active ? '🚫' : '✅'}</button>
                                 <button onclick="deleteTenantAction(${t.id}, '${t.name}')" style="background: #dc2626; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="حذف">🗑️</button>
@@ -8231,6 +8309,60 @@ async function toggleTenant(tenantId, newState) {
         }
     } catch (e) {
         console.error('[SuperAdmin] Toggle error:', e);
+    }
+}
+
+// نسخ احتياطي لمتجر معين
+async function superAdminBackupTenant(tenantId, tenantName) {
+    if (!confirm(`هل تريد إنشاء نسخة احتياطية لمتجر "${tenantName}"؟`)) return;
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/backup/tenant/${tenantId}`, { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            const size = (data.backup.size / 1024).toFixed(1);
+            alert(`تم إنشاء النسخة الاحتياطية بنجاح\n${data.backup.tenant_name}: ${data.backup.filename} (${size} KB)`);
+        } else {
+            alert(data.error || 'فشل إنشاء النسخة الاحتياطية');
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Backup tenant error:', e);
+        alert('خطأ في إنشاء النسخة الاحتياطية');
+    }
+}
+
+// نسخ احتياطي لجميع المتاجر
+async function superAdminBackupAll() {
+    if (!confirm('هل تريد إنشاء نسخ احتياطية لجميع المتاجر؟\nقد تستغرق هذه العملية بعض الوقت.')) return;
+
+    // إظهار مؤشر التحميل
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ جاري النسخ...';
+    btn.disabled = true;
+
+    try {
+        const response = await originalFetch(`${API_URL}/api/super-admin/backup/all`, { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            let msg = `تم إنشاء ${data.total} نسخة احتياطية بنجاح`;
+            if (data.failed > 0) {
+                msg += `\n⚠️ فشل ${data.failed} نسخة:`;
+                data.errors.forEach(e => { msg += `\n- ${e.tenant}: ${e.error}`; });
+            }
+            msg += '\n\nالتفاصيل:';
+            data.backups.forEach(b => {
+                msg += `\n- ${b.tenant_name}: ${(b.size / 1024).toFixed(1)} KB`;
+            });
+            alert(msg);
+        } else {
+            alert(data.error || 'فشل إنشاء النسخ الاحتياطية');
+        }
+    } catch (e) {
+        console.error('[SuperAdmin] Backup all error:', e);
+        alert('خطأ في إنشاء النسخ الاحتياطية');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
     }
 }
 
