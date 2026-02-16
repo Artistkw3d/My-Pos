@@ -5101,11 +5101,10 @@ def get_xbrl_financial_data():
         cust = dict_from_row(cursor.fetchone())
 
         # === المرتجعات ===
-        ret_date_filter = date_filter.replace('created_at', 'return_date')
         cursor.execute(f'''SELECT
             COUNT(*) as return_count,
-            COALESCE(SUM(refund_amount), 0) as total_refunds
-            FROM returns WHERE 1=1 {ret_date_filter}''', date_params)
+            COALESCE(SUM(total), 0) as total_refunds
+            FROM returns WHERE 1=1 {date_filter}''', date_params)
         try:
             returns_data = dict_from_row(cursor.fetchone())
         except:
