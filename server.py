@@ -361,6 +361,19 @@ def create_tenant_database(slug):
             can_add_customer INTEGER DEFAULT 1,
             can_edit_customer INTEGER DEFAULT 0,
             can_delete_customer INTEGER DEFAULT 0,
+            can_view_returns INTEGER DEFAULT 0,
+            can_view_expenses INTEGER DEFAULT 0,
+            can_view_suppliers INTEGER DEFAULT 0,
+            can_view_coupons INTEGER DEFAULT 0,
+            can_view_tables INTEGER DEFAULT 0,
+            can_view_attendance INTEGER DEFAULT 0,
+            can_view_advanced_reports INTEGER DEFAULT 0,
+            can_view_system_logs INTEGER DEFAULT 0,
+            can_view_dcf INTEGER DEFAULT 0,
+            can_cancel_invoices INTEGER DEFAULT 0,
+            can_view_branches INTEGER DEFAULT 0,
+            can_view_cross_branch_stock INTEGER DEFAULT 0,
+            can_view_xbrl INTEGER DEFAULT 0,
             last_login TIMESTAMP
         );
 
@@ -632,6 +645,35 @@ def create_tenant_database(slug):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS xbrl_company_info (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name_ar TEXT,
+            company_name_en TEXT,
+            commercial_registration TEXT,
+            tax_number TEXT,
+            reporting_currency TEXT DEFAULT 'SAR',
+            industry_sector TEXT,
+            country TEXT DEFAULT 'SA',
+            fiscal_year_end TEXT DEFAULT '12-31',
+            legal_form TEXT,
+            contact_email TEXT,
+            contact_phone TEXT,
+            address TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS xbrl_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type TEXT NOT NULL,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            report_data TEXT,
+            xbrl_xml TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notes TEXT
+        );
     ''')
 
     # إضافة إعدادات افتراضية
@@ -738,7 +780,7 @@ def ensure_user_permission_columns(cursor):
         'can_view_returns', 'can_view_expenses', 'can_view_suppliers', 'can_view_coupons',
         'can_view_tables', 'can_view_attendance', 'can_view_advanced_reports',
         'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches',
-        'can_view_cross_branch_stock'
+        'can_view_cross_branch_stock', 'can_view_xbrl'
     ]
     for col in new_cols:
         try:
@@ -4933,12 +4975,47 @@ def admin_dashboard_stock_summary():
 
 # ===== XBRL / IFRS =====
 
+def ensure_xbrl_tables(cursor):
+    """إنشاء جداول XBRL إذا لم تكن موجودة"""
+    try:
+        cursor.execute('''CREATE TABLE IF NOT EXISTS xbrl_company_info (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name_ar TEXT,
+            company_name_en TEXT,
+            commercial_registration TEXT,
+            tax_number TEXT,
+            reporting_currency TEXT DEFAULT 'SAR',
+            industry_sector TEXT,
+            country TEXT DEFAULT 'SA',
+            fiscal_year_end TEXT DEFAULT '12-31',
+            legal_form TEXT,
+            contact_email TEXT,
+            contact_phone TEXT,
+            address TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS xbrl_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type TEXT NOT NULL,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            report_data TEXT,
+            xbrl_xml TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notes TEXT
+        )''')
+    except Exception as e:
+        print(f"[XBRL] ensure_xbrl_tables: {e}")
+
 @app.route('/api/xbrl/company-info', methods=['GET'])
 def get_xbrl_company_info():
     """جلب بيانات الشركة لتقارير XBRL"""
     try:
         conn = get_db()
         cursor = conn.cursor()
+        ensure_xbrl_tables(cursor)
+        conn.commit()
         cursor.execute('SELECT * FROM xbrl_company_info ORDER BY id DESC LIMIT 1')
         row = cursor.fetchone()
         conn.close()
@@ -4955,6 +5032,8 @@ def save_xbrl_company_info():
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
+        ensure_xbrl_tables(cursor)
+        conn.commit()
         cursor.execute('SELECT id FROM xbrl_company_info ORDER BY id DESC LIMIT 1')
         existing = cursor.fetchone()
         if existing:
@@ -5453,6 +5532,8 @@ def generate_xbrl():
         # حفظ التقرير
         conn = get_db()
         cursor = conn.cursor()
+        ensure_xbrl_tables(cursor)
+        conn.commit()
         report_data_json = json.dumps({
             'revenue': total_revenue,
             'cost_of_sales': cost_of_sales,
@@ -5538,6 +5619,8 @@ def list_xbrl_reports():
     try:
         conn = get_db()
         cursor = conn.cursor()
+        ensure_xbrl_tables(cursor)
+        conn.commit()
         cursor.execute('SELECT id, report_type, period_start, period_end, created_at, notes FROM xbrl_reports ORDER BY created_at DESC LIMIT 50')
         rows = cursor.fetchall()
         conn.close()
@@ -5552,6 +5635,8 @@ def get_xbrl_report(report_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
+        ensure_xbrl_tables(cursor)
+        conn.commit()
         cursor.execute('SELECT * FROM xbrl_reports WHERE id = ?', (report_id,))
         row = cursor.fetchone()
         conn.close()
