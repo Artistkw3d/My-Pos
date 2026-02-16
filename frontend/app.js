@@ -1342,13 +1342,15 @@ async function completeSale() {
             const data = await response.json();
             
             if (data.success) {
-                // نجح الحفظ
+                // نجح الحفظ - تشغيل صوت النجاح
+                playInvoiceSound();
+
                 try {
                     await logAction('sale', `فاتورة ${data.invoice_number || invoiceNumber} - ${total.toFixed(3)} د.ك`, data.id);
                 } catch (e) {
                     console.log('[App] Log action skipped');
                 }
-                
+
                 currentInvoice = {...invoiceData, id: data.id, created_at: new Date().toISOString(), items: invoiceData.items};
 
                 // تسجيل استخدام الكوبون
@@ -1364,8 +1366,16 @@ async function completeSale() {
                     }
                 }
 
-                alert(`✅ تم حفظ الفاتورة!\nرقم: ${data.invoice_number || invoiceNumber}`);
-                
+                showSuccess(`تم حفظ الفاتورة! رقم: ${data.invoice_number || invoiceNumber}`);
+
+                // تنبيه المخزون المنخفض
+                if (data.low_stock_warnings && data.low_stock_warnings.length > 0) {
+                    const warningLines = data.low_stock_warnings.map(w =>
+                        `• ${w.product_name}: متبقي ${w.stock} فقط`
+                    ).join('<br>');
+                    setTimeout(() => showWarning(warningLines, 8000), 1500);
+                }
+
                 // تحديث المخزون المحلي
                 if (localDB.isReady) {
                     try {
@@ -1374,21 +1384,21 @@ async function completeSale() {
                         console.log('[App] Local stock update skipped');
                     }
                 }
-                
+
                 // مسح السلة
                 cart = [];
                 if (currentUser) {
                     localStorage.removeItem(`pos_cart_${currentUser.id}`);
                 }
-                
+
                 clearSaleForm();
                 updateCart();
-                
+
                 // إعادة تحميل
                 loadProducts();
                 loadInventory();
                 loadCustomersDropdown();
-                
+
                 // عرض الفاتورة
                 setTimeout(() => {
                     displayInvoiceView(currentInvoice);
@@ -1436,8 +1446,10 @@ async function saveInvoiceOffline(invoiceData, invoiceNumber) {
         
         // حفظ الفاتورة الحالية
         currentInvoice = offlineInvoice;
-        
-        alert(`📴 تم حفظ الفاتورة محلياً!\nرقم: ${invoiceNumber}\n\nسيتم رفعها عند الاتصال بالإنترنت`);
+
+        // تشغيل صوت النجاح
+        playInvoiceSound();
+        showSuccess(`تم حفظ الفاتورة محلياً! رقم: ${invoiceNumber} - سيتم رفعها عند الاتصال`);
         
         // مسح السلة
         cart = [];
@@ -2639,8 +2651,14 @@ async function loadSettings() {
                 document.getElementById('pointValueHint').textContent = window.loyaltyConfig.pointValue.toFixed(3);
             }
             updateLoyaltyPreview();
+
+            // إعدادات المخزون المنخفض
+            window.lowStockThreshold = parseInt(data.settings.low_stock_threshold) || 5;
+            if (document.getElementById('lowStockThreshold')) {
+                document.getElementById('lowStockThreshold').value = window.lowStockThreshold;
+            }
         }
-        
+
     } catch (error) {
         console.error('خطأ:', error);
     }
@@ -2753,6 +2771,29 @@ async function saveLoyaltySettings() {
                 document.getElementById('pointValueHint').textContent = window.loyaltyConfig.pointValue.toFixed(3);
             }
             alert('✅ تم حفظ إعدادات الولاء');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('❌ فشل الحفظ');
+    }
+}
+
+async function saveLowStockSettings() {
+    const threshold = document.getElementById('lowStockThreshold').value;
+    if (!threshold || parseInt(threshold) < 1) {
+        alert('الرجاء إدخال رقم صحيح أكبر من صفر');
+        return;
+    }
+    try {
+        const response = await fetch(`${API_URL}/api/settings`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ low_stock_threshold: threshold })
+        });
+        const data = await response.json();
+        if (data.success) {
+            window.lowStockThreshold = parseInt(threshold);
+            alert('✅ تم حفظ إعدادات المخزون');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -5180,6 +5221,85 @@ notifStyle.textContent = `
 document.head.appendChild(notifStyle);
 
 console.log('✅ Notification helpers جاهزة');
+
+/**
+ * عرض تنبيه تحذيري (برتقالي)
+ */
+function showWarning(message, duration = 6000) {
+    const oldNotif = document.getElementById('warningNotification');
+    if (oldNotif) oldNotif.remove();
+
+    const notification = document.createElement('div');
+    notification.id = 'warningNotification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        left: 20px;
+        max-width: 500px;
+        margin: 0 auto;
+        padding: 16px 24px;
+        background: linear-gradient(135deg, #f6ad55, #ed8936);
+        color: white;
+        border-radius: 12px;
+        font-weight: bold;
+        z-index: 10001;
+        box-shadow: 0 4px 20px rgba(237, 137, 54, 0.4);
+        animation: slideInDown 0.3s ease;
+        text-align: right;
+        direction: rtl;
+    `;
+
+    notification.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 10px; flex-direction: column;">
+            <span style="font-size: 18px;">📦 تنبيه مخزون منخفض</span>
+            <div style="font-size: 14px; font-weight: normal; line-height: 1.8;">${message}</div>
+        </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.animation = 'slideOutUp 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, duration);
+}
+
+/**
+ * تشغيل صوت إتمام الفاتورة
+ */
+function playInvoiceSound() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = ctx.currentTime;
+
+        // نغمة نجاح: 3 نوتات صاعدة
+        const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+        const durations = [0.12, 0.12, 0.25];
+        let time = now;
+
+        notes.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.3, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + durations[i]);
+
+            osc.start(time);
+            osc.stop(time + durations[i]);
+            time += durations[i] * 0.8;
+        });
+
+        // إغلاق السياق بعد انتهاء الصوت
+        setTimeout(() => ctx.close(), 1000);
+    } catch(e) {
+        console.log('[Sound] Could not play invoice sound:', e);
+    }
+}
 
 // ===== استعادة المستخدم عند تحميل الصفحة =====
 document.addEventListener('DOMContentLoaded', () => {
