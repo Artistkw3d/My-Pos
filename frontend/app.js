@@ -366,7 +366,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 canViewDcf: hasPerm('can_view_dcf'),
                 canCancelInvoices: hasPerm('can_cancel_invoices'),
                 canViewBranches: hasPerm('can_view_branches'),
-                canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock')
+                canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock'),
+                canViewXbrl: hasPerm('can_view_xbrl')
             };
 
             // إخفاء/إظهار الأزرار والتبويبات
