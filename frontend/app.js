@@ -9522,9 +9522,17 @@ async function loadXBRLFinancialData() {
         // تعبئة المخزون
         document.getElementById('xbrl_inventory_val').value = (_xbrlFinancialData.inventory.value || 0).toFixed(2);
 
+        // تعبئة التدفقات النقدية التلقائية من بيانات النظام
+        const d = _xbrlFinancialData;
+        document.getElementById('xbrl_cf_customers').value = (d.revenue.total_revenue || 0).toFixed(2);
+        document.getElementById('xbrl_cf_suppliers').value = (d.cost_of_sales || 0).toFixed(2);
+        document.getElementById('xbrl_cf_employees').value = (d.operating_expenses.salaries || 0).toFixed(2);
+
         // بناء جدول قائمة الدخل
         renderXBRLIncomeTable();
         recalcXBRLBalanceSheet();
+        recalcXBRLCashFlow();
+        recalcXBRLEquityChanges();
     } catch (e) {
         alert('❌ خطأ في جلب البيانات: ' + e.message);
     }
@@ -9593,6 +9601,10 @@ function renderXBRLIncomeTable() {
     });
 
     document.getElementById('xbrl_income_tbody').innerHTML = html;
+
+    // تحديث صافي الربح في قائمة التغيرات في حقوق الملكية
+    document.getElementById('xbrl_eq_net_profit').value = netProfit.toFixed(2);
+    recalcXBRLEquityChanges();
 }
 
 function recalcXBRLIncome() {
@@ -9641,6 +9653,75 @@ function recalcXBRLBalanceSheet() {
     document.getElementById('xbrl_total_liabilities').textContent = fmt(totalLiabilities);
     document.getElementById('xbrl_total_equity').textContent = fmt(totalEquity);
     document.getElementById('xbrl_liabilities_equity').textContent = fmt(totalLiabilities + totalEquity);
+}
+
+function recalcXBRLCashFlow() {
+    const val = (id) => parseFloat(document.getElementById(id).value) || 0;
+    const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    // تشغيلية
+    const customers = val('xbrl_cf_customers');
+    const suppliers = val('xbrl_cf_suppliers');
+    const employees = val('xbrl_cf_employees');
+    const otherOp = val('xbrl_cf_other_operating');
+    const interest = val('xbrl_cf_interest_paid');
+    const taxes = val('xbrl_cf_taxes_paid');
+    const netOperating = customers - suppliers - employees + otherOp - interest - taxes;
+
+    // استثمارية
+    const ppePurchased = val('xbrl_cf_ppe_purchased');
+    const ppeSold = val('xbrl_cf_ppe_sold');
+    const invPurchased = val('xbrl_cf_inv_purchased');
+    const invSold = val('xbrl_cf_inv_sold');
+    const otherInv = val('xbrl_cf_other_investing');
+    const netInvesting = ppeSold - ppePurchased + invSold - invPurchased + otherInv;
+
+    // تمويلية
+    const loansReceived = val('xbrl_cf_loans_received');
+    const loansRepaid = val('xbrl_cf_loans_repaid');
+    const capital = val('xbrl_cf_capital');
+    const dividends = val('xbrl_cf_dividends');
+    const otherFin = val('xbrl_cf_other_financing');
+    const netFinancing = loansReceived - loansRepaid + capital - dividends + otherFin;
+
+    const netChange = netOperating + netInvesting + netFinancing;
+    const cashBeginning = val('xbrl_cash_beginning');
+    const cashEnding = cashBeginning + netChange;
+
+    document.getElementById('xbrl_net_cash_operating').textContent = fmt(netOperating);
+    document.getElementById('xbrl_net_cash_operating').style.color = netOperating >= 0 ? '#38a169' : '#c53030';
+    document.getElementById('xbrl_net_cash_investing').textContent = fmt(netInvesting);
+    document.getElementById('xbrl_net_cash_investing').style.color = netInvesting >= 0 ? '#805ad5' : '#c53030';
+    document.getElementById('xbrl_net_cash_financing').textContent = fmt(netFinancing);
+    document.getElementById('xbrl_net_cash_financing').style.color = netFinancing >= 0 ? '#dd6b20' : '#c53030';
+    document.getElementById('xbrl_net_change_cash').textContent = fmt(netChange);
+    document.getElementById('xbrl_cash_ending').textContent = fmt(cashEnding);
+}
+
+function recalcXBRLEquityChanges() {
+    const val = (id) => parseFloat(document.getElementById(id).value) || 0;
+    const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const openingCapital = val('xbrl_eq_opening_capital');
+    const openingRetained = val('xbrl_eq_opening_retained');
+    const openingOther = val('xbrl_eq_opening_other');
+    const openingTotal = openingCapital + openingRetained + openingOther;
+
+    const netProfit = val('xbrl_eq_net_profit');
+    const oci = val('xbrl_eq_oci');
+    const newCapital = val('xbrl_eq_new_capital');
+    const dividends = val('xbrl_eq_dividends');
+
+    const closingCapital = openingCapital + newCapital;
+    const closingRetained = openingRetained + netProfit - dividends;
+    const closingOther = openingOther + oci;
+    const closingTotal = closingCapital + closingRetained + closingOther;
+
+    document.getElementById('xbrl_eq_opening_total').textContent = fmt(openingTotal);
+    document.getElementById('xbrl_eq_closing_capital').textContent = fmt(closingCapital);
+    document.getElementById('xbrl_eq_closing_retained').textContent = fmt(closingRetained);
+    document.getElementById('xbrl_eq_closing_other').textContent = fmt(closingOther);
+    document.getElementById('xbrl_eq_closing_total').textContent = fmt(closingTotal);
 }
 
 // ربط حقول المركز المالي بإعادة الحساب
@@ -9701,7 +9782,31 @@ async function generateXBRLReport() {
         other_non_current_liabilities: val('xbrl_other_non_current_liabilities'),
         share_capital: val('xbrl_share_capital'),
         retained_earnings: val('xbrl_retained_earnings'),
-        other_equity: val('xbrl_other_equity')
+        other_equity: val('xbrl_other_equity'),
+        // تدفقات نقدية
+        cf_customers_received: val('xbrl_cf_customers'),
+        cf_suppliers_paid: val('xbrl_cf_suppliers'),
+        cf_employees_paid: val('xbrl_cf_employees'),
+        cf_other_operating: val('xbrl_cf_other_operating'),
+        cf_interest_paid: val('xbrl_cf_interest_paid'),
+        cf_taxes_paid: val('xbrl_cf_taxes_paid'),
+        cf_ppe_purchased: val('xbrl_cf_ppe_purchased'),
+        cf_ppe_sold: val('xbrl_cf_ppe_sold'),
+        cf_investments_purchased: val('xbrl_cf_inv_purchased'),
+        cf_investments_sold: val('xbrl_cf_inv_sold'),
+        cf_other_investing: val('xbrl_cf_other_investing'),
+        cf_loans_received: val('xbrl_cf_loans_received'),
+        cf_loans_repaid: val('xbrl_cf_loans_repaid'),
+        cf_capital_contributed: val('xbrl_cf_capital'),
+        cf_dividends_paid: val('xbrl_cf_dividends'),
+        cf_other_financing: val('xbrl_cf_other_financing'),
+        cash_beginning: val('xbrl_cash_beginning'),
+        // تغيرات حقوق الملكية
+        equity_opening_capital: val('xbrl_eq_opening_capital'),
+        equity_opening_other: val('xbrl_eq_opening_other'),
+        equity_new_capital: val('xbrl_eq_new_capital'),
+        dividends_declared: val('xbrl_eq_dividends'),
+        other_comprehensive_income: val('xbrl_eq_oci')
     };
 
     try {
@@ -9751,6 +9856,27 @@ async function generateXBRLReport() {
                 <tr style="background: #ebf8ff;"><td style="padding: 10px 15px; font-weight: bold; color: #2b6cb0;">إجمالي الأصول</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #2b6cb0;">${fmt(s.total_assets)} ${currency}</td></tr>
                 <tr style="background: #fff5f5;"><td style="padding: 10px 15px; font-weight: bold; color: #c53030;">إجمالي الخصوم</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #c53030;">${fmt(s.total_liabilities)} ${currency}</td></tr>
                 <tr style="background: #f0fff4;"><td style="padding: 10px 15px; font-weight: bold; color: #38a169;">حقوق الملكية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #38a169;">${fmt(s.total_equity)} ${currency}</td></tr>
+            </table>`;
+
+        // ملخص التدفقات النقدية
+        document.getElementById('xbrl_cashflow_summary').innerHTML = `
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #f0fff4;"><td style="padding: 10px 15px; font-weight: bold; color: #38a169;">صافي النقد من الأنشطة التشغيلية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #38a169;">${fmt(s.net_cash_operating)} ${currency}</td></tr>
+                <tr style="background: #faf5ff;"><td style="padding: 10px 15px; font-weight: bold; color: #805ad5;">صافي النقد من الأنشطة الاستثمارية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #805ad5;">${fmt(s.net_cash_investing)} ${currency}</td></tr>
+                <tr style="background: #fffaf0;"><td style="padding: 10px 15px; font-weight: bold; color: #dd6b20;">صافي النقد من الأنشطة التمويلية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #dd6b20;">${fmt(s.net_cash_financing)} ${currency}</td></tr>
+                <tr style="background: #1a365d; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 15px;">صافي التغير في النقد</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 16px;">${fmt(s.net_change_cash)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px; color: #718096;">رصيد النقد - بداية الفترة</td><td style="padding: 10px 15px; text-align: left; color: #718096;">${fmt(s.cash_beginning)} ${currency}</td></tr>
+                <tr style="background: #2b6cb0; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 16px;">رصيد النقد - نهاية الفترة</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 18px;">${fmt(s.cash_ending)} ${currency}</td></tr>
+            </table>`;
+
+        // ملخص التغيرات في حقوق الملكية
+        document.getElementById('xbrl_equity_summary').innerHTML = `
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #ebf8ff;"><td style="padding: 10px 15px; font-weight: bold; color: #2b6cb0;">حقوق الملكية - بداية الفترة</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #2b6cb0;">${fmt(s.equity_opening_total)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px; color: #38a169;">+ صافي ربح الفترة</td><td style="padding: 10px 15px; text-align: left; color: #38a169;">${fmt(s.net_profit)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px; color: #805ad5;">+ الدخل الشامل الآخر</td><td style="padding: 10px 15px; text-align: left; color: #805ad5;">${fmt(s.other_comprehensive_income)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px; color: #c53030;">- أرباح موزعة</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.dividends_declared)}) ${currency}</td></tr>
+                <tr style="background: #38a169; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 16px;">حقوق الملكية - نهاية الفترة</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 18px;">${fmt(s.equity_closing_total)} ${currency}</td></tr>
             </table>`;
 
         // عرض XML
