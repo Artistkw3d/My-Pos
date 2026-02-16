@@ -243,6 +243,7 @@
                 <button class="header-btn" onclick="showTab('attendance')" data-tab="attendance" id="attendanceBtn" style="display: none;">⏰ الحضور</button>
                 <button class="header-btn" onclick="showTab('settings')" data-tab="settings" id="settingsBtn" style="display: none;">⚙️ إعدادات</button>
                 <button class="header-btn" onclick="showTab('backup')" data-tab="backup" id="backupBtn" style="display: none;">💾 النسخ الاحتياطي</button>
+                <button class="header-btn" onclick="showTab('admindashboard')" data-tab="admindashboard" id="adminDashboardBtn" style="display: none;">📊 شاشة الأدمن</button>
             </div>
             <div class="header-center">
                 <h1>🛍️ نظام نقاط البيع</h1>
@@ -927,6 +928,38 @@
                             </div>
                             <button onclick="gdriveDisconnect()" class="btn" style="background: #ef4444; padding: 10px 20px;">قطع الاتصال</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Dashboard Tab -->
+        <div class="tab-content" id="admindashboardTab" style="display: none;">
+            <div style="padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                    <h2 style="margin: 0; color: #1a202c;">📊 شاشة الأدمن - مراقبة الشركة</h2>
+                    <button onclick="loadAdminDashboard()" class="btn" style="background: #667eea; padding: 10px 20px; border-radius: 8px; color: white; border: none; cursor: pointer;">🔄 تحديث البيانات</button>
+                </div>
+
+                <!-- إحصائيات عامة -->
+                <div id="adminDashOverallStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;"></div>
+
+                <!-- ملخص الفواتير لكل فرع -->
+                <div style="background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px; margin-bottom: 25px;">
+                    <h3 style="margin: 0 0 20px; color: #2d3748; font-size: 18px;">🧾 الفواتير حسب الفروع</h3>
+                    <div id="adminDashInvoicesTable" style="overflow-x: auto;">
+                        <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                    </div>
+                </div>
+
+                <!-- ملخص المخزون لكل فرع -->
+                <div style="background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="margin: 0; color: #2d3748; font-size: 18px;">📦 المخزون حسب الفروع</h3>
+                        <input type="text" id="adminDashStockSearch" placeholder="🔍 ابحث عن منتج..." oninput="filterAdminDashStock()" style="padding: 8px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; width: 250px;">
+                    </div>
+                    <div id="adminDashStockTable" style="overflow-x: auto;">
+                        <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
                     </div>
                 </div>
             </div>

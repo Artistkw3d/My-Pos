@@ -204,6 +204,7 @@ async function initializeUI() {
     document.getElementById('tablesBtn').style.display = window.userPermissions.canViewTables ? 'inline-block' : 'none';
     document.getElementById('returnsBtn').style.display = window.userPermissions.canViewReturns ? 'inline-block' : 'none';
     document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
+    document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
     // عرض خانة اختيار الطاولة في نقطة البيع
     loadTablesDropdown();
 
@@ -381,6 +382,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('tablesBtn').style.display = window.userPermissions.canViewTables ? 'inline-block' : 'none';
             document.getElementById('returnsBtn').style.display = window.userPermissions.canViewReturns ? 'inline-block' : 'none';
             document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
+            document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
             // عرض خانة اختيار الطاولة في نقطة البيع
             loadTablesDropdown();
 
@@ -571,7 +573,8 @@ function showTab(tabName) {
         'coupons': 'couponsTab',
         'tables': 'tablesTab',
         'settings': 'settingsTab',
-        'backup': 'backupTab'
+        'backup': 'backupTab',
+        'admindashboard': 'admindashboardTab'
     };
     
     const tabId = tabMap[tabName];
@@ -639,6 +642,7 @@ function showTab(tabName) {
         if (tabName === 'settings') loadSettings();
         if (tabName === 'backup') loadBackupTab();
         if (tabName === 'accounting') loadAccounting();
+        if (tabName === 'admindashboard') loadAdminDashboard();
     }
 }
 
@@ -9108,6 +9112,197 @@ async function loadGDriveFiles() {
 }
 
 console.log('[Backup System] Loaded ✅');
+
+// ===== شاشة الأدمن - لوحة مراقبة الشركة =====
+
+let _adminDashStockData = null; // لحفظ بيانات المخزون للبحث
+
+async function loadAdminDashboard() {
+    // هذه الصفحة أونلاين فقط
+    if (!_realOnlineStatus) {
+        document.getElementById('adminDashOverallStats').innerHTML = `
+            <div style="grid-column: 1 / -1; background: #fff3cd; padding: 20px; border-radius: 12px; text-align: center; color: #856404; font-size: 16px;">
+                ⚠️ هذه الصفحة تعمل أونلاين فقط. يرجى الاتصال بالإنترنت.
+            </div>`;
+        document.getElementById('adminDashInvoicesTable').innerHTML = '';
+        document.getElementById('adminDashStockTable').innerHTML = '';
+        return;
+    }
+
+    // تحميل البيانات بالتوازي
+    await Promise.all([
+        loadAdminDashInvoices(),
+        loadAdminDashStock()
+    ]);
+}
+
+async function loadAdminDashInvoices() {
+    try {
+        const response = await fetch(`${API_URL}/api/admin-dashboard/invoices-summary`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        const overall = data.overall;
+        const branches = data.branches;
+
+        // بطاقات الإحصائيات العامة
+        document.getElementById('adminDashOverallStats').innerHTML = `
+            <div style="background: linear-gradient(135deg, #667eea, #764ba2); padding: 20px; border-radius: 14px; color: white; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${overall.total_invoices}</div>
+                <div style="opacity: 0.9; font-size: 14px; margin-top: 5px;">إجمالي الفواتير</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #11998e, #38ef7d); padding: 20px; border-radius: 14px; color: white; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${Number(overall.total_sales).toFixed(2)}</div>
+                <div style="opacity: 0.9; font-size: 14px; margin-top: 5px;">إجمالي المبيعات</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #f093fb, #f5576c); padding: 20px; border-radius: 14px; color: white; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${overall.today_invoices}</div>
+                <div style="opacity: 0.9; font-size: 14px; margin-top: 5px;">فواتير اليوم</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #4facfe, #00f2fe); padding: 20px; border-radius: 14px; color: white; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${Number(overall.today_sales).toFixed(2)}</div>
+                <div style="opacity: 0.9; font-size: 14px; margin-top: 5px;">مبيعات اليوم</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #fa709a, #fee140); padding: 20px; border-radius: 14px; color: white; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold;">${overall.cancelled_invoices}</div>
+                <div style="opacity: 0.9; font-size: 14px; margin-top: 5px;">الفواتير الملغية</div>
+            </div>
+        `;
+
+        // جدول الفواتير حسب الفروع
+        if (branches.length === 0) {
+            document.getElementById('adminDashInvoicesTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #a0aec0;">لا توجد فروع</div>';
+            return;
+        }
+
+        let tableHtml = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #f7fafc;">
+                        <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568;">الفرع</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">إجمالي الفواتير</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">إجمالي المبيعات</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">فواتير اليوم</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">مبيعات اليوم</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">الملغية</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        branches.forEach((b, idx) => {
+            const bgColor = idx % 2 === 0 ? '#ffffff' : '#f7fafc';
+            tableHtml += `
+                <tr style="background: ${bgColor};">
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748;">🏢 ${b.branch_name}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #4a5568;">${b.total_invoices}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #38a169; font-weight: bold;">${Number(b.total_sales).toFixed(2)}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #667eea; font-weight: bold;">${b.today_invoices}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #38a169;">${Number(b.today_sales).toFixed(2)}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: ${b.cancelled_invoices > 0 ? '#e53e3e' : '#a0aec0'};">${b.cancelled_invoices}</td>
+                </tr>`;
+        });
+
+        tableHtml += '</tbody></table>';
+        document.getElementById('adminDashInvoicesTable').innerHTML = tableHtml;
+
+    } catch (error) {
+        console.error('[AdminDash] Invoices error:', error);
+        document.getElementById('adminDashInvoicesTable').innerHTML = `<div style="padding: 20px; text-align: center; color: #e53e3e;">خطأ في تحميل بيانات الفواتير: ${error.message}</div>`;
+    }
+}
+
+async function loadAdminDashStock() {
+    try {
+        const response = await fetch(`${API_URL}/api/admin-dashboard/stock-summary`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        _adminDashStockData = data;
+        renderAdminDashStockTable(data.branches, data.products);
+
+    } catch (error) {
+        console.error('[AdminDash] Stock error:', error);
+        document.getElementById('adminDashStockTable').innerHTML = `<div style="padding: 20px; text-align: center; color: #e53e3e;">خطأ في تحميل بيانات المخزون: ${error.message}</div>`;
+    }
+}
+
+function renderAdminDashStockTable(branches, products) {
+    if (!branches || branches.length === 0) {
+        document.getElementById('adminDashStockTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #a0aec0;">لا توجد فروع</div>';
+        return;
+    }
+    if (!products || products.length === 0) {
+        document.getElementById('adminDashStockTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #a0aec0;">لا توجد منتجات</div>';
+        return;
+    }
+
+    let html = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+                <tr style="background: #f7fafc;">
+                    <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568; position: sticky; right: 0; background: #f7fafc; min-width: 180px;">المنتج</th>
+                    <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 100px;">التصنيف</th>`;
+
+    branches.forEach(b => {
+        html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 120px;">🏢 ${b.name}</th>`;
+    });
+
+    html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 100px; background: #edf2f7;">الإجمالي</th>
+            </tr>
+            </thead>
+            <tbody>`;
+
+    products.forEach((p, idx) => {
+        const bgColor = idx % 2 === 0 ? '#ffffff' : '#f7fafc';
+        let totalStock = 0;
+
+        html += `<tr style="background: ${bgColor};">
+            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748; position: sticky; right: 0; background: ${bgColor};">${p.name}</td>
+            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; color: #718096;">${p.category || '-'}</td>`;
+
+        branches.forEach(b => {
+            const branchData = p.branches[b.id];
+            const stock = branchData ? branchData.stock : 0;
+            totalStock += stock;
+
+            let stockColor = '#2d3748';
+            let stockBg = '';
+            if (stock === 0) {
+                stockColor = '#e53e3e';
+                stockBg = 'background: #fff5f5;';
+            } else if (stock <= 5) {
+                stockColor = '#dd6b20';
+                stockBg = 'background: #fffaf0;';
+            }
+
+            html += `<td style="padding: 10px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: ${stockColor}; font-weight: bold; ${stockBg}">${stock}</td>`;
+        });
+
+        html += `<td style="padding: 10px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #667eea; background: #edf2f7;">${totalStock}</td>`;
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('adminDashStockTable').innerHTML = html;
+}
+
+function filterAdminDashStock() {
+    if (!_adminDashStockData) return;
+    const searchTerm = document.getElementById('adminDashStockSearch').value.trim().toLowerCase();
+
+    if (!searchTerm) {
+        renderAdminDashStockTable(_adminDashStockData.branches, _adminDashStockData.products);
+        return;
+    }
+
+    const filtered = _adminDashStockData.products.filter(p =>
+        p.name.toLowerCase().includes(searchTerm) ||
+        (p.category && p.category.toLowerCase().includes(searchTerm))
+    );
+    renderAdminDashStockTable(_adminDashStockData.branches, filtered);
+}
+
+console.log('[Admin Dashboard] Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 

@@ -4716,6 +4716,128 @@ def _cleanup_old_backups(tenant_slug, keep_days):
                 os.remove(fpath)
                 print(f"[Backup Cleanup] تم حذف نسخة قديمة: {f}")
 
+# ===== شاشة الأدمن - لوحة مراقبة الشركة =====
+
+@app.route('/api/admin-dashboard/invoices-summary', methods=['GET'])
+def admin_dashboard_invoices_summary():
+    """ملخص الفواتير لكل الفروع"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # إجمالي الفواتير لكل فرع
+        cursor.execute('''
+            SELECT
+                b.id as branch_id,
+                b.name as branch_name,
+                COUNT(i.id) as total_invoices,
+                COALESCE(SUM(i.total), 0) as total_sales,
+                COUNT(CASE WHEN i.cancelled = 1 THEN 1 END) as cancelled_invoices,
+                COUNT(CASE WHEN DATE(i.created_at) = DATE('now') THEN 1 END) as today_invoices,
+                COALESCE(SUM(CASE WHEN DATE(i.created_at) = DATE('now') THEN i.total ELSE 0 END), 0) as today_sales
+            FROM branches b
+            LEFT JOIN invoices i ON i.branch_id = b.id
+            WHERE b.is_active = 1
+            GROUP BY b.id, b.name
+            ORDER BY b.id
+        ''')
+        branches_summary = [dict(row) for row in cursor.fetchall()]
+
+        # إجمالي عام
+        cursor.execute('''
+            SELECT
+                COUNT(id) as total_invoices,
+                COALESCE(SUM(total), 0) as total_sales,
+                COUNT(CASE WHEN cancelled = 1 THEN 1 END) as cancelled_invoices,
+                COUNT(CASE WHEN DATE(created_at) = DATE('now') THEN 1 END) as today_invoices,
+                COALESCE(SUM(CASE WHEN DATE(created_at) = DATE('now') THEN total ELSE 0 END), 0) as today_sales
+            FROM invoices
+        ''')
+        overall = dict(cursor.fetchone())
+
+        conn.close()
+        return jsonify({
+            'success': True,
+            'branches': branches_summary,
+            'overall': overall
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin-dashboard/stock-summary', methods=['GET'])
+def admin_dashboard_stock_summary():
+    """ملخص المخزون لكل منتج في كل فرع"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # جلب كل الفروع النشطة
+        cursor.execute('SELECT id, name FROM branches WHERE is_active = 1 ORDER BY id')
+        branches = [dict(row) for row in cursor.fetchall()]
+
+        # جلب المخزون لكل منتج في كل فرع مع التنويعات
+        cursor.execute('''
+            SELECT
+                inv.id as product_id,
+                inv.name as product_name,
+                inv.category,
+                pv.id as variant_id,
+                pv.variant_name,
+                bs.branch_id,
+                b.name as branch_name,
+                bs.stock,
+                bs.sales_count
+            FROM inventory inv
+            LEFT JOIN product_variants pv ON pv.inventory_id = inv.id
+            LEFT JOIN branch_stock bs ON bs.inventory_id = inv.id
+                AND (bs.variant_id = pv.id OR (bs.variant_id IS NULL AND pv.id IS NULL))
+            LEFT JOIN branches b ON b.id = bs.branch_id AND b.is_active = 1
+            ORDER BY inv.name, pv.variant_name, b.id
+        ''')
+        raw_data = [dict(row) for row in cursor.fetchall()]
+
+        # تنظيم البيانات: لكل منتج (+ تنويع) نعرض المخزون في كل فرع
+        products_map = {}
+        for row in raw_data:
+            key = f"{row['product_id']}_{row['variant_id'] or 0}"
+            if key not in products_map:
+                display_name = row['product_name']
+                if row['variant_name']:
+                    display_name += f" - {row['variant_name']}"
+                products_map[key] = {
+                    'product_id': row['product_id'],
+                    'variant_id': row['variant_id'],
+                    'name': display_name,
+                    'category': row['category'] or '',
+                    'branches': {}
+                }
+            if row['branch_id']:
+                products_map[key]['branches'][row['branch_id']] = {
+                    'stock': row['stock'] or 0,
+                    'sales_count': row['sales_count'] or 0
+                }
+
+        products_list = list(products_map.values())
+
+        conn.close()
+        return jsonify({
+            'success': True,
+            'branches': branches,
+            'products': products_list
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("🚀 تشغيل خادم POS (Multi-Tenancy)...")
     print("📍 العنوان: http://0.0.0.0:5000")
