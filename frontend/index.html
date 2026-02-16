@@ -243,6 +243,7 @@
                 <button class="header-btn" onclick="showTab('attendance')" data-tab="attendance" id="attendanceBtn" style="display: none;">⏰ الحضور</button>
                 <button class="header-btn" onclick="showTab('settings')" data-tab="settings" id="settingsBtn" style="display: none;">⚙️ إعدادات</button>
                 <button class="header-btn" onclick="showTab('backup')" data-tab="backup" id="backupBtn" style="display: none;">💾 النسخ الاحتياطي</button>
+                <button class="header-btn" onclick="showTab('xbrl')" data-tab="xbrl" id="xbrlBtn" style="display: none;">📄 XBRL</button>
                 <button class="header-btn" onclick="showTab('admindashboard')" data-tab="admindashboard" id="adminDashboardBtn" style="display: none;">📊 شاشة الأدمن</button>
             </div>
             <div class="header-center">
@@ -645,6 +646,342 @@
                     <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
                         <h4 style="color: #667eea; margin-bottom: 20px;">📊 تصور التدفقات النقدية</h4>
                         <canvas id="dcfChart" style="max-height: 300px;"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- XBRL / IFRS Tab -->
+        <div class="tab-content" id="xbrlTab" style="display: none;">
+            <div style="padding: 20px;">
+                <h2>📄 تقارير XBRL - معايير IFRS الدولية</h2>
+
+                <!-- شرح -->
+                <div style="background: linear-gradient(135deg, #1a365d 0%, #2b6cb0 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white; box-shadow: 0 2px 8px rgba(26, 54, 93, 0.3);">
+                    <h3 style="margin-bottom: 10px;">📋 ما هو XBRL؟</h3>
+                    <p style="line-height: 1.8; font-size: 14px;">
+                        XBRL (eXtensible Business Reporting Language) هو معيار دولي للتقارير المالية الإلكترونية.
+                        يتم توليد التقارير وفق تصنيف IFRS (المعايير الدولية للتقارير المالية) تلقائياً من بيانات النظام مع إمكانية إضافة بيانات يدوية.
+                    </p>
+                </div>
+
+                <!-- === القسم 1: بيانات الشركة === -->
+                <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">🏢 بيانات الشركة (Entity Information)</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+                        <div class="form-group">
+                            <label>اسم الشركة (عربي):</label>
+                            <input type="text" id="xbrl_company_name_ar" placeholder="مثال: شركة النجاح التجارية" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                        </div>
+                        <div class="form-group">
+                            <label>Company Name (English):</label>
+                            <input type="text" id="xbrl_company_name_en" placeholder="e.g. Al-Najah Trading Co." style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr; text-align: left;">
+                        </div>
+                        <div class="form-group">
+                            <label>السجل التجاري (CR):</label>
+                            <input type="text" id="xbrl_cr_number" placeholder="مثال: 1010XXXXXX" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr;">
+                        </div>
+                        <div class="form-group">
+                            <label>الرقم الضريبي (VAT):</label>
+                            <input type="text" id="xbrl_tax_number" placeholder="مثال: 3XXXXXXXXXX0003" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr;">
+                        </div>
+                        <div class="form-group">
+                            <label>عملة التقرير:</label>
+                            <select id="xbrl_currency" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="SAR">ريال سعودي (SAR)</option>
+                                <option value="AED">درهم إماراتي (AED)</option>
+                                <option value="KWD">دينار كويتي (KWD)</option>
+                                <option value="BHD">دينار بحريني (BHD)</option>
+                                <option value="QAR">ريال قطري (QAR)</option>
+                                <option value="OMR">ريال عماني (OMR)</option>
+                                <option value="EGP">جنيه مصري (EGP)</option>
+                                <option value="JOD">دينار أردني (JOD)</option>
+                                <option value="USD">دولار أمريكي (USD)</option>
+                                <option value="EUR">يورو (EUR)</option>
+                                <option value="GBP">جنيه إسترليني (GBP)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>القطاع الصناعي:</label>
+                            <select id="xbrl_sector" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="تجارة تجزئة">تجارة تجزئة</option>
+                                <option value="تجارة جملة">تجارة جملة</option>
+                                <option value="مطاعم وضيافة">مطاعم وضيافة</option>
+                                <option value="خدمات">خدمات</option>
+                                <option value="تصنيع">تصنيع</option>
+                                <option value="أخرى">أخرى</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>الدولة:</label>
+                            <select id="xbrl_country" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="SA">المملكة العربية السعودية</option>
+                                <option value="AE">الإمارات العربية المتحدة</option>
+                                <option value="KW">الكويت</option>
+                                <option value="BH">البحرين</option>
+                                <option value="QA">قطر</option>
+                                <option value="OM">عمان</option>
+                                <option value="EG">مصر</option>
+                                <option value="JO">الأردن</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>الشكل القانوني:</label>
+                            <select id="xbrl_legal_form" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="مؤسسة فردية">مؤسسة فردية</option>
+                                <option value="شركة ذات مسؤولية محدودة">شركة ذات مسؤولية محدودة</option>
+                                <option value="شركة مساهمة مقفلة">شركة مساهمة مقفلة</option>
+                                <option value="شركة مساهمة عامة">شركة مساهمة عامة</option>
+                                <option value="شركة تضامن">شركة تضامن</option>
+                                <option value="شركة توصية بسيطة">شركة توصية بسيطة</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>نهاية السنة المالية:</label>
+                            <select id="xbrl_fiscal_year_end" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="12-31">31 ديسمبر</option>
+                                <option value="03-31">31 مارس</option>
+                                <option value="06-30">30 يونيو</option>
+                                <option value="09-30">30 سبتمبر</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>البريد الإلكتروني:</label>
+                            <input type="email" id="xbrl_email" placeholder="info@company.com" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr; text-align: left;">
+                        </div>
+                        <div class="form-group">
+                            <label>رقم الهاتف:</label>
+                            <input type="text" id="xbrl_phone" placeholder="+966XXXXXXXXX" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr;">
+                        </div>
+                        <div class="form-group">
+                            <label>العنوان:</label>
+                            <input type="text" id="xbrl_address" placeholder="المدينة، الحي، الشارع" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                        </div>
+                    </div>
+                    <button onclick="saveXBRLCompanyInfo()" class="btn" style="margin-top: 15px; padding: 10px 30px; background: linear-gradient(135deg, #1a365d, #2b6cb0); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;">💾 حفظ بيانات الشركة</button>
+                </div>
+
+                <!-- === القسم 2: فترة التقرير وجلب البيانات === -->
+                <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">📅 فترة التقرير</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                        <div class="form-group">
+                            <label>من تاريخ:</label>
+                            <input type="date" id="xbrl_period_start" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                        </div>
+                        <div class="form-group">
+                            <label>إلى تاريخ:</label>
+                            <input type="date" id="xbrl_period_end" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                        </div>
+                        <div>
+                            <button onclick="loadXBRLFinancialData()" class="btn" style="padding: 12px 30px; background: linear-gradient(135deg, #2b6cb0, #4299e1); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; width: 100%;">📊 جلب البيانات من النظام</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- === القسم 3: قائمة الدخل === -->
+                <div id="xbrl_income_section" style="display: none;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">📊 قائمة الدخل الشامل (Statement of Comprehensive Income)</h3>
+                        <p style="color: #718096; font-size: 13px; margin-bottom: 15px;">البيانات المستخرجة من النظام تلقائياً + يمكنك إضافة تعديلات يدوية</p>
+
+                        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                            <thead>
+                                <tr style="background: #1a365d; color: white;">
+                                    <th style="padding: 12px 15px; text-align: right; border-radius: 8px 0 0 0;">البند</th>
+                                    <th style="padding: 12px 15px; text-align: right;">IFRS Element</th>
+                                    <th style="padding: 12px 15px; text-align: center;">من النظام</th>
+                                    <th style="padding: 12px 15px; text-align: center;">تعديل يدوي</th>
+                                    <th style="padding: 12px 15px; text-align: center; border-radius: 0 8px 0 0;">الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="xbrl_income_tbody">
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- === القسم 4: قائمة المركز المالي === -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">🏦 قائمة المركز المالي (Statement of Financial Position)</h3>
+                        <p style="color: #718096; font-size: 13px; margin-bottom: 15px;">أدخل الأرصدة من الدفاتر + بيانات المخزون التلقائية</p>
+
+                        <h4 style="color: #2b6cb0; margin: 15px 0 10px;">الأصول المتداولة (Current Assets)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div class="form-group">
+                                <label>النقد وما يعادله:</label>
+                                <input type="number" id="xbrl_cash" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>ذمم مدينة تجارية:</label>
+                                <input type="number" id="xbrl_receivables" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>المخزون (IAS 2) <span style="color: #48bb78;">✓ تلقائي</span>:</label>
+                                <input type="number" id="xbrl_inventory_val" step="0.01" value="0" readonly style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                            </div>
+                            <div class="form-group">
+                                <label>أصول متداولة أخرى:</label>
+                                <input type="number" id="xbrl_other_current_assets" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #ebf8ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong>إجمالي الأصول المتداولة:</strong>
+                            <strong id="xbrl_total_current_assets" style="font-size: 18px; color: #2b6cb0;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #2b6cb0; margin: 15px 0 10px;">الأصول غير المتداولة (Non-Current Assets)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div class="form-group">
+                                <label>ممتلكات ومعدات (IAS 16):</label>
+                                <input type="number" id="xbrl_ppe" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أصول غير ملموسة (IAS 38):</label>
+                                <input type="number" id="xbrl_intangibles" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أصول غير متداولة أخرى:</label>
+                                <input type="number" id="xbrl_other_non_current_assets" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #ebf8ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong>إجمالي الأصول غير المتداولة:</strong>
+                            <strong id="xbrl_total_non_current_assets" style="font-size: 18px; color: #2b6cb0;">0.00</strong>
+                        </div>
+                        <div style="background: #1a365d; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; color: white;">
+                            <strong style="font-size: 16px;">إجمالي الأصول:</strong>
+                            <strong id="xbrl_total_assets" style="font-size: 22px;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #c53030; margin: 15px 0 10px;">الخصوم المتداولة (Current Liabilities)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div class="form-group">
+                                <label>ذمم دائنة تجارية:</label>
+                                <input type="number" id="xbrl_payables" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>قروض قصيرة الأجل:</label>
+                                <input type="number" id="xbrl_short_loans" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>خصوم متداولة أخرى:</label>
+                                <input type="number" id="xbrl_other_current_liabilities" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #fff5f5; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong>إجمالي الخصوم المتداولة:</strong>
+                            <strong id="xbrl_total_current_liabilities" style="font-size: 18px; color: #c53030;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #c53030; margin: 15px 0 10px;">الخصوم غير المتداولة (Non-Current Liabilities)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div class="form-group">
+                                <label>قروض طويلة الأجل:</label>
+                                <input type="number" id="xbrl_long_loans" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>خصوم غير متداولة أخرى:</label>
+                                <input type="number" id="xbrl_other_non_current_liabilities" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #fff5f5; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong>إجمالي الخصوم غير المتداولة:</strong>
+                            <strong id="xbrl_total_non_current_liabilities" style="font-size: 18px; color: #c53030;">0.00</strong>
+                        </div>
+                        <div style="background: #c53030; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; color: white;">
+                            <strong style="font-size: 16px;">إجمالي الخصوم:</strong>
+                            <strong id="xbrl_total_liabilities" style="font-size: 22px;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #38a169; margin: 15px 0 10px;">حقوق الملكية (Equity)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div class="form-group">
+                                <label>رأس المال:</label>
+                                <input type="number" id="xbrl_share_capital" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أرباح مبقاة (قبل الفترة):</label>
+                                <input type="number" id="xbrl_retained_earnings" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>بنود أخرى في حقوق الملكية:</label>
+                                <input type="number" id="xbrl_other_equity" step="0.01" value="0" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #f0fff4; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong style="font-size: 16px; color: #38a169;">إجمالي حقوق الملكية:</strong>
+                            <strong id="xbrl_total_equity" style="font-size: 22px; color: #38a169;">0.00</strong>
+                        </div>
+                        <div style="background: #2d3748; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; color: white;">
+                            <strong style="font-size: 16px;">إجمالي الخصوم + حقوق الملكية:</strong>
+                            <strong id="xbrl_liabilities_equity" style="font-size: 22px;">0.00</strong>
+                        </div>
+                    </div>
+
+                    <!-- === القسم 5: تعديلات يدوية على قائمة الدخل === -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">✏️ تعديلات يدوية على قائمة الدخل</h3>
+                        <p style="color: #718096; font-size: 13px; margin-bottom: 15px;">أضف بنود غير مسجلة في النظام مثل الاستهلاك وتكاليف التمويل والزكاة</p>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                            <div class="form-group">
+                                <label>إيرادات أخرى:</label>
+                                <input type="number" id="xbrl_other_income" step="0.01" value="0" onchange="recalcXBRLIncome()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>مصاريف إضافية:</label>
+                                <input type="number" id="xbrl_additional_expenses" step="0.01" value="0" onchange="recalcXBRLIncome()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>الاستهلاك والإطفاء (IAS 16):</label>
+                                <input type="number" id="xbrl_depreciation" step="0.01" value="0" onchange="recalcXBRLIncome()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>تكاليف التمويل (IFRS 9):</label>
+                                <input type="number" id="xbrl_finance_costs" step="0.01" value="0" onchange="recalcXBRLIncome()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>الزكاة / ضريبة الدخل (IAS 12):</label>
+                                <input type="number" id="xbrl_zakat" step="0.01" value="0" onchange="recalcXBRLIncome()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- === القسم 6: توليد XBRL === -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                        <button onclick="generateXBRLReport()" class="btn" style="padding: 15px; font-size: 16px; background: linear-gradient(135deg, #1a365d, #2b6cb0); color: white; border: none; border-radius: 10px; cursor: pointer;">📄 توليد تقرير XBRL</button>
+                        <button onclick="downloadXBRLXML()" id="xbrl_download_btn" class="btn" style="padding: 15px; font-size: 16px; background: linear-gradient(135deg, #38a169, #48bb78); color: white; border: none; border-radius: 10px; cursor: pointer; display: none;">⬇️ تحميل ملف XBRL (.xml)</button>
+                    </div>
+
+                    <!-- === القسم 7: ملخص وعرض النتائج === -->
+                    <div id="xbrl_results" style="display: none;">
+                        <div style="background: linear-gradient(135deg, #1a365d, #2b6cb0); padding: 25px; border-radius: 12px; color: white; margin-bottom: 20px; text-align: center;">
+                            <h3 style="margin-bottom: 10px;">✅ تم توليد تقرير XBRL بنجاح</h3>
+                            <div style="font-size: 14px; opacity: 0.9;" id="xbrl_report_period"></div>
+                        </div>
+
+                        <!-- ملخص قائمة الدخل -->
+                        <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h4 style="color: #1a365d; margin-bottom: 15px;">📊 ملخص قائمة الدخل</h4>
+                            <div id="xbrl_income_summary"></div>
+                        </div>
+
+                        <!-- ملخص المركز المالي -->
+                        <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h4 style="color: #1a365d; margin-bottom: 15px;">🏦 ملخص المركز المالي</h4>
+                            <div id="xbrl_balance_summary"></div>
+                        </div>
+
+                        <!-- عرض XML -->
+                        <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h4 style="color: #1a365d; margin-bottom: 15px;">📝 كود XBRL/XML</h4>
+                            <pre id="xbrl_xml_preview" dir="ltr" style="background: #1a202c; color: #68d391; padding: 20px; border-radius: 8px; font-size: 12px; overflow-x: auto; max-height: 400px; line-height: 1.6; white-space: pre-wrap;"></pre>
+                        </div>
+                    </div>
+
+                    <!-- === القسم 8: التقارير المحفوظة === -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">📁 التقارير المحفوظة</h3>
+                        <div id="xbrl_saved_reports"></div>
                     </div>
                 </div>
             </div>
@@ -1513,6 +1850,10 @@
                                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
                                         <input type="checkbox" name="can_view_dcf" style="width: 18px; height: 18px;">
                                         <span>📈 تقييم DCF</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_view_xbrl" style="width: 18px; height: 18px;">
+                                        <span>📄 تقارير XBRL</span>
                                     </label>
                                 </div>
                             </div>

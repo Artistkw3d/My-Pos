@@ -186,7 +186,8 @@ async function initializeUI() {
         canViewDcf: hasPerm('can_view_dcf'),
         canCancelInvoices: hasPerm('can_cancel_invoices'),
         canViewBranches: hasPerm('can_view_branches'),
-        canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock')
+        canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock'),
+        canViewXbrl: hasPerm('can_view_xbrl')
     };
     
     // إخفاء/إظهار الأزرار والتبويبات
@@ -204,6 +205,7 @@ async function initializeUI() {
     document.getElementById('tablesBtn').style.display = window.userPermissions.canViewTables ? 'inline-block' : 'none';
     document.getElementById('returnsBtn').style.display = window.userPermissions.canViewReturns ? 'inline-block' : 'none';
     document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
+    document.getElementById('xbrlBtn').style.display = window.userPermissions.canViewXbrl ? 'inline-block' : 'none';
     document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
     // عرض خانة اختيار الطاولة في نقطة البيع
     loadTablesDropdown();
@@ -382,6 +384,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('tablesBtn').style.display = window.userPermissions.canViewTables ? 'inline-block' : 'none';
             document.getElementById('returnsBtn').style.display = window.userPermissions.canViewReturns ? 'inline-block' : 'none';
             document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
+            document.getElementById('xbrlBtn').style.display = window.userPermissions.canViewXbrl ? 'inline-block' : 'none';
             document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
             // عرض خانة اختيار الطاولة في نقطة البيع
             loadTablesDropdown();
@@ -574,7 +577,8 @@ function showTab(tabName) {
         'tables': 'tablesTab',
         'settings': 'settingsTab',
         'backup': 'backupTab',
-        'admindashboard': 'admindashboardTab'
+        'admindashboard': 'admindashboardTab',
+        'xbrl': 'xbrlTab'
     };
     
     const tabId = tabMap[tabName];
@@ -642,6 +646,7 @@ function showTab(tabName) {
         if (tabName === 'settings') loadSettings();
         if (tabName === 'backup') loadBackupTab();
         if (tabName === 'accounting') loadAccounting();
+        if (tabName === 'xbrl') loadXBRLTab();
         if (tabName === 'admindashboard') loadAdminDashboard();
     }
 }
@@ -9423,6 +9428,424 @@ function filterAdminDashStock() {
 }
 
 console.log('[Admin Dashboard] Loaded ✅');
+
+// ===== XBRL / IFRS =====
+
+let _xbrlFinancialData = null;
+let _xbrlLastXML = null;
+
+async function loadXBRLTab() {
+    // تعيين التواريخ الافتراضية (بداية ونهاية السنة الحالية)
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    document.getElementById('xbrl_period_start').valueAsDate = startOfYear;
+    document.getElementById('xbrl_period_end').valueAsDate = now;
+
+    // جلب بيانات الشركة المحفوظة
+    try {
+        const res = await fetch('/api/xbrl/company-info');
+        const data = await res.json();
+        if (data.success && data.data) {
+            const c = data.data;
+            document.getElementById('xbrl_company_name_ar').value = c.company_name_ar || '';
+            document.getElementById('xbrl_company_name_en').value = c.company_name_en || '';
+            document.getElementById('xbrl_cr_number').value = c.commercial_registration || '';
+            document.getElementById('xbrl_tax_number').value = c.tax_number || '';
+            document.getElementById('xbrl_currency').value = c.reporting_currency || 'SAR';
+            document.getElementById('xbrl_sector').value = c.industry_sector || 'تجارة تجزئة';
+            document.getElementById('xbrl_country').value = c.country || 'SA';
+            document.getElementById('xbrl_legal_form').value = c.legal_form || 'مؤسسة فردية';
+            document.getElementById('xbrl_fiscal_year_end').value = c.fiscal_year_end || '12-31';
+            document.getElementById('xbrl_email').value = c.contact_email || '';
+            document.getElementById('xbrl_phone').value = c.contact_phone || '';
+            document.getElementById('xbrl_address').value = c.address || '';
+        }
+    } catch (e) {
+        console.log('[XBRL] Could not load company info:', e);
+    }
+
+    // جلب التقارير المحفوظة
+    loadXBRLSavedReports();
+}
+
+async function saveXBRLCompanyInfo() {
+    try {
+        const body = {
+            company_name_ar: document.getElementById('xbrl_company_name_ar').value,
+            company_name_en: document.getElementById('xbrl_company_name_en').value,
+            commercial_registration: document.getElementById('xbrl_cr_number').value,
+            tax_number: document.getElementById('xbrl_tax_number').value,
+            reporting_currency: document.getElementById('xbrl_currency').value,
+            industry_sector: document.getElementById('xbrl_sector').value,
+            country: document.getElementById('xbrl_country').value,
+            fiscal_year_end: document.getElementById('xbrl_fiscal_year_end').value,
+            legal_form: document.getElementById('xbrl_legal_form').value,
+            contact_email: document.getElementById('xbrl_email').value,
+            contact_phone: document.getElementById('xbrl_phone').value,
+            address: document.getElementById('xbrl_address').value
+        };
+        const res = await fetch('/api/xbrl/company-info', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ تم حفظ بيانات الشركة بنجاح');
+        } else {
+            alert('❌ خطأ: ' + data.error);
+        }
+    } catch (e) {
+        alert('❌ خطأ في الاتصال: ' + e.message);
+    }
+}
+
+async function loadXBRLFinancialData() {
+    const startDate = document.getElementById('xbrl_period_start').value;
+    const endDate = document.getElementById('xbrl_period_end').value;
+    if (!startDate || !endDate) {
+        alert('⚠️ يرجى تحديد فترة التقرير');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/xbrl/financial-data?start_date=${startDate}&end_date=${endDate}`);
+        const data = await res.json();
+        if (!data.success) {
+            alert('❌ خطأ: ' + data.error);
+            return;
+        }
+
+        _xbrlFinancialData = data.data;
+        document.getElementById('xbrl_income_section').style.display = 'block';
+
+        // تعبئة المخزون
+        document.getElementById('xbrl_inventory_val').value = (_xbrlFinancialData.inventory.value || 0).toFixed(2);
+
+        // بناء جدول قائمة الدخل
+        renderXBRLIncomeTable();
+        recalcXBRLBalanceSheet();
+    } catch (e) {
+        alert('❌ خطأ في جلب البيانات: ' + e.message);
+    }
+}
+
+function renderXBRLIncomeTable() {
+    if (!_xbrlFinancialData) return;
+    const d = _xbrlFinancialData;
+    const currency = document.getElementById('xbrl_currency').value || 'SAR';
+
+    const otherIncome = parseFloat(document.getElementById('xbrl_other_income').value) || 0;
+    const additionalExp = parseFloat(document.getElementById('xbrl_additional_expenses').value) || 0;
+    const depreciation = parseFloat(document.getElementById('xbrl_depreciation').value) || 0;
+    const financeCosts = parseFloat(document.getElementById('xbrl_finance_costs').value) || 0;
+    const zakat = parseFloat(document.getElementById('xbrl_zakat').value) || 0;
+
+    const totalRevenue = (d.revenue.total_revenue || 0) + otherIncome;
+    const cogs = d.cost_of_sales || 0;
+    const grossProfit = totalRevenue - cogs;
+    const totalOpex = (d.operating_expenses.total || 0) + additionalExp + depreciation;
+    const operatingProfit = grossProfit - totalOpex;
+    const profitBeforeTax = operatingProfit - financeCosts;
+    const netProfit = profitBeforeTax - zakat;
+
+    const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const rows = [
+        {label: 'الإيرادات (Revenue)', ifrs: 'ifrs-full:Revenue', system: d.revenue.total_revenue, manual: otherIncome, total: totalRevenue, bold: true, color: '#2b6cb0'},
+        {label: '  منها: إيرادات المبيعات', ifrs: 'IFRS 15', system: d.revenue.gross_revenue, manual: 0, total: d.revenue.gross_revenue, indent: true, color: '#718096'},
+        {label: '  منها: خصومات', ifrs: '', system: -(d.revenue.total_discounts || 0), manual: 0, total: -(d.revenue.total_discounts || 0), indent: true, color: '#e53e3e'},
+        {label: '  منها: رسوم التوصيل', ifrs: '', system: d.revenue.delivery_revenue, manual: 0, total: d.revenue.delivery_revenue, indent: true, color: '#718096'},
+        {sep: true},
+        {label: 'تكلفة المبيعات (Cost of Sales)', ifrs: 'ifrs-full:CostOfSales', system: -cogs, manual: 0, total: -cogs, bold: true, color: '#c53030'},
+        {sep: true},
+        {label: 'مجمل الربح (Gross Profit)', ifrs: 'ifrs-full:GrossProfit', system: null, manual: null, total: grossProfit, bold: true, color: grossProfit >= 0 ? '#38a169' : '#c53030', highlight: true},
+        {sep: true},
+        {label: 'المصاريف التشغيلية', ifrs: '', system: -(d.operating_expenses.total || 0), manual: -additionalExp, total: -(d.operating_expenses.total + additionalExp), bold: false, color: '#c53030'},
+        {label: 'الاستهلاك والإطفاء', ifrs: 'IAS 16/38', system: 0, manual: -depreciation, total: -depreciation, color: '#c53030'},
+        {sep: true},
+        {label: 'ربح العمليات (Operating Profit)', ifrs: 'ifrs-full:ProfitLossFromOperatingActivities', system: null, manual: null, total: operatingProfit, bold: true, color: operatingProfit >= 0 ? '#38a169' : '#c53030', highlight: true},
+        {sep: true},
+        {label: 'تكاليف التمويل (Finance Costs)', ifrs: 'IFRS 9', system: 0, manual: -financeCosts, total: -financeCosts, color: '#c53030'},
+        {label: 'الربح قبل الزكاة/الضريبة', ifrs: 'ifrs-full:ProfitLossBeforeTax', system: null, manual: null, total: profitBeforeTax, bold: true, color: profitBeforeTax >= 0 ? '#38a169' : '#c53030'},
+        {label: 'الزكاة / ضريبة الدخل (IAS 12)', ifrs: 'ifrs-full:IncomeTaxExpense', system: 0, manual: -zakat, total: -zakat, color: '#c53030'},
+        {sep: true},
+        {label: 'صافي الربح (Net Profit)', ifrs: 'ifrs-full:ProfitLoss', system: null, manual: null, total: netProfit, bold: true, color: netProfit >= 0 ? '#38a169' : '#c53030', highlight: true, big: true},
+    ];
+
+    let html = '';
+    rows.forEach(r => {
+        if (r.sep) {
+            html += '<tr><td colspan="5" style="border-bottom: 2px solid #e2e8f0; padding: 2px;"></td></tr>';
+            return;
+        }
+        const bg = r.highlight ? 'background: #f7fafc;' : '';
+        const fw = r.bold ? 'font-weight: bold;' : '';
+        const fs = r.big ? 'font-size: 16px;' : '';
+        const indent = r.indent ? 'padding-right: 30px;' : '';
+        html += `<tr style="${bg}">
+            <td style="padding: 10px 15px; ${fw} ${fs} ${indent} color: ${r.color};">${r.label}</td>
+            <td style="padding: 10px 15px; font-size: 11px; color: #a0aec0; direction: ltr;">${r.ifrs}</td>
+            <td style="padding: 10px 15px; text-align: center; color: #4a5568;">${r.system !== null ? fmt(r.system) : '-'}</td>
+            <td style="padding: 10px 15px; text-align: center; color: #805ad5;">${r.manual !== null ? fmt(r.manual) : '-'}</td>
+            <td style="padding: 10px 15px; text-align: center; ${fw} ${fs} color: ${r.color};">${fmt(r.total)} ${currency}</td>
+        </tr>`;
+    });
+
+    document.getElementById('xbrl_income_tbody').innerHTML = html;
+}
+
+function recalcXBRLIncome() {
+    renderXBRLIncomeTable();
+}
+
+function recalcXBRLBalanceSheet() {
+    const val = (id) => parseFloat(document.getElementById(id).value) || 0;
+
+    const cash = val('xbrl_cash');
+    const receivables = val('xbrl_receivables');
+    const inventoryVal = val('xbrl_inventory_val');
+    const otherCA = val('xbrl_other_current_assets');
+    const totalCA = cash + receivables + inventoryVal + otherCA;
+
+    const ppe = val('xbrl_ppe');
+    const intangibles = val('xbrl_intangibles');
+    const otherNCA = val('xbrl_other_non_current_assets');
+    const totalNCA = ppe + intangibles + otherNCA;
+
+    const totalAssets = totalCA + totalNCA;
+
+    const payables = val('xbrl_payables');
+    const shortLoans = val('xbrl_short_loans');
+    const otherCL = val('xbrl_other_current_liabilities');
+    const totalCL = payables + shortLoans + otherCL;
+
+    const longLoans = val('xbrl_long_loans');
+    const otherNCL = val('xbrl_other_non_current_liabilities');
+    const totalNCL = longLoans + otherNCL;
+
+    const totalLiabilities = totalCL + totalNCL;
+
+    const shareCapital = val('xbrl_share_capital');
+    const retained = val('xbrl_retained_earnings');
+    const otherEq = val('xbrl_other_equity');
+    const totalEquity = shareCapital + retained + otherEq;
+
+    const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    document.getElementById('xbrl_total_current_assets').textContent = fmt(totalCA);
+    document.getElementById('xbrl_total_non_current_assets').textContent = fmt(totalNCA);
+    document.getElementById('xbrl_total_assets').textContent = fmt(totalAssets);
+    document.getElementById('xbrl_total_current_liabilities').textContent = fmt(totalCL);
+    document.getElementById('xbrl_total_non_current_liabilities').textContent = fmt(totalNCL);
+    document.getElementById('xbrl_total_liabilities').textContent = fmt(totalLiabilities);
+    document.getElementById('xbrl_total_equity').textContent = fmt(totalEquity);
+    document.getElementById('xbrl_liabilities_equity').textContent = fmt(totalLiabilities + totalEquity);
+}
+
+// ربط حقول المركز المالي بإعادة الحساب
+document.addEventListener('DOMContentLoaded', () => {
+    const bsFields = ['xbrl_cash', 'xbrl_receivables', 'xbrl_other_current_assets',
+        'xbrl_ppe', 'xbrl_intangibles', 'xbrl_other_non_current_assets',
+        'xbrl_payables', 'xbrl_short_loans', 'xbrl_other_current_liabilities',
+        'xbrl_long_loans', 'xbrl_other_non_current_liabilities',
+        'xbrl_share_capital', 'xbrl_retained_earnings', 'xbrl_other_equity'];
+    bsFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', recalcXBRLBalanceSheet);
+    });
+});
+
+async function generateXBRLReport() {
+    if (!_xbrlFinancialData) {
+        alert('⚠️ يرجى جلب البيانات المالية أولاً');
+        return;
+    }
+
+    const periodStart = document.getElementById('xbrl_period_start').value;
+    const periodEnd = document.getElementById('xbrl_period_end').value;
+    if (!periodStart || !periodEnd) {
+        alert('⚠️ يرجى تحديد فترة التقرير');
+        return;
+    }
+
+    const val = (id) => parseFloat(document.getElementById(id).value) || 0;
+
+    const companyInfo = {
+        company_name_ar: document.getElementById('xbrl_company_name_ar').value,
+        company_name_en: document.getElementById('xbrl_company_name_en').value,
+        commercial_registration: document.getElementById('xbrl_cr_number').value,
+        tax_number: document.getElementById('xbrl_tax_number').value,
+        reporting_currency: document.getElementById('xbrl_currency').value,
+        industry_sector: document.getElementById('xbrl_sector').value,
+        country: document.getElementById('xbrl_country').value,
+        legal_form: document.getElementById('xbrl_legal_form').value
+    };
+
+    const manualAdjustments = {
+        other_income: val('xbrl_other_income'),
+        additional_expenses: val('xbrl_additional_expenses'),
+        depreciation: val('xbrl_depreciation'),
+        finance_costs: val('xbrl_finance_costs'),
+        zakat_tax: val('xbrl_zakat'),
+        cash_equivalents: val('xbrl_cash'),
+        trade_receivables: val('xbrl_receivables'),
+        other_current_assets: val('xbrl_other_current_assets'),
+        property_plant_equipment: val('xbrl_ppe'),
+        intangible_assets: val('xbrl_intangibles'),
+        other_non_current_assets: val('xbrl_other_non_current_assets'),
+        trade_payables: val('xbrl_payables'),
+        short_term_loans: val('xbrl_short_loans'),
+        other_current_liabilities: val('xbrl_other_current_liabilities'),
+        long_term_loans: val('xbrl_long_loans'),
+        other_non_current_liabilities: val('xbrl_other_non_current_liabilities'),
+        share_capital: val('xbrl_share_capital'),
+        retained_earnings: val('xbrl_retained_earnings'),
+        other_equity: val('xbrl_other_equity')
+    };
+
+    try {
+        const res = await fetch('/api/xbrl/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                period_start: periodStart,
+                period_end: periodEnd,
+                financial_data: _xbrlFinancialData,
+                company_info: companyInfo,
+                manual_adjustments: manualAdjustments
+            })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            alert('❌ خطأ: ' + data.error);
+            return;
+        }
+
+        _xbrlLastXML = data.xbrl_xml;
+        const s = data.summary;
+        const currency = companyInfo.reporting_currency;
+        const fmt = (n) => (n || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        // عرض النتائج
+        document.getElementById('xbrl_results').style.display = 'block';
+        document.getElementById('xbrl_download_btn').style.display = 'inline-block';
+        document.getElementById('xbrl_report_period').textContent = `الفترة: ${periodStart} إلى ${periodEnd}`;
+
+        // ملخص قائمة الدخل
+        document.getElementById('xbrl_income_summary').innerHTML = `
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #f7fafc;"><td style="padding: 10px 15px; font-weight: bold;">الإيرادات</td><td style="padding: 10px 15px; text-align: left; color: #2b6cb0; font-weight: bold;">${fmt(s.total_revenue)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px;">تكلفة المبيعات</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.cost_of_sales)}) ${currency}</td></tr>
+                <tr style="background: #f7fafc;"><td style="padding: 10px 15px; font-weight: bold;">مجمل الربح</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: ${s.gross_profit >= 0 ? '#38a169' : '#c53030'};">${fmt(s.gross_profit)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px;">المصاريف التشغيلية</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.operating_expenses)}) ${currency}</td></tr>
+                <tr style="background: #f7fafc;"><td style="padding: 10px 15px; font-weight: bold;">ربح العمليات</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: ${s.operating_profit >= 0 ? '#38a169' : '#c53030'};">${fmt(s.operating_profit)} ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px;">تكاليف التمويل</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.finance_costs)}) ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px;">الزكاة / الضريبة</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.zakat_tax)}) ${currency}</td></tr>
+                <tr style="background: #1a365d; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 16px;">صافي الربح</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 18px;">${fmt(s.net_profit)} ${currency}</td></tr>
+            </table>`;
+
+        // ملخص المركز المالي
+        document.getElementById('xbrl_balance_summary').innerHTML = `
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #ebf8ff;"><td style="padding: 10px 15px; font-weight: bold; color: #2b6cb0;">إجمالي الأصول</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #2b6cb0;">${fmt(s.total_assets)} ${currency}</td></tr>
+                <tr style="background: #fff5f5;"><td style="padding: 10px 15px; font-weight: bold; color: #c53030;">إجمالي الخصوم</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #c53030;">${fmt(s.total_liabilities)} ${currency}</td></tr>
+                <tr style="background: #f0fff4;"><td style="padding: 10px 15px; font-weight: bold; color: #38a169;">حقوق الملكية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #38a169;">${fmt(s.total_equity)} ${currency}</td></tr>
+            </table>`;
+
+        // عرض XML
+        document.getElementById('xbrl_xml_preview').textContent = data.xbrl_xml;
+
+        // تحديث التقارير المحفوظة
+        loadXBRLSavedReports();
+
+        // تمرير للنتائج
+        document.getElementById('xbrl_results').scrollIntoView({behavior: 'smooth'});
+    } catch (e) {
+        alert('❌ خطأ: ' + e.message);
+    }
+}
+
+function downloadXBRLXML() {
+    if (!_xbrlLastXML) {
+        alert('⚠️ لا يوجد تقرير لتحميله');
+        return;
+    }
+    const blob = new Blob([_xbrlLastXML], {type: 'application/xml'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const companyEn = document.getElementById('xbrl_company_name_en').value || 'company';
+    const periodEnd = document.getElementById('xbrl_period_end').value || 'report';
+    a.href = url;
+    a.download = `XBRL_${companyEn.replace(/\s+/g, '_')}_${periodEnd}.xml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function loadXBRLSavedReports() {
+    try {
+        const res = await fetch('/api/xbrl/reports');
+        const data = await res.json();
+        if (!data.success) return;
+
+        const container = document.getElementById('xbrl_saved_reports');
+        if (!data.reports || data.reports.length === 0) {
+            container.innerHTML = '<p style="color: #a0aec0; text-align: center; padding: 20px;">لا توجد تقارير محفوظة بعد</p>';
+            return;
+        }
+
+        let html = '<table style="width: 100%; border-collapse: collapse;">';
+        html += '<thead><tr style="background: #f7fafc;">';
+        html += '<th style="padding: 10px 15px; text-align: right; color: #4a5568;">رقم</th>';
+        html += '<th style="padding: 10px 15px; text-align: right; color: #4a5568;">النوع</th>';
+        html += '<th style="padding: 10px 15px; text-align: right; color: #4a5568;">الفترة</th>';
+        html += '<th style="padding: 10px 15px; text-align: right; color: #4a5568;">تاريخ الإنشاء</th>';
+        html += '<th style="padding: 10px 15px; text-align: center; color: #4a5568;">تحميل</th>';
+        html += '</tr></thead><tbody>';
+
+        data.reports.forEach(r => {
+            html += `<tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px 15px;">#${r.id}</td>
+                <td style="padding: 10px 15px;">${r.report_type}</td>
+                <td style="padding: 10px 15px;">${r.period_start} → ${r.period_end}</td>
+                <td style="padding: 10px 15px;">${r.created_at || ''}</td>
+                <td style="padding: 10px 15px; text-align: center;">
+                    <button onclick="downloadSavedXBRL(${r.id})" style="background: #2b6cb0; color: white; border: none; padding: 6px 15px; border-radius: 6px; cursor: pointer;">⬇️ تحميل</button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (e) {
+        console.log('[XBRL] Error loading saved reports:', e);
+    }
+}
+
+async function downloadSavedXBRL(reportId) {
+    try {
+        const res = await fetch(`/api/xbrl/reports/${reportId}`);
+        const data = await res.json();
+        if (!data.success || !data.report.xbrl_xml) {
+            alert('❌ لا يمكن تحميل التقرير');
+            return;
+        }
+        const blob = new Blob([data.report.xbrl_xml], {type: 'application/xml'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `XBRL_Report_${reportId}_${data.report.period_end}.xml`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        alert('❌ خطأ: ' + e.message);
+    }
+}
+
+console.log('[XBRL/IFRS] Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 
