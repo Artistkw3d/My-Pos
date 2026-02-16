@@ -712,8 +712,9 @@ def add_user():
                              can_view_reports, can_view_accounting, can_manage_users, can_access_settings,
                              can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
                              can_view_tables, can_view_attendance, can_view_advanced_reports,
-                             can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches,
+                             can_view_cross_branch_stock)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
             hash_password(data.get('password')),
@@ -749,7 +750,8 @@ def add_user():
             data.get('can_view_system_logs', 0),
             data.get('can_view_dcf', 0),
             data.get('can_cancel_invoices', 0),
-            data.get('can_view_branches', 0)
+            data.get('can_view_branches', 0),
+            data.get('can_view_cross_branch_stock', 0)
         ))
         
         user_id = cursor.lastrowid
@@ -880,6 +882,9 @@ def update_user(user_id):
         if 'can_view_branches' in data:
             updates.append('can_view_branches = ?')
             params.append(data['can_view_branches'])
+        if 'can_view_cross_branch_stock' in data:
+            updates.append('can_view_cross_branch_stock = ?')
+            params.append(data['can_view_cross_branch_stock'])
         if 'is_active' in data:
             updates.append('is_active = ?')
             params.append(data['is_active'])

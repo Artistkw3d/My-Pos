@@ -109,7 +109,8 @@ class SyncManager {
     // تحديث المنتجات
     async downloadProducts() {
         try {
-            const response = await fetch(`${API_URL}/api/products`);
+            const branchId = (typeof currentUser !== 'undefined' && currentUser?.branch_id) ? currentUser.branch_id : 1;
+            const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
             const data = await response.json();
             
             if (data.success && data.products) {
