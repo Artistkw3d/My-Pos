@@ -656,8 +656,9 @@ async function loadProducts() {
                 data.products.forEach(p => { if(p.category) categories.add(p.category); });
                 displayProducts(allProducts);
                 
-                // حفظ في LocalDB
+                // حفظ في LocalDB - مسح القديم أولاً لتجنب خلط منتجات فروع مختلفة
                 if (localDB.isReady) {
+                    await localDB.clear('products');
                     await localDB.saveAll('products', data.products);
                     console.log('[App] Products saved locally');
                 }
