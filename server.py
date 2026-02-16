@@ -176,6 +176,36 @@ def migrate_database(db_path=None):
             employee_name TEXT NOT NULL, monthly_salary REAL DEFAULT 0,
             FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE)''', 'salary_details')
 
+        # === XBRL / IFRS ===
+        safe_exec('''CREATE TABLE IF NOT EXISTS xbrl_company_info (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name_ar TEXT,
+            company_name_en TEXT,
+            commercial_registration TEXT,
+            tax_number TEXT,
+            reporting_currency TEXT DEFAULT 'SAR',
+            industry_sector TEXT,
+            country TEXT DEFAULT 'SA',
+            fiscal_year_end TEXT DEFAULT '12-31',
+            legal_form TEXT,
+            contact_email TEXT,
+            contact_phone TEXT,
+            address TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''', 'xbrl_company_info')
+
+        safe_exec('''CREATE TABLE IF NOT EXISTS xbrl_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type TEXT NOT NULL,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            report_data TEXT,
+            xbrl_xml TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notes TEXT
+        )''', 'xbrl_reports')
+
         # === أعمدة جديدة في الجداول الموجودة ===
         add_column('invoices', 'order_status', 'TEXT', "'قيد التنفيذ'")
         add_column('invoices', 'coupon_discount', 'REAL', 0)
@@ -204,6 +234,7 @@ def migrate_database(db_path=None):
         add_column('users', 'can_view_dcf', 'INTEGER', 0)
         add_column('users', 'can_cancel_invoices', 'INTEGER', 0)
         add_column('users', 'can_view_branches', 'INTEGER', 0)
+        add_column('users', 'can_view_xbrl', 'INTEGER', 0)
         add_column('users', 'last_login', 'TIMESTAMP')
 
         add_column('invoice_items', 'variant_id', 'INTEGER')
@@ -737,8 +768,8 @@ def add_user():
                              can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
                              can_view_tables, can_view_attendance, can_view_advanced_reports,
                              can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches,
-                             can_view_cross_branch_stock)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             can_view_cross_branch_stock, can_view_xbrl)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
             hash_password(data.get('password')),
@@ -775,9 +806,10 @@ def add_user():
             data.get('can_view_dcf', 0),
             data.get('can_cancel_invoices', 0),
             data.get('can_view_branches', 0),
-            data.get('can_view_cross_branch_stock', 0)
+            data.get('can_view_cross_branch_stock', 0),
+            data.get('can_view_xbrl', 0)
         ))
-        
+
         user_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -909,6 +941,9 @@ def update_user(user_id):
         if 'can_view_cross_branch_stock' in data:
             updates.append('can_view_cross_branch_stock = ?')
             params.append(data['can_view_cross_branch_stock'])
+        if 'can_view_xbrl' in data:
+            updates.append('can_view_xbrl = ?')
+            params.append(data['can_view_xbrl'])
         if 'is_active' in data:
             updates.append('is_active = ?')
             params.append(data['is_active'])
@@ -4892,6 +4927,507 @@ def admin_dashboard_stock_summary():
             'branches': branches,
             'products': products_list
         })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== XBRL / IFRS =====
+
+@app.route('/api/xbrl/company-info', methods=['GET'])
+def get_xbrl_company_info():
+    """جلب بيانات الشركة لتقارير XBRL"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM xbrl_company_info ORDER BY id DESC LIMIT 1')
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return jsonify({'success': True, 'data': dict_from_row(row)})
+        return jsonify({'success': True, 'data': None})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/xbrl/company-info', methods=['POST'])
+def save_xbrl_company_info():
+    """حفظ / تحديث بيانات الشركة"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM xbrl_company_info ORDER BY id DESC LIMIT 1')
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute('''UPDATE xbrl_company_info SET
+                company_name_ar=?, company_name_en=?, commercial_registration=?,
+                tax_number=?, reporting_currency=?, industry_sector=?,
+                country=?, fiscal_year_end=?, legal_form=?,
+                contact_email=?, contact_phone=?, address=?,
+                updated_at=CURRENT_TIMESTAMP WHERE id=?''',
+                (data.get('company_name_ar',''), data.get('company_name_en',''),
+                 data.get('commercial_registration',''), data.get('tax_number',''),
+                 data.get('reporting_currency','SAR'), data.get('industry_sector',''),
+                 data.get('country','SA'), data.get('fiscal_year_end','12-31'),
+                 data.get('legal_form',''), data.get('contact_email',''),
+                 data.get('contact_phone',''), data.get('address',''),
+                 existing['id']))
+        else:
+            cursor.execute('''INSERT INTO xbrl_company_info
+                (company_name_ar, company_name_en, commercial_registration,
+                 tax_number, reporting_currency, industry_sector,
+                 country, fiscal_year_end, legal_form,
+                 contact_email, contact_phone, address)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (data.get('company_name_ar',''), data.get('company_name_en',''),
+                 data.get('commercial_registration',''), data.get('tax_number',''),
+                 data.get('reporting_currency','SAR'), data.get('industry_sector',''),
+                 data.get('country','SA'), data.get('fiscal_year_end','12-31'),
+                 data.get('legal_form',''), data.get('contact_email',''),
+                 data.get('contact_phone',''), data.get('address','')))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'تم حفظ بيانات الشركة'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/xbrl/financial-data', methods=['GET'])
+def get_xbrl_financial_data():
+    """جلب البيانات المالية من النظام لتقارير IFRS"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        branch_id = request.args.get('branch_id')
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        date_filter = ''
+        date_params = []
+        if start_date:
+            date_filter += ' AND date(created_at) >= ?'
+            date_params.append(start_date)
+        if end_date:
+            date_filter += ' AND date(created_at) <= ?'
+            date_params.append(end_date)
+
+        branch_filter = ''
+        branch_params = []
+        if branch_id:
+            cursor.execute('SELECT name FROM branches WHERE id = ?', (branch_id,))
+            br = cursor.fetchone()
+            if br:
+                branch_filter = ' AND branch_name = ?'
+                branch_params = [br['name']]
+
+        # === الإيرادات (Revenue) - IFRS 15 ===
+        cursor.execute(f'''SELECT
+            COUNT(*) as invoice_count,
+            COALESCE(SUM(total), 0) as total_revenue,
+            COALESCE(SUM(subtotal), 0) as gross_revenue,
+            COALESCE(SUM(discount), 0) as total_discounts,
+            COALESCE(SUM(delivery_fee), 0) as delivery_revenue,
+            COALESCE(SUM(coupon_discount), 0) as coupon_discounts,
+            COALESCE(SUM(loyalty_discount), 0) as loyalty_discounts
+            FROM invoices WHERE cancelled = 0 {date_filter} {branch_filter}''',
+            date_params + branch_params)
+        revenue = dict_from_row(cursor.fetchone())
+
+        # === تكلفة البضاعة المباعة (COGS) ===
+        cogs_date_filter = date_filter.replace('created_at', 'i.created_at')
+        cogs_branch_filter = branch_filter.replace('branch_name', 'i.branch_name')
+        cursor.execute(f'''SELECT
+            COALESCE(SUM(ii.quantity * COALESCE(inv.cost, 0)), 0) as total_cogs
+            FROM invoice_items ii
+            LEFT JOIN inventory inv ON ii.product_name = inv.name
+            JOIN invoices i ON ii.invoice_id = i.id
+            WHERE i.cancelled = 0 {cogs_date_filter} {cogs_branch_filter}''',
+            date_params + branch_params)
+        cogs_data = dict_from_row(cursor.fetchone())
+        total_cogs = cogs_data['total_cogs'] or 0
+
+        # === المصروفات التشغيلية (Operating Expenses) ===
+        exp_date_filter = ''
+        exp_params = []
+        if start_date:
+            exp_date_filter += ' AND date(expense_date) >= ?'
+            exp_params.append(start_date)
+        if end_date:
+            exp_date_filter += ' AND date(expense_date) <= ?'
+            exp_params.append(end_date)
+        exp_branch_filter = ''
+        if branch_id:
+            exp_branch_filter = ' AND branch_id = ?'
+            exp_params.append(branch_id)
+
+        cursor.execute(f'''SELECT
+            COALESCE(SUM(amount), 0) as total_expenses,
+            expense_type, COALESCE(SUM(amount), 0) as type_total
+            FROM expenses WHERE 1=1 {exp_date_filter} {exp_branch_filter}
+            GROUP BY expense_type''', exp_params)
+        expense_rows = cursor.fetchall()
+        expenses_by_type = {}
+        total_expenses = 0
+        for row in expense_rows:
+            r = dict_from_row(row)
+            expenses_by_type[r['expense_type'] or 'أخرى'] = r['type_total']
+            total_expenses += r['type_total']
+
+        # رواتب (من salary_details)
+        salary_params = []
+        salary_date_filter = ''
+        if start_date:
+            salary_date_filter += ' AND date(e.expense_date) >= ?'
+            salary_params.append(start_date)
+        if end_date:
+            salary_date_filter += ' AND date(e.expense_date) <= ?'
+            salary_params.append(end_date)
+        cursor.execute(f'''SELECT COALESCE(SUM(sd.monthly_salary), 0) as total_salaries
+            FROM salary_details sd
+            JOIN expenses e ON sd.expense_id = e.id
+            WHERE 1=1 {salary_date_filter}''', salary_params)
+        sal = dict_from_row(cursor.fetchone())
+        total_salaries = sal['total_salaries'] or 0
+
+        # === المخزون (Inventory) - IAS 2 ===
+        cursor.execute('''SELECT
+            COALESCE(SUM(bs.stock * COALESCE(inv.cost, 0)), 0) as inventory_value,
+            COALESCE(SUM(bs.stock), 0) as total_units
+            FROM branch_stock bs
+            JOIN inventory inv ON bs.inventory_id = inv.id''')
+        inv_data = dict_from_row(cursor.fetchone())
+
+        # === العملاء - الذمم المدينة ===
+        cursor.execute('SELECT COUNT(*) as customer_count FROM customers')
+        cust = dict_from_row(cursor.fetchone())
+
+        # === المرتجعات ===
+        ret_date_filter = date_filter.replace('created_at', 'return_date')
+        cursor.execute(f'''SELECT
+            COUNT(*) as return_count,
+            COALESCE(SUM(refund_amount), 0) as total_refunds
+            FROM returns WHERE 1=1 {ret_date_filter}''', date_params)
+        try:
+            returns_data = dict_from_row(cursor.fetchone())
+        except:
+            returns_data = {'return_count': 0, 'total_refunds': 0}
+
+        # === حسابات مشتقة ===
+        total_rev = revenue['total_revenue'] or 0
+        gross_profit = total_rev - total_cogs
+        operating_profit = gross_profit - total_expenses
+        net_profit = operating_profit
+        total_refunds = returns_data.get('total_refunds', 0) or 0
+
+        # === المبيعات حسب طريقة الدفع ===
+        cursor.execute(f'''SELECT payment_method,
+            COUNT(*) as count, COALESCE(SUM(total), 0) as total
+            FROM invoices WHERE cancelled = 0 {date_filter} {branch_filter}
+            GROUP BY payment_method''', date_params + branch_params)
+        payment_rows = cursor.fetchall()
+        payments = [dict_from_row(r) for r in payment_rows]
+
+        # === المبيعات حسب الفرع ===
+        cursor.execute(f'''SELECT branch_name,
+            COUNT(*) as count, COALESCE(SUM(total), 0) as total
+            FROM invoices WHERE cancelled = 0 {date_filter} {branch_filter}
+            GROUP BY branch_name''', date_params + branch_params)
+        branch_rows = cursor.fetchall()
+        branches_data = [dict_from_row(r) for r in branch_rows]
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'revenue': {
+                    'total_revenue': total_rev,
+                    'gross_revenue': revenue['gross_revenue'] or 0,
+                    'total_discounts': revenue['total_discounts'] or 0,
+                    'delivery_revenue': revenue['delivery_revenue'] or 0,
+                    'coupon_discounts': revenue['coupon_discounts'] or 0,
+                    'loyalty_discounts': revenue['loyalty_discounts'] or 0,
+                    'invoice_count': revenue['invoice_count'] or 0
+                },
+                'cost_of_sales': total_cogs,
+                'gross_profit': gross_profit,
+                'operating_expenses': {
+                    'total': total_expenses,
+                    'by_type': expenses_by_type,
+                    'salaries': total_salaries
+                },
+                'operating_profit': operating_profit,
+                'net_profit': net_profit,
+                'profit_margin': round((net_profit / total_rev * 100), 2) if total_rev > 0 else 0,
+                'inventory': {
+                    'value': inv_data['inventory_value'] or 0,
+                    'units': inv_data['total_units'] or 0
+                },
+                'customers': {
+                    'count': cust['customer_count'] or 0
+                },
+                'returns': {
+                    'count': returns_data.get('return_count', 0) or 0,
+                    'total_refunds': total_refunds
+                },
+                'payments': payments,
+                'branches': branches_data
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/xbrl/generate', methods=['POST'])
+def generate_xbrl():
+    """توليد تقرير XBRL بصيغة XML وفق معايير IFRS"""
+    try:
+        data = request.json
+        period_start = data.get('period_start')
+        period_end = data.get('period_end')
+        financial = data.get('financial_data', {})
+        company = data.get('company_info', {})
+        manual_adjustments = data.get('manual_adjustments', {})
+
+        currency = company.get('reporting_currency', 'SAR')
+        entity_name = company.get('company_name_en', 'Entity')
+        entity_name_ar = company.get('company_name_ar', '')
+        cr_number = company.get('commercial_registration', '')
+        tax_number = company.get('tax_number', '')
+
+        # دمج التعديلات اليدوية
+        rev = financial.get('revenue', {})
+        total_revenue = rev.get('total_revenue', 0) + manual_adjustments.get('other_income', 0)
+        cost_of_sales = financial.get('cost_of_sales', 0)
+        gross_profit = total_revenue - cost_of_sales
+        op_exp = financial.get('operating_expenses', {})
+        total_opex = op_exp.get('total', 0) + manual_adjustments.get('additional_expenses', 0)
+        depreciation = manual_adjustments.get('depreciation', 0)
+        total_opex += depreciation
+        operating_profit = gross_profit - total_opex
+        finance_costs = manual_adjustments.get('finance_costs', 0)
+        zakat_tax = manual_adjustments.get('zakat_tax', 0)
+        profit_before_tax = operating_profit - finance_costs
+        net_profit = profit_before_tax - zakat_tax
+
+        # أصول يدوية
+        cash_equivalents = manual_adjustments.get('cash_equivalents', 0)
+        receivables = manual_adjustments.get('trade_receivables', 0)
+        inventory_val = financial.get('inventory', {}).get('value', 0)
+        total_current_assets = cash_equivalents + receivables + inventory_val + manual_adjustments.get('other_current_assets', 0)
+
+        ppe = manual_adjustments.get('property_plant_equipment', 0)
+        intangible_assets = manual_adjustments.get('intangible_assets', 0)
+        total_non_current_assets = ppe + intangible_assets + manual_adjustments.get('other_non_current_assets', 0)
+        total_assets = total_current_assets + total_non_current_assets
+
+        # خصوم يدوية
+        trade_payables = manual_adjustments.get('trade_payables', 0)
+        short_term_loans = manual_adjustments.get('short_term_loans', 0)
+        total_current_liabilities = trade_payables + short_term_loans + manual_adjustments.get('other_current_liabilities', 0)
+
+        long_term_loans = manual_adjustments.get('long_term_loans', 0)
+        total_non_current_liabilities = long_term_loans + manual_adjustments.get('other_non_current_liabilities', 0)
+        total_liabilities = total_current_liabilities + total_non_current_liabilities
+
+        # حقوق الملكية
+        share_capital = manual_adjustments.get('share_capital', 0)
+        retained_earnings = manual_adjustments.get('retained_earnings', 0) + net_profit
+        total_equity = share_capital + retained_earnings + manual_adjustments.get('other_equity', 0)
+
+        # XBRL XML Generation (IFRS Taxonomy 2024)
+        xbrl_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:link="http://www.xbrl.org/2003/linkbase"
+      xmlns:xlink="http://www.w3.org/1999/xlink"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2024-03-28/ifrs-full"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance">
+
+  <!-- === سياق التقرير (Context) === -->
+  <xbrli:context id="CurrentPeriod">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>{period_start}</xbrli:startDate>
+      <xbrli:endDate>{period_end}</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="CurrentInstant">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:instant>{period_end}</xbrli:instant>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:unit id="{currency}">
+    <xbrli:measure>iso4217:{currency}</xbrli:measure>
+  </xbrli:unit>
+
+  <!-- === بيانات الشركة === -->
+  <ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification contextRef="CurrentPeriod">{entity_name}</ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification>
+  <ifrs-full:DomicileOfEntity contextRef="CurrentPeriod">{company.get('country', 'SA')}</ifrs-full:DomicileOfEntity>
+  <ifrs-full:LegalFormOfEntity contextRef="CurrentPeriod">{company.get('legal_form', '')}</ifrs-full:LegalFormOfEntity>
+  <ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities contextRef="CurrentPeriod">{company.get('industry_sector', '')}</ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities>
+
+  <!-- ===================================================================== -->
+  <!-- قائمة الدخل الشامل - Statement of Comprehensive Income (IAS 1) -->
+  <!-- ===================================================================== -->
+
+  <!-- الإيرادات - Revenue (IFRS 15) -->
+  <ifrs-full:Revenue contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{total_revenue}</ifrs-full:Revenue>
+
+  <!-- تكلفة المبيعات - Cost of Sales (IAS 2) -->
+  <ifrs-full:CostOfSales contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cost_of_sales}</ifrs-full:CostOfSales>
+
+  <!-- مجمل الربح - Gross Profit -->
+  <ifrs-full:GrossProfit contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{gross_profit}</ifrs-full:GrossProfit>
+
+  <!-- مصاريف الاستهلاك - Depreciation (IAS 16) -->
+  <ifrs-full:DepreciationAndAmortisationExpense contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{depreciation}</ifrs-full:DepreciationAndAmortisationExpense>
+
+  <!-- مصاريف تشغيلية أخرى -->
+  <ifrs-full:OtherExpenseByNature contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{total_opex}</ifrs-full:OtherExpenseByNature>
+
+  <!-- ربح العمليات - Operating Profit -->
+  <ifrs-full:ProfitLossFromOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{operating_profit}</ifrs-full:ProfitLossFromOperatingActivities>
+
+  <!-- تكاليف التمويل - Finance Costs (IFRS 9) -->
+  <ifrs-full:FinanceCosts contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{finance_costs}</ifrs-full:FinanceCosts>
+
+  <!-- الربح قبل الزكاة والضريبة -->
+  <ifrs-full:ProfitLossBeforeTax contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{profit_before_tax}</ifrs-full:ProfitLossBeforeTax>
+
+  <!-- الزكاة / ضريبة الدخل (IAS 12) -->
+  <ifrs-full:IncomeTaxExpenseContinuingOperations contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{zakat_tax}</ifrs-full:IncomeTaxExpenseContinuingOperations>
+
+  <!-- صافي الربح - Net Profit -->
+  <ifrs-full:ProfitLoss contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_profit}</ifrs-full:ProfitLoss>
+
+  <!-- ===================================================================== -->
+  <!-- قائمة المركز المالي - Statement of Financial Position (IAS 1) -->
+  <!-- ===================================================================== -->
+
+  <!-- === الأصول المتداولة - Current Assets === -->
+  <ifrs-full:CashAndCashEquivalents contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{cash_equivalents}</ifrs-full:CashAndCashEquivalents>
+  <ifrs-full:TradeAndOtherCurrentReceivables contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{receivables}</ifrs-full:TradeAndOtherCurrentReceivables>
+  <ifrs-full:Inventories contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{inventory_val}</ifrs-full:Inventories>
+  <ifrs-full:CurrentAssets contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_current_assets}</ifrs-full:CurrentAssets>
+
+  <!-- === الأصول غير المتداولة - Non-Current Assets === -->
+  <ifrs-full:PropertyPlantAndEquipment contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{ppe}</ifrs-full:PropertyPlantAndEquipment>
+  <ifrs-full:IntangibleAssetsOtherThanGoodwill contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{intangible_assets}</ifrs-full:IntangibleAssetsOtherThanGoodwill>
+  <ifrs-full:NoncurrentAssets contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_non_current_assets}</ifrs-full:NoncurrentAssets>
+
+  <!-- إجمالي الأصول -->
+  <ifrs-full:Assets contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_assets}</ifrs-full:Assets>
+
+  <!-- === الخصوم المتداولة - Current Liabilities === -->
+  <ifrs-full:TradeAndOtherCurrentPayables contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{trade_payables}</ifrs-full:TradeAndOtherCurrentPayables>
+  <ifrs-full:ShorttermBorrowings contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{short_term_loans}</ifrs-full:ShorttermBorrowings>
+  <ifrs-full:CurrentLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_current_liabilities}</ifrs-full:CurrentLiabilities>
+
+  <!-- === الخصوم غير المتداولة - Non-Current Liabilities === -->
+  <ifrs-full:LongtermBorrowings contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{long_term_loans}</ifrs-full:LongtermBorrowings>
+  <ifrs-full:NoncurrentLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_non_current_liabilities}</ifrs-full:NoncurrentLiabilities>
+
+  <!-- إجمالي الخصوم -->
+  <ifrs-full:Liabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_liabilities}</ifrs-full:Liabilities>
+
+  <!-- === حقوق الملكية - Equity (IAS 1) === -->
+  <ifrs-full:IssuedCapital contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{share_capital}</ifrs-full:IssuedCapital>
+  <ifrs-full:RetainedEarnings contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{retained_earnings}</ifrs-full:RetainedEarnings>
+  <ifrs-full:Equity contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_equity}</ifrs-full:Equity>
+
+  <!-- إجمالي الخصوم وحقوق الملكية -->
+  <ifrs-full:EquityAndLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_liabilities + total_equity}</ifrs-full:EquityAndLiabilities>
+
+</xbrl>'''
+
+        # حفظ التقرير
+        conn = get_db()
+        cursor = conn.cursor()
+        report_data_json = json.dumps({
+            'revenue': total_revenue,
+            'cost_of_sales': cost_of_sales,
+            'gross_profit': gross_profit,
+            'operating_expenses': total_opex,
+            'depreciation': depreciation,
+            'operating_profit': operating_profit,
+            'finance_costs': finance_costs,
+            'profit_before_tax': profit_before_tax,
+            'zakat_tax': zakat_tax,
+            'net_profit': net_profit,
+            'total_current_assets': total_current_assets,
+            'total_non_current_assets': total_non_current_assets,
+            'total_assets': total_assets,
+            'total_current_liabilities': total_current_liabilities,
+            'total_non_current_liabilities': total_non_current_liabilities,
+            'total_liabilities': total_liabilities,
+            'total_equity': total_equity,
+            'company': company,
+            'manual_adjustments': manual_adjustments
+        }, ensure_ascii=False)
+
+        cursor.execute('''INSERT INTO xbrl_reports
+            (report_type, period_start, period_end, report_data, xbrl_xml, notes)
+            VALUES (?, ?, ?, ?, ?, ?)''',
+            ('IFRS_FULL', period_start, period_end, report_data_json, xbrl_xml,
+             data.get('notes', '')))
+        report_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'report_id': report_id,
+            'xbrl_xml': xbrl_xml,
+            'summary': {
+                'total_revenue': total_revenue,
+                'cost_of_sales': cost_of_sales,
+                'gross_profit': gross_profit,
+                'operating_expenses': total_opex,
+                'operating_profit': operating_profit,
+                'finance_costs': finance_costs,
+                'profit_before_tax': profit_before_tax,
+                'zakat_tax': zakat_tax,
+                'net_profit': net_profit,
+                'total_assets': total_assets,
+                'total_liabilities': total_liabilities,
+                'total_equity': total_equity
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/xbrl/reports', methods=['GET'])
+def list_xbrl_reports():
+    """قائمة التقارير المحفوظة"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, report_type, period_start, period_end, created_at, notes FROM xbrl_reports ORDER BY created_at DESC LIMIT 50')
+        rows = cursor.fetchall()
+        conn.close()
+        reports = [dict_from_row(r) for r in rows]
+        return jsonify({'success': True, 'reports': reports})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/xbrl/reports/<int:report_id>', methods=['GET'])
+def get_xbrl_report(report_id):
+    """جلب تقرير XBRL محدد"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM xbrl_reports WHERE id = ?', (report_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'success': False, 'error': 'التقرير غير موجود'}), 404
+        return jsonify({'success': True, 'report': dict_from_row(row)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
