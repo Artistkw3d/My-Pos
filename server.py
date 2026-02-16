@@ -5230,8 +5230,62 @@ def generate_xbrl():
 
         # حقوق الملكية
         share_capital = manual_adjustments.get('share_capital', 0)
-        retained_earnings = manual_adjustments.get('retained_earnings', 0) + net_profit
-        total_equity = share_capital + retained_earnings + manual_adjustments.get('other_equity', 0)
+        retained_earnings_opening = manual_adjustments.get('retained_earnings', 0)
+        retained_earnings = retained_earnings_opening + net_profit
+        other_equity = manual_adjustments.get('other_equity', 0)
+        total_equity = share_capital + retained_earnings + other_equity
+
+        # === قائمة التدفقات النقدية (IAS 7) ===
+        # أنشطة تشغيلية
+        cf_customers_received = manual_adjustments.get('cf_customers_received', 0)
+        cf_suppliers_paid = manual_adjustments.get('cf_suppliers_paid', 0)
+        cf_employees_paid = manual_adjustments.get('cf_employees_paid', 0)
+        cf_other_operating = manual_adjustments.get('cf_other_operating', 0)
+        cf_interest_paid = manual_adjustments.get('cf_interest_paid', 0)
+        cf_taxes_paid = manual_adjustments.get('cf_taxes_paid', 0)
+        # إذا لم يُدخل المستخدم بيانات يدوية، نحسب من بيانات النظام (الطريقة المباشرة)
+        if cf_customers_received == 0 and total_revenue > 0:
+            cf_customers_received = total_revenue
+        if cf_suppliers_paid == 0 and cost_of_sales > 0:
+            cf_suppliers_paid = cost_of_sales
+        if cf_employees_paid == 0:
+            cf_employees_paid = op_exp.get('salaries', 0) if isinstance(op_exp, dict) else 0
+        net_cash_operating = cf_customers_received - cf_suppliers_paid - cf_employees_paid + cf_other_operating - cf_interest_paid - cf_taxes_paid
+
+        # أنشطة استثمارية
+        cf_ppe_purchased = manual_adjustments.get('cf_ppe_purchased', 0)
+        cf_ppe_sold = manual_adjustments.get('cf_ppe_sold', 0)
+        cf_investments_purchased = manual_adjustments.get('cf_investments_purchased', 0)
+        cf_investments_sold = manual_adjustments.get('cf_investments_sold', 0)
+        cf_other_investing = manual_adjustments.get('cf_other_investing', 0)
+        net_cash_investing = cf_ppe_sold - cf_ppe_purchased + cf_investments_sold - cf_investments_purchased + cf_other_investing
+
+        # أنشطة تمويلية
+        cf_loans_received = manual_adjustments.get('cf_loans_received', 0)
+        cf_loans_repaid = manual_adjustments.get('cf_loans_repaid', 0)
+        cf_capital_contributed = manual_adjustments.get('cf_capital_contributed', 0)
+        cf_dividends_paid = manual_adjustments.get('cf_dividends_paid', 0)
+        cf_other_financing = manual_adjustments.get('cf_other_financing', 0)
+        net_cash_financing = cf_loans_received - cf_loans_repaid + cf_capital_contributed - cf_dividends_paid + cf_other_financing
+
+        net_change_cash = net_cash_operating + net_cash_investing + net_cash_financing
+        cash_beginning = manual_adjustments.get('cash_beginning', 0)
+        cash_ending = cash_beginning + net_change_cash
+
+        # === قائمة التغيرات في حقوق الملكية (IAS 1) ===
+        equity_opening_capital = manual_adjustments.get('equity_opening_capital', share_capital)
+        equity_opening_retained = retained_earnings_opening
+        equity_opening_other = manual_adjustments.get('equity_opening_other', 0)
+        equity_opening_total = equity_opening_capital + equity_opening_retained + equity_opening_other
+
+        equity_new_capital = manual_adjustments.get('equity_new_capital', 0)
+        dividends_declared = manual_adjustments.get('dividends_declared', 0)
+        other_comprehensive_income = manual_adjustments.get('other_comprehensive_income', 0)
+
+        equity_closing_capital = equity_opening_capital + equity_new_capital
+        equity_closing_retained = equity_opening_retained + net_profit - dividends_declared
+        equity_closing_other = equity_opening_other + other_comprehensive_income
+        equity_closing_total = equity_closing_capital + equity_closing_retained + equity_closing_other
 
         # XBRL XML Generation (IFRS Taxonomy 2024)
         xbrl_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -5259,6 +5313,15 @@ def generate_xbrl():
     </xbrli:entity>
     <xbrli:period>
       <xbrli:instant>{period_end}</xbrli:instant>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="PriorInstant">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:instant>{period_start}</xbrli:instant>
     </xbrli:period>
   </xbrli:context>
 
@@ -5344,6 +5407,48 @@ def generate_xbrl():
   <!-- إجمالي الخصوم وحقوق الملكية -->
   <ifrs-full:EquityAndLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_liabilities + total_equity}</ifrs-full:EquityAndLiabilities>
 
+  <!-- ===================================================================== -->
+  <!-- قائمة التدفقات النقدية - Statement of Cash Flows (IAS 7)              -->
+  <!-- ===================================================================== -->
+
+  <!-- === الأنشطة التشغيلية - Operating Activities (الطريقة المباشرة) === -->
+  <ifrs-full:ReceiptsFromSalesOfGoodsAndRenderingOfServices contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_customers_received}</ifrs-full:ReceiptsFromSalesOfGoodsAndRenderingOfServices>
+  <ifrs-full:PaymentsToSuppliersForGoodsAndServices contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_suppliers_paid}</ifrs-full:PaymentsToSuppliersForGoodsAndServices>
+  <ifrs-full:PaymentsToAndOnBehalfOfEmployees contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_employees_paid}</ifrs-full:PaymentsToAndOnBehalfOfEmployees>
+  <ifrs-full:InterestPaidClassifiedAsOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_interest_paid}</ifrs-full:InterestPaidClassifiedAsOperatingActivities>
+  <ifrs-full:IncomeTaxesPaidRefundClassifiedAsOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_taxes_paid}</ifrs-full:IncomeTaxesPaidRefundClassifiedAsOperatingActivities>
+  <ifrs-full:CashFlowsFromUsedInOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_cash_operating}</ifrs-full:CashFlowsFromUsedInOperatingActivities>
+
+  <!-- === الأنشطة الاستثمارية - Investing Activities === -->
+  <ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_ppe_purchased}</ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities>
+  <ifrs-full:ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_ppe_sold}</ifrs-full:ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities>
+  <ifrs-full:CashFlowsFromUsedInInvestingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_cash_investing}</ifrs-full:CashFlowsFromUsedInInvestingActivities>
+
+  <!-- === الأنشطة التمويلية - Financing Activities === -->
+  <ifrs-full:ProceedsFromBorrowingsClassifiedAsFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_loans_received}</ifrs-full:ProceedsFromBorrowingsClassifiedAsFinancingActivities>
+  <ifrs-full:RepaymentsOfBorrowingsClassifiedAsFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_loans_repaid}</ifrs-full:RepaymentsOfBorrowingsClassifiedAsFinancingActivities>
+  <ifrs-full:DividendsPaidClassifiedAsFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_dividends_paid}</ifrs-full:DividendsPaidClassifiedAsFinancingActivities>
+  <ifrs-full:CashFlowsFromUsedInFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_cash_financing}</ifrs-full:CashFlowsFromUsedInFinancingActivities>
+
+  <!-- صافي التغير في النقد -->
+  <ifrs-full:IncreaseDecreaseInCashAndCashEquivalents contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_change_cash}</ifrs-full:IncreaseDecreaseInCashAndCashEquivalents>
+  <ifrs-full:CashAndCashEquivalents contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{cash_ending}</ifrs-full:CashAndCashEquivalents>
+
+  <!-- ===================================================================== -->
+  <!-- قائمة التغيرات في حقوق الملكية - Statement of Changes in Equity (IAS 1) -->
+  <!-- ===================================================================== -->
+
+  <!-- أرصدة افتتاحية -->
+  <ifrs-full:Equity contextRef="PriorInstant" unitRef="{currency}" decimals="2">{equity_opening_total}</ifrs-full:Equity>
+  <ifrs-full:IssuedCapital contextRef="PriorInstant" unitRef="{currency}" decimals="2">{equity_opening_capital}</ifrs-full:IssuedCapital>
+  <ifrs-full:RetainedEarnings contextRef="PriorInstant" unitRef="{currency}" decimals="2">{equity_opening_retained}</ifrs-full:RetainedEarnings>
+
+  <!-- التغيرات خلال الفترة -->
+  <ifrs-full:ProfitLoss contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_profit}</ifrs-full:ProfitLoss>
+  <ifrs-full:OtherComprehensiveIncome contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{other_comprehensive_income}</ifrs-full:OtherComprehensiveIncome>
+  <ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{dividends_declared}</ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent>
+  <ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{equity_new_capital}</ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners>
+
 </xbrl>'''
 
         # حفظ التقرير
@@ -5367,6 +5472,22 @@ def generate_xbrl():
             'total_non_current_liabilities': total_non_current_liabilities,
             'total_liabilities': total_liabilities,
             'total_equity': total_equity,
+            'cash_flow': {
+                'net_cash_operating': net_cash_operating,
+                'net_cash_investing': net_cash_investing,
+                'net_cash_financing': net_cash_financing,
+                'net_change_cash': net_change_cash,
+                'cash_beginning': cash_beginning,
+                'cash_ending': cash_ending
+            },
+            'equity_changes': {
+                'opening_total': equity_opening_total,
+                'closing_total': equity_closing_total,
+                'net_profit': net_profit,
+                'dividends': dividends_declared,
+                'new_capital': equity_new_capital,
+                'other_comprehensive_income': other_comprehensive_income
+            },
             'company': company,
             'manual_adjustments': manual_adjustments
         }, ensure_ascii=False)
@@ -5396,7 +5517,17 @@ def generate_xbrl():
                 'net_profit': net_profit,
                 'total_assets': total_assets,
                 'total_liabilities': total_liabilities,
-                'total_equity': total_equity
+                'total_equity': total_equity,
+                'net_cash_operating': net_cash_operating,
+                'net_cash_investing': net_cash_investing,
+                'net_cash_financing': net_cash_financing,
+                'net_change_cash': net_change_cash,
+                'cash_beginning': cash_beginning,
+                'cash_ending': cash_ending,
+                'equity_opening_total': equity_opening_total,
+                'equity_closing_total': equity_closing_total,
+                'dividends_declared': dividends_declared,
+                'other_comprehensive_income': other_comprehensive_income
             }
         })
     except Exception as e:

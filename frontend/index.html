@@ -918,6 +918,184 @@
                         </div>
                     </div>
 
+                    <!-- === قائمة التدفقات النقدية - Cash Flow Statement (IAS 7) === -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">💰 قائمة التدفقات النقدية (Statement of Cash Flows - IAS 7)</h3>
+                        <p style="color: #718096; font-size: 13px; margin-bottom: 15px;">الطريقة المباشرة - أدخل المبالغ الفعلية المحصلة والمدفوعة. البيانات المحسوبة من النظام تظهر كقيم افتراضية.</p>
+
+                        <!-- رصيد النقد في بداية الفترة -->
+                        <div style="background: #f7fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                            <div class="form-group" style="max-width: 300px;">
+                                <label style="font-weight: bold; color: #1a365d;">رصيد النقد في بداية الفترة:</label>
+                                <input type="number" id="xbrl_cash_beginning" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #2b6cb0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+
+                        <h4 style="color: #38a169; margin: 15px 0 10px;">الأنشطة التشغيلية (Operating Activities)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label>محصلات من العملاء <span style="color: #48bb78;">✓ تلقائي</span>:</label>
+                                <input type="number" id="xbrl_cf_customers" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                            </div>
+                            <div class="form-group">
+                                <label>مدفوعات للموردين <span style="color: #48bb78;">✓ تلقائي</span>:</label>
+                                <input type="number" id="xbrl_cf_suppliers" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                            </div>
+                            <div class="form-group">
+                                <label>مدفوعات للموظفين <span style="color: #48bb78;">✓ تلقائي</span>:</label>
+                                <input type="number" id="xbrl_cf_employees" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                            </div>
+                            <div class="form-group">
+                                <label>مصاريف تشغيلية أخرى مدفوعة:</label>
+                                <input type="number" id="xbrl_cf_other_operating" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>فوائد مدفوعة:</label>
+                                <input type="number" id="xbrl_cf_interest_paid" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>زكاة / ضرائب مدفوعة:</label>
+                                <input type="number" id="xbrl_cf_taxes_paid" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #f0fff4; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong style="color: #38a169;">صافي النقد من الأنشطة التشغيلية:</strong>
+                            <strong id="xbrl_net_cash_operating" style="font-size: 18px; color: #38a169;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #805ad5; margin: 15px 0 10px;">الأنشطة الاستثمارية (Investing Activities)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label>شراء ممتلكات ومعدات:</label>
+                                <input type="number" id="xbrl_cf_ppe_purchased" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>بيع ممتلكات ومعدات:</label>
+                                <input type="number" id="xbrl_cf_ppe_sold" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>شراء استثمارات:</label>
+                                <input type="number" id="xbrl_cf_inv_purchased" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>بيع استثمارات:</label>
+                                <input type="number" id="xbrl_cf_inv_sold" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أنشطة استثمارية أخرى:</label>
+                                <input type="number" id="xbrl_cf_other_investing" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #faf5ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong style="color: #805ad5;">صافي النقد من الأنشطة الاستثمارية:</strong>
+                            <strong id="xbrl_net_cash_investing" style="font-size: 18px; color: #805ad5;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #dd6b20; margin: 15px 0 10px;">الأنشطة التمويلية (Financing Activities)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label>قروض محصلة:</label>
+                                <input type="number" id="xbrl_cf_loans_received" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>سداد قروض:</label>
+                                <input type="number" id="xbrl_cf_loans_repaid" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>رأس مال مساهم جديد:</label>
+                                <input type="number" id="xbrl_cf_capital" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أرباح موزعة:</label>
+                                <input type="number" id="xbrl_cf_dividends" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أنشطة تمويلية أخرى:</label>
+                                <input type="number" id="xbrl_cf_other_financing" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #fffaf0; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong style="color: #dd6b20;">صافي النقد من الأنشطة التمويلية:</strong>
+                            <strong id="xbrl_net_cash_financing" style="font-size: 18px; color: #dd6b20;">0.00</strong>
+                        </div>
+
+                        <!-- ملخص التدفقات -->
+                        <div style="background: #1a365d; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; color: white;">
+                            <strong style="font-size: 16px;">صافي التغير في النقد:</strong>
+                            <strong id="xbrl_net_change_cash" style="font-size: 22px;">0.00</strong>
+                        </div>
+                        <div style="background: #2b6cb0; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; color: white;">
+                            <strong style="font-size: 16px;">رصيد النقد في نهاية الفترة:</strong>
+                            <strong id="xbrl_cash_ending" style="font-size: 22px;">0.00</strong>
+                        </div>
+                    </div>
+
+                    <!-- === قائمة التغيرات في حقوق الملكية - Statement of Changes in Equity (IAS 1) === -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">📈 قائمة التغيرات في حقوق الملكية (Statement of Changes in Equity - IAS 1)</h3>
+                        <p style="color: #718096; font-size: 13px; margin-bottom: 15px;">أدخل الأرصدة الافتتاحية والتغيرات خلال الفترة. صافي الربح يُحسب تلقائياً من قائمة الدخل.</p>
+
+                        <h4 style="color: #2b6cb0; margin: 15px 0 10px;">الأرصدة الافتتاحية (بداية الفترة)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label>رأس المال الافتتاحي:</label>
+                                <input type="number" id="xbrl_eq_opening_capital" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أرباح مبقاة افتتاحية:</label>
+                                <input type="number" id="xbrl_eq_opening_retained" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>احتياطيات وبنود أخرى افتتاحية:</label>
+                                <input type="number" id="xbrl_eq_opening_other" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="background: #ebf8ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <strong style="color: #2b6cb0;">إجمالي حقوق الملكية الافتتاحية:</strong>
+                            <strong id="xbrl_eq_opening_total" style="font-size: 18px; color: #2b6cb0;">0.00</strong>
+                        </div>
+
+                        <h4 style="color: #38a169; margin: 15px 0 10px;">التغيرات خلال الفترة</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                            <div class="form-group">
+                                <label>صافي ربح الفترة <span style="color: #48bb78;">✓ تلقائي</span>:</label>
+                                <input type="number" id="xbrl_eq_net_profit" step="0.01" value="0" readonly style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                            </div>
+                            <div class="form-group">
+                                <label>الدخل الشامل الآخر (OCI):</label>
+                                <input type="number" id="xbrl_eq_oci" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>زيادة رأس المال:</label>
+                                <input type="number" id="xbrl_eq_new_capital" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                            <div class="form-group">
+                                <label>أرباح موزعة (توزيعات):</label>
+                                <input type="number" id="xbrl_eq_dividends" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                            </div>
+                        </div>
+
+                        <h4 style="color: #1a365d; margin: 15px 0 10px;">الأرصدة الختامية (نهاية الفترة)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                            <div style="background: #f7fafc; padding: 12px 15px; border-radius: 8px; text-align: center;">
+                                <div style="color: #718096; font-size: 12px;">رأس المال</div>
+                                <div id="xbrl_eq_closing_capital" style="font-size: 18px; font-weight: bold; color: #2d3748;">0.00</div>
+                            </div>
+                            <div style="background: #f7fafc; padding: 12px 15px; border-radius: 8px; text-align: center;">
+                                <div style="color: #718096; font-size: 12px;">أرباح مبقاة</div>
+                                <div id="xbrl_eq_closing_retained" style="font-size: 18px; font-weight: bold; color: #2d3748;">0.00</div>
+                            </div>
+                            <div style="background: #f7fafc; padding: 12px 15px; border-radius: 8px; text-align: center;">
+                                <div style="color: #718096; font-size: 12px;">بنود أخرى</div>
+                                <div id="xbrl_eq_closing_other" style="font-size: 18px; font-weight: bold; color: #2d3748;">0.00</div>
+                            </div>
+                        </div>
+                        <div style="background: #38a169; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; color: white;">
+                            <strong style="font-size: 16px;">إجمالي حقوق الملكية الختامية:</strong>
+                            <strong id="xbrl_eq_closing_total" style="font-size: 22px;">0.00</strong>
+                        </div>
+                    </div>
+
                     <!-- === القسم 5: تعديلات يدوية على قائمة الدخل === -->
                     <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                         <h3 style="margin-bottom: 20px; color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px;">✏️ تعديلات يدوية على قائمة الدخل</h3>
@@ -969,6 +1147,18 @@
                         <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                             <h4 style="color: #1a365d; margin-bottom: 15px;">🏦 ملخص المركز المالي</h4>
                             <div id="xbrl_balance_summary"></div>
+                        </div>
+
+                        <!-- ملخص التدفقات النقدية -->
+                        <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h4 style="color: #1a365d; margin-bottom: 15px;">💰 ملخص التدفقات النقدية</h4>
+                            <div id="xbrl_cashflow_summary"></div>
+                        </div>
+
+                        <!-- ملخص التغيرات في حقوق الملكية -->
+                        <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h4 style="color: #1a365d; margin-bottom: 15px;">📈 ملخص التغيرات في حقوق الملكية</h4>
+                            <div id="xbrl_equity_summary"></div>
                         </div>
 
                         <!-- عرض XML -->
