@@ -222,6 +222,30 @@ def migrate_database(db_path=None):
         except Exception as e:
             print(f"[Migration] loyalty settings: {e}")
 
+        # إعداد حد المخزون المنخفض الافتراضي
+        try:
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('low_stock_threshold', '5')")
+            conn.commit()
+        except Exception as e:
+            print(f"[Migration] low_stock_threshold setting: {e}")
+
+        # إصلاح الفواتير القديمة التي ليس لها branch_id
+        try:
+            cursor.execute('''
+                UPDATE invoices SET branch_id = (
+                    SELECT b.id FROM branches b WHERE b.name = invoices.branch_name LIMIT 1
+                )
+                WHERE branch_id IS NULL AND branch_name IS NOT NULL AND branch_name != ''
+            ''')
+            # الفواتير التي ليس لها branch_name أيضاً - تعيين الفرع الرئيسي
+            cursor.execute('''
+                UPDATE invoices SET branch_id = 1
+                WHERE branch_id IS NULL
+            ''')
+            conn.commit()
+        except Exception as e:
+            print(f"[Migration] fix invoices branch_id: {e}")
+
         print(f"[Migration] ✅ {target_path}")
     except Exception as e:
         print(f"[Migration] ❌ Error: {e}")
@@ -1571,10 +1595,10 @@ def create_invoice():
         cursor.execute('''
             INSERT INTO invoices
             (invoice_number, customer_id, customer_name, customer_phone, customer_address,
-             subtotal, discount, total, payment_method, employee_name, notes, transaction_number, branch_name, delivery_fee,
+             subtotal, discount, total, payment_method, employee_name, notes, transaction_number, branch_id, branch_name, delivery_fee,
              coupon_discount, coupon_code, loyalty_discount, loyalty_points_earned, loyalty_points_redeemed,
              table_id, table_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             invoice_number_with_branch,
             data.get('customer_id'),
@@ -1588,6 +1612,7 @@ def create_invoice():
             data.get('employee_name', ''),
             data.get('notes', ''),
             data.get('transaction_number', ''),
+            branch_id,
             branch_name,
             data.get('delivery_fee', 0),
             data.get('coupon_discount', 0),
@@ -1656,9 +1681,42 @@ def create_invoice():
                 ''', (net_points, customer_id))
 
         conn.commit()
+
+        # فحص المنتجات منخفضة المخزون بعد البيع
+        low_stock_warnings = []
+        try:
+            cursor.execute("SELECT value FROM settings WHERE key = 'low_stock_threshold'")
+            threshold_row = cursor.fetchone()
+            threshold = int(threshold_row['value']) if threshold_row else 5
+
+            for item in data.get('items', []):
+                bs_id = item.get('branch_stock_id') or item.get('product_id')
+                if bs_id:
+                    cursor.execute('''
+                        SELECT bs.stock, inv.name as product_name, pv.variant_name
+                        FROM branch_stock bs
+                        LEFT JOIN inventory inv ON inv.id = bs.inventory_id
+                        LEFT JOIN product_variants pv ON pv.id = bs.variant_id
+                        WHERE bs.id = ?
+                    ''', (bs_id,))
+                    row = cursor.fetchone()
+                    if row and row['stock'] <= threshold:
+                        pname = row['product_name'] or item.get('product_name', '')
+                        if row['variant_name']:
+                            pname += f" ({row['variant_name']})"
+                        low_stock_warnings.append({
+                            'product_name': pname,
+                            'stock': row['stock']
+                        })
+        except Exception as e:
+            print(f"[LowStock] Warning check error: {e}")
+
         conn.close()
 
-        return jsonify({'success': True, 'id': invoice_id, 'invoice_number': invoice_number_with_branch})
+        result = {'success': True, 'id': invoice_id, 'invoice_number': invoice_number_with_branch}
+        if low_stock_warnings:
+            result['low_stock_warnings'] = low_stock_warnings
+        return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
