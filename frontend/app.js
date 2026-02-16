@@ -738,9 +738,9 @@ function displayProducts(products) {
             `;
         }
 
-        // أيقونة عرض التوفر في الفروع الأخرى (معلوماتية للجميع)
+        // أيقونة عرض التوفر في الفروع الأخرى (مربوطة بصلاحية عرض مخزون الفروع)
         let crossBranchHTML = '';
-        if (p.inventory_id) {
+        if (p.inventory_id && window.userPermissions.canViewCrossBranchStock) {
             crossBranchHTML = `<button class="branch-stock-btn" onclick="event.stopPropagation(); showBranchStock(${p.inventory_id}, '${(p.display_name || p.name).replace(/'/g, "\\'")}')" title="عرض التوفر في الفروع الأخرى">🏢</button>`;
         }
 
