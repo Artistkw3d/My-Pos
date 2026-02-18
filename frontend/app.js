@@ -9898,13 +9898,13 @@ function downloadXBRLXML() {
         alert('⚠️ لا يوجد تقرير لتحميله');
         return;
     }
-    const blob = new Blob([_xbrlLastXML], {type: 'application/xml'});
+    const blob = new Blob([_xbrlLastXML], {type: 'text/html'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const companyEn = document.getElementById('xbrl_company_name_en').value || 'company';
     const periodEnd = document.getElementById('xbrl_period_end').value || 'report';
     a.href = url;
-    a.download = `XBRL_${companyEn.replace(/\s+/g, '_')}_${periodEnd}.xml`;
+    a.download = `iXBRL_${companyEn.replace(/\s+/g, '_')}_${periodEnd}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -9958,11 +9958,11 @@ async function downloadSavedXBRL(reportId) {
             alert('❌ لا يمكن تحميل التقرير');
             return;
         }
-        const blob = new Blob([data.report.xbrl_xml], {type: 'application/xml'});
+        const blob = new Blob([data.report.xbrl_xml], {type: 'text/html'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `XBRL_Report_${reportId}_${data.report.period_end}.xml`;
+        a.download = `iXBRL_Report_${reportId}_${data.report.period_end}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
