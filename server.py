@@ -5371,8 +5371,11 @@ def generate_xbrl():
       xmlns:link="http://www.xbrl.org/2003/linkbase"
       xmlns:xlink="http://www.w3.org/1999/xlink"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
-      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2024-03-28/ifrs-full"
+      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance">
+
+  <!-- === مرجع التصنيف (Schema Reference) === -->
+  <link:schemaRef xlink:type="simple" xlink:href="https://xbrl.ifrs.org/taxonomy/2024-03-27/full_ifrs_entry_point_2024-03-27.xsd"/>
 
   <!-- === سياق التقرير (Context) === -->
   <xbrli:context id="CurrentPeriod">
