@@ -242,6 +242,36 @@ def migrate_database(db_path=None):
 
         add_column('branch_stock', 'variant_id', 'INTEGER')
 
+        # === نظام الشفتات ===
+        safe_exec('''CREATE TABLE IF NOT EXISTS shifts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''', 'shifts')
+
+        # === سجل تعديلات الفواتير ===
+        safe_exec('''CREATE TABLE IF NOT EXISTS invoice_edit_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER NOT NULL,
+            edited_by INTEGER,
+            edited_by_name TEXT,
+            changes TEXT,
+            edited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+        )''', 'invoice_edit_history')
+
+        # أعمدة الشفتات
+        add_column('users', 'shift_id', 'INTEGER')
+        add_column('users', 'can_edit_completed_invoices', 'INTEGER', 0)
+        add_column('invoices', 'shift_id', 'INTEGER')
+        add_column('invoices', 'shift_name', 'TEXT')
+        add_column('invoices', 'edited_at', 'TIMESTAMP')
+        add_column('invoices', 'edited_by', 'TEXT')
+        add_column('invoices', 'edit_count', 'INTEGER', 0)
+
         # إعدادات الولاء الافتراضية
         try:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
@@ -374,7 +404,9 @@ def create_tenant_database(slug):
             can_view_branches INTEGER DEFAULT 0,
             can_view_cross_branch_stock INTEGER DEFAULT 0,
             can_view_xbrl INTEGER DEFAULT 0,
-            last_login TIMESTAMP
+            last_login TIMESTAMP,
+            shift_id INTEGER,
+            can_edit_completed_invoices INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS branches (
@@ -469,7 +501,12 @@ def create_tenant_database(slug):
             cancelled INTEGER DEFAULT 0,
             cancel_reason TEXT,
             cancelled_at TIMESTAMP,
-            stock_returned INTEGER DEFAULT 0
+            stock_returned INTEGER DEFAULT 0,
+            shift_id INTEGER,
+            shift_name TEXT,
+            edited_at TIMESTAMP,
+            edited_by TEXT,
+            edit_count INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS invoice_items (
@@ -646,6 +683,25 @@ def create_tenant_database(slug):
             FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS shifts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS invoice_edit_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER NOT NULL,
+            edited_by INTEGER,
+            edited_by_name TEXT,
+            changes TEXT,
+            edited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS xbrl_company_info (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             company_name_ar TEXT,
@@ -780,7 +836,8 @@ def ensure_user_permission_columns(cursor):
         'can_view_returns', 'can_view_expenses', 'can_view_suppliers', 'can_view_coupons',
         'can_view_tables', 'can_view_attendance', 'can_view_advanced_reports',
         'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches',
-        'can_view_cross_branch_stock', 'can_view_xbrl'
+        'can_view_cross_branch_stock', 'can_view_xbrl', 'can_edit_completed_invoices',
+        'shift_id'
     ]
     for col in new_cols:
         try:
@@ -810,8 +867,8 @@ def add_user():
                              can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
                              can_view_tables, can_view_attendance, can_view_advanced_reports,
                              can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches,
-                             can_view_cross_branch_stock, can_view_xbrl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             can_view_cross_branch_stock, can_view_xbrl, shift_id, can_edit_completed_invoices)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
             hash_password(data.get('password')),
@@ -849,7 +906,9 @@ def add_user():
             data.get('can_cancel_invoices', 0),
             data.get('can_view_branches', 0),
             data.get('can_view_cross_branch_stock', 0),
-            data.get('can_view_xbrl', 0)
+            data.get('can_view_xbrl', 0),
+            data.get('shift_id'),
+            data.get('can_edit_completed_invoices', 0)
         ))
 
         user_id = cursor.lastrowid
@@ -986,6 +1045,12 @@ def update_user(user_id):
         if 'can_view_xbrl' in data:
             updates.append('can_view_xbrl = ?')
             params.append(data['can_view_xbrl'])
+        if 'shift_id' in data:
+            updates.append('shift_id = ?')
+            params.append(data['shift_id'])
+        if 'can_edit_completed_invoices' in data:
+            updates.append('can_edit_completed_invoices = ?')
+            params.append(data['can_edit_completed_invoices'])
         if 'is_active' in data:
             updates.append('is_active = ?')
             params.append(data['is_active'])
@@ -1668,14 +1733,22 @@ def create_invoice():
         original_invoice_number = data.get('invoice_number', '')
         invoice_number_with_branch = f"{original_invoice_number}-B{branch_id}"
         
+        # جلب اسم الشفت إن وجد
+        shift_id = data.get('shift_id')
+        shift_name = ''
+        if shift_id:
+            cursor.execute('SELECT name FROM shifts WHERE id = ?', (shift_id,))
+            shift_row = cursor.fetchone()
+            shift_name = shift_row['name'] if shift_row else ''
+
         # إدراج الفاتورة
         cursor.execute('''
             INSERT INTO invoices
             (invoice_number, customer_id, customer_name, customer_phone, customer_address,
              subtotal, discount, total, payment_method, employee_name, notes, transaction_number, branch_id, branch_name, delivery_fee,
              coupon_discount, coupon_code, loyalty_discount, loyalty_points_earned, loyalty_points_redeemed,
-             table_id, table_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             table_id, table_name, shift_id, shift_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             invoice_number_with_branch,
             data.get('customer_id'),
@@ -1698,7 +1771,9 @@ def create_invoice():
             data.get('loyalty_points_earned', 0),
             data.get('loyalty_points_redeemed', 0),
             data.get('table_id'),
-            data.get('table_name', '')
+            data.get('table_name', ''),
+            shift_id,
+            shift_name
         ))
 
         invoice_id = cursor.lastrowid
@@ -5815,6 +5890,299 @@ def get_xbrl_report(report_id):
         if not row:
             return jsonify({'success': False, 'error': 'التقرير غير موجود'}), 404
         return jsonify({'success': True, 'report': dict_from_row(row)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== نظام الشفتات =====
+
+@app.route('/api/shifts', methods=['GET'])
+def get_shifts():
+    """جلب جميع الشفتات"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM shifts ORDER BY created_at DESC')
+        shifts = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'shifts': shifts})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/shifts', methods=['POST'])
+def add_shift():
+    """إضافة شفت جديد"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO shifts (name, start_time, end_time, is_active)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            data.get('name'),
+            data.get('start_time', ''),
+            data.get('end_time', ''),
+            data.get('is_active', 1)
+        ))
+        shift_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': shift_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/shifts/<int:shift_id>', methods=['PUT'])
+def update_shift(shift_id):
+    """تحديث شفت"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE shifts SET name = ?, start_time = ?, end_time = ?, is_active = ?
+            WHERE id = ?
+        ''', (
+            data.get('name'),
+            data.get('start_time', ''),
+            data.get('end_time', ''),
+            data.get('is_active', 1),
+            shift_id
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/shifts/<int:shift_id>', methods=['DELETE'])
+def delete_shift(shift_id):
+    """حذف شفت"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        # إزالة الشفت من المستخدمين المرتبطين
+        cursor.execute('UPDATE users SET shift_id = NULL WHERE shift_id = ?', (shift_id,))
+        cursor.execute('DELETE FROM shifts WHERE id = ?', (shift_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== تعديل الفواتير =====
+
+@app.route('/api/invoices/<int:invoice_id>/edit', methods=['PUT'])
+def edit_invoice(invoice_id):
+    """تعديل فاتورة مع تعديل المخزون"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # جلب الفاتورة الحالية
+        cursor.execute('SELECT * FROM invoices WHERE id = ?', (invoice_id,))
+        invoice = cursor.fetchone()
+        if not invoice:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الفاتورة غير موجودة'}), 404
+
+        inv = dict_from_row(invoice)
+
+        # التحقق إذا كانت ملغية
+        if inv.get('cancelled'):
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن تعديل فاتورة ملغية'}), 400
+
+        # التحقق من الصلاحية: إذا كانت "منجز" يحتاج صلاحية خاصة
+        if inv.get('order_status') == 'منجز':
+            user_can_edit = data.get('can_edit_completed', False)
+            if not user_can_edit:
+                conn.close()
+                return jsonify({'success': False, 'error': 'لا تملك صلاحية تعديل فاتورة منجزة'}), 403
+
+        # جلب العناصر القديمة
+        cursor.execute('SELECT * FROM invoice_items WHERE invoice_id = ?', (invoice_id,))
+        old_items = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # إرجاع المخزون القديم
+        for item in old_items:
+            bs_id = item.get('branch_stock_id')
+            if bs_id:
+                cursor.execute('''
+                    UPDATE branch_stock
+                    SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (item.get('quantity', 0), bs_id))
+
+        # حذف العناصر القديمة
+        cursor.execute('DELETE FROM invoice_items WHERE invoice_id = ?', (invoice_id,))
+
+        # إدراج العناصر الجديدة وخصم المخزون
+        new_items = data.get('items', [])
+        for item in new_items:
+            branch_stock_id = item.get('branch_stock_id') or item.get('product_id')
+            cursor.execute('''
+                INSERT INTO invoice_items
+                (invoice_id, product_id, product_name, quantity, price, total, branch_stock_id, variant_id, variant_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                invoice_id,
+                item.get('product_id'),
+                item.get('product_name'),
+                item.get('quantity'),
+                item.get('price'),
+                item.get('total'),
+                branch_stock_id,
+                item.get('variant_id'),
+                item.get('variant_name')
+            ))
+            # خصم المخزون الجديد
+            if branch_stock_id:
+                cursor.execute('''
+                    UPDATE branch_stock
+                    SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (item.get('quantity', 0), branch_stock_id))
+
+        # تحديث بيانات الفاتورة
+        cursor.execute('''
+            UPDATE invoices SET
+                customer_id = ?, customer_name = ?, customer_phone = ?, customer_address = ?,
+                subtotal = ?, discount = ?, total = ?, payment_method = ?,
+                notes = ?, delivery_fee = ?,
+                edited_at = CURRENT_TIMESTAMP, edited_by = ?,
+                edit_count = COALESCE(edit_count, 0) + 1
+            WHERE id = ?
+        ''', (
+            data.get('customer_id', inv.get('customer_id')),
+            data.get('customer_name', inv.get('customer_name', '')),
+            data.get('customer_phone', inv.get('customer_phone', '')),
+            data.get('customer_address', inv.get('customer_address', '')),
+            data.get('subtotal', inv.get('subtotal', 0)),
+            data.get('discount', inv.get('discount', 0)),
+            data.get('total', inv.get('total', 0)),
+            data.get('payment_method', inv.get('payment_method', '')),
+            data.get('notes', inv.get('notes', '')),
+            data.get('delivery_fee', inv.get('delivery_fee', 0)),
+            data.get('edited_by', ''),
+            invoice_id
+        ))
+
+        # حفظ عمليات الدفع المتعددة
+        payments = data.get('payments', [])
+        if payments:
+            payments_json = json.dumps(payments, ensure_ascii=False)
+            cursor.execute('UPDATE invoices SET transaction_number = ? WHERE id = ?', (payments_json, invoice_id))
+
+        # حفظ سجل التعديل
+        changes = json.dumps({
+            'old_total': inv.get('total', 0),
+            'new_total': data.get('total', 0),
+            'old_items_count': len(old_items),
+            'new_items_count': len(new_items)
+        }, ensure_ascii=False)
+        cursor.execute('''
+            INSERT INTO invoice_edit_history (invoice_id, edited_by, edited_by_name, changes)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            invoice_id,
+            data.get('edited_by_id'),
+            data.get('edited_by', ''),
+            changes
+        ))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/invoices/<int:invoice_id>/edit-history', methods=['GET'])
+def get_invoice_edit_history(invoice_id):
+    """جلب سجل تعديلات فاتورة"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM invoice_edit_history WHERE invoice_id = ? ORDER BY edited_at DESC', (invoice_id,))
+        history = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'history': history})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== أداء الشفتات - شاشة الأدمن =====
+
+@app.route('/api/admin-dashboard/shift-performance', methods=['GET'])
+def admin_dashboard_shift_performance():
+    """أداء الموظفين حسب الشفتات"""
+    try:
+        tenant_slug = get_tenant_slug()
+        db_path = get_tenant_db_path(tenant_slug) if tenant_slug else DB_PATH
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # جلب الشفتات
+        cursor.execute('SELECT * FROM shifts WHERE is_active = 1 ORDER BY id')
+        shifts = [dict(row) for row in cursor.fetchall()]
+
+        # أداء كل شفت
+        shift_stats = []
+        for shift in shifts:
+            # إجمالي المبيعات
+            cursor.execute('''
+                SELECT
+                    COUNT(i.id) as total_invoices,
+                    COALESCE(SUM(i.total), 0) as total_sales,
+                    COUNT(CASE WHEN DATE(i.created_at) = DATE('now') THEN 1 END) as today_invoices,
+                    COALESCE(SUM(CASE WHEN DATE(i.created_at) = DATE('now') THEN i.total ELSE 0 END), 0) as today_sales
+                FROM invoices i
+                WHERE i.shift_id = ? AND i.cancelled = 0
+            ''', (shift['id'],))
+            stats = dict(cursor.fetchone())
+
+            # موظفي هذا الشفت
+            cursor.execute('''
+                SELECT u.id, u.full_name, u.username,
+                    COUNT(i.id) as invoice_count,
+                    COALESCE(SUM(i.total), 0) as total_sales
+                FROM users u
+                LEFT JOIN invoices i ON i.employee_name = u.full_name AND i.shift_id = ? AND i.cancelled = 0
+                WHERE u.shift_id = ? AND u.is_active = 1
+                GROUP BY u.id
+                ORDER BY total_sales DESC
+            ''', (shift['id'], shift['id']))
+            employees = [dict(row) for row in cursor.fetchall()]
+
+            shift_stats.append({
+                'shift': shift,
+                'stats': stats,
+                'employees': employees
+            })
+
+        # موظفين بدون شفت
+        cursor.execute('''
+            SELECT u.id, u.full_name, u.username,
+                COUNT(i.id) as invoice_count,
+                COALESCE(SUM(i.total), 0) as total_sales
+            FROM users u
+            LEFT JOIN invoices i ON i.employee_name = u.full_name AND i.cancelled = 0
+            WHERE (u.shift_id IS NULL OR u.shift_id = 0) AND u.is_active = 1
+            GROUP BY u.id
+            ORDER BY total_sales DESC
+        ''')
+        unassigned = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+        return jsonify({
+            'success': True,
+            'shift_stats': shift_stats,
+            'unassigned_employees': unassigned
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
