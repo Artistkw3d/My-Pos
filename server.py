@@ -272,6 +272,9 @@ def migrate_database(db_path=None):
         add_column('invoices', 'edited_by', 'TEXT')
         add_column('invoices', 'edit_count', 'INTEGER', 0)
 
+        # قفل الشفت التلقائي
+        add_column('shifts', 'auto_lock', 'INTEGER', 0)
+
         # إعدادات الولاء الافتراضية
         try:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
@@ -689,6 +692,7 @@ def create_tenant_database(slug):
             start_time TEXT,
             end_time TEXT,
             is_active INTEGER DEFAULT 1,
+            auto_lock INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -2066,31 +2070,41 @@ def delete_damaged_item(damaged_id):
 def get_system_logs():
     """جلب سجل النظام"""
     try:
-        limit = request.args.get('limit', 100)
+        limit = request.args.get('limit', 500)
         action_type = request.args.get('action_type')
         user_id = request.args.get('user_id')
-        
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+
         conn = get_db()
         cursor = conn.cursor()
-        
+
         query = 'SELECT * FROM system_logs WHERE 1=1'
         params = []
-        
+
         if action_type:
             query += ' AND action_type = ?'
             params.append(action_type)
-        
+
         if user_id:
             query += ' AND user_id = ?'
             params.append(user_id)
-        
+
+        if date_from:
+            query += ' AND created_at >= ?'
+            params.append(date_from + ' 00:00:00')
+
+        if date_to:
+            query += ' AND created_at <= ?'
+            params.append(date_to + ' 23:59:59')
+
         query += ' ORDER BY created_at DESC LIMIT ?'
         params.append(limit)
-        
+
         cursor.execute(query, params)
         logs = [dict_from_row(row) for row in cursor.fetchall()]
         conn.close()
-        
+
         return jsonify({'success': True, 'logs': logs})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -5974,13 +5988,14 @@ def add_shift():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO shifts (name, start_time, end_time, is_active)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO shifts (name, start_time, end_time, is_active, auto_lock)
+            VALUES (?, ?, ?, ?, ?)
         ''', (
             data.get('name'),
             data.get('start_time', ''),
             data.get('end_time', ''),
-            data.get('is_active', 1)
+            data.get('is_active', 1),
+            data.get('auto_lock', 0)
         ))
         shift_id = cursor.lastrowid
         conn.commit()
@@ -5997,13 +6012,14 @@ def update_shift(shift_id):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
-            UPDATE shifts SET name = ?, start_time = ?, end_time = ?, is_active = ?
+            UPDATE shifts SET name = ?, start_time = ?, end_time = ?, is_active = ?, auto_lock = ?
             WHERE id = ?
         ''', (
             data.get('name'),
             data.get('start_time', ''),
             data.get('end_time', ''),
             data.get('is_active', 1),
+            data.get('auto_lock', 0),
             shift_id
         ))
         conn.commit()
@@ -6024,6 +6040,54 @@ def delete_shift(shift_id):
         conn.commit()
         conn.close()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/shifts/check-lock', methods=['POST'])
+def check_shift_lock():
+    """فحص هل انتهى الشفت ويجب قفل النظام"""
+    try:
+        data = request.json
+        shift_id = data.get('shift_id')
+        if not shift_id:
+            return jsonify({'success': True, 'locked': False})
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM shifts WHERE id = ?', (shift_id,))
+        shift = cursor.fetchone()
+        conn.close()
+
+        if not shift:
+            return jsonify({'success': True, 'locked': False})
+
+        shift = dict_from_row(shift)
+        if not shift.get('auto_lock') or not shift.get('end_time'):
+            return jsonify({'success': True, 'locked': False})
+
+        # مقارنة الوقت الحالي مع وقت انتهاء الشفت
+        from datetime import datetime
+        now = datetime.now()
+        current_time = now.strftime('%H:%M')
+
+        end_time = shift['end_time']
+        start_time = shift.get('start_time', '00:00')
+
+        # التعامل مع الشفتات التي تتجاوز منتصف الليل
+        if start_time <= end_time:
+            # شفت عادي (مثل 08:00 - 16:00)
+            locked = current_time >= end_time or current_time < start_time
+        else:
+            # شفت ليلي (مثل 22:00 - 06:00)
+            locked = current_time >= end_time and current_time < start_time
+
+        return jsonify({
+            'success': True,
+            'locked': locked,
+            'shift_name': shift['name'],
+            'end_time': end_time,
+            'current_time': current_time
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
