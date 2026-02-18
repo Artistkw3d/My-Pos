@@ -194,7 +194,8 @@ async function initializeUI() {
         canCancelInvoices: hasPerm('can_cancel_invoices'),
         canViewBranches: hasPerm('can_view_branches'),
         canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock'),
-        canViewXbrl: hasPerm('can_view_xbrl')
+        canViewXbrl: hasPerm('can_view_xbrl'),
+        canEditCompletedInvoices: hasPerm('can_edit_completed_invoices')
     };
     
     // إخفاء/إظهار الأزرار والتبويبات
@@ -1331,6 +1332,7 @@ async function completeSale() {
         payments: payments,
         table_id: document.getElementById('selectedTableId')?.value || null,
         table_name: document.getElementById('selectedTableId')?.selectedOptions[0]?.textContent || '',
+        shift_id: currentUser.shift_id || null,
         items: cart.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -1523,6 +1525,14 @@ function displayInvoiceView(inv) {
     const cancelBtn = document.getElementById('cancelInvoiceBtn');
     if (cancelBtn) cancelBtn.style.display = (inv.cancelled || !window.userPermissions.canCancelInvoices) ? 'none' : '';
 
+    // إخفاء/إظهار زر التعديل
+    const editBtn = document.getElementById('editInvoiceBtn');
+    if (editBtn) {
+        const isCompleted = inv.order_status === 'منجز';
+        const canEdit = !inv.cancelled && (!isCompleted || window.userPermissions.canEditCompletedInvoices);
+        editBtn.style.display = canEdit ? '' : 'none';
+    }
+
     const content = document.getElementById('invoiceViewContent');
     const isCancelled = inv.cancelled;
     content.innerHTML = `
@@ -1548,6 +1558,8 @@ function displayInvoiceView(inv) {
                 ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><strong>رقم العملية (${paymentMethods[p.method]}):</strong> ${escHTML(p.transaction_number)}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${escHTML(inv.transaction_number)}</div>` : '')}
                 <div style="grid-column: 1/-1;"><strong>حالة الطلب:</strong> <span class="order-status-badge status-${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'processing' : (inv.order_status === 'قيد التوصيل' ? 'delivering' : 'completed')}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
                 ${inv.table_name ? `<div><strong>🍽️ الطاولة:</strong> ${escHTML(inv.table_name)}</div>` : ''}
+                ${inv.shift_name ? `<div><strong>🕐 الشفت:</strong> ${escHTML(inv.shift_name)}</div>` : ''}
+                ${inv.edit_count > 0 ? `<div style="grid-column: 1/-1; color: #e67e22;"><strong>✏️ معدّلة:</strong> ${inv.edit_count} مرة - آخر تعديل: ${inv.edited_by || ''} ${inv.edited_at ? new Date(inv.edited_at).toLocaleDateString('ar') : ''}</div>` : ''}
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
                 <thead><tr style="background:#667eea; color:white;">
@@ -2400,33 +2412,43 @@ function loadAccounting() {
 async function loadUsersTable() {
     if (currentUser.role !== 'admin') return;
     try {
-        // تحميل المستخدمين
-        const usersResponse = await fetch(`${API_URL}/api/users`);
+        // تحميل المستخدمين والفروع والشفتات
+        const [usersResponse, branchesResponse, shiftsResponse] = await Promise.all([
+            fetch(`${API_URL}/api/users`),
+            fetch(`${API_URL}/api/branches`),
+            fetch(`${API_URL}/api/shifts`)
+        ]);
         const usersData = await usersResponse.json();
-        
-        // تحميل الفروع
-        const branchesResponse = await fetch(`${API_URL}/api/branches`);
         const branchesData = await branchesResponse.json();
-        
+        const shiftsData = await shiftsResponse.json();
+
         if (usersData.success && branchesData.success) {
             // إنشاء map للفروع
             const branchesMap = {};
             branchesData.branches.forEach(b => {
                 branchesMap[b.id] = b.name;
             });
-            
+            // إنشاء map للشفتات
+            const shiftsMap = {};
+            if (shiftsData.success) {
+                shiftsData.shifts.forEach(s => {
+                    shiftsMap[s.id] = s.name;
+                });
+            }
+
             const container = document.getElementById('usersTableContainer');
             container.innerHTML = `
                 <table class="data-table">
-                    <thead><tr><th>المستخدم</th><th>الاسم</th><th>الصلاحية</th><th>الفرع</th><th>البادئة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+                    <thead><tr><th>المستخدم</th><th>الاسم</th><th>الصلاحية</th><th>الفرع</th><th>الشفت</th><th>البادئة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
                     <tbody>
                         ${usersData.users.map(u => `
                             <tr>
-                                <td><strong>${u.username}</strong></td>
-                                <td>${u.full_name}</td>
+                                <td><strong>${escHTML(u.username)}</strong></td>
+                                <td>${escHTML(u.full_name)}</td>
                                 <td>${u.role === 'admin' ? '👑 مدير' : '💼 كاشير'}</td>
-                                <td><span style="background:#38a169; color:white; padding:4px 8px; border-radius:4px;">${branchesMap[u.branch_id] || 'الفرع الرئيسي'}</span></td>
-                                <td><span style="background:#667eea; color:white; padding:4px 8px; border-radius:4px; font-weight:bold;">${u.invoice_prefix || '-'}</span></td>
+                                <td><span style="background:#38a169; color:white; padding:4px 8px; border-radius:4px;">${escHTML(branchesMap[u.branch_id] || 'الفرع الرئيسي')}</span></td>
+                                <td>${u.shift_id ? `<span style="background:#e67e22; color:white; padding:4px 8px; border-radius:4px;">🕐 ${escHTML(shiftsMap[u.shift_id] || '-')}</span>` : '<span style="color:#a0aec0;">-</span>'}</td>
+                                <td><span style="background:#667eea; color:white; padding:4px 8px; border-radius:4px; font-weight:bold;">${escHTML(u.invoice_prefix || '-')}</span></td>
                                 <td>${u.is_active ? '✅' : '❌'}</td>
                                 <td>
                                     <button onclick="editUser(${u.id})" class="btn-sm">✏️</button>
@@ -2445,6 +2467,7 @@ async function loadUsersTable() {
 
 function showAddUser() {
     loadBranchesForUserForm(); // تحميل الفروع
+    loadShiftsForUserForm(); // تحميل الشفتات
     document.getElementById('userModalTitle').textContent = '➕ إضافة مستخدم';
     document.getElementById('userForm').reset();
     document.getElementById('userId').value = '';
@@ -2468,7 +2491,8 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         full_name: document.getElementById('fullName').value,
         role: role,
         invoice_prefix: document.getElementById('invoicePrefix').value,
-        branch_id: parseInt(document.getElementById('userBranch').value) || 1
+        branch_id: parseInt(document.getElementById('userBranch').value) || 1,
+        shift_id: parseInt(document.getElementById('userShift').value) || null
     };
     
     // إضافة الصلاحيات إذا كان كاشير
@@ -2510,6 +2534,7 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         userData.can_cancel_invoices = 1;
         userData.can_view_branches = 1;
         userData.can_view_cross_branch_stock = 1;
+        userData.can_edit_completed_invoices = 1;
     }
     
     if (userId && !userData.password) delete userData.password;
@@ -2559,9 +2584,10 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
 
 async function editUser(id) {
     try {
-        // تحميل الفروع أولاً
+        // تحميل الفروع والشفتات أولاً
         await loadBranchesForUserForm();
-        
+        await loadShiftsForUserForm();
+
         const response = await fetch(`${API_URL}/api/users`);
         const data = await response.json();
         if (data.success) {
@@ -2577,6 +2603,7 @@ async function editUser(id) {
             document.getElementById('userRole').value = user.role;
             document.getElementById('invoicePrefix').value = user.invoice_prefix || '';
             document.getElementById('userBranch').value = user.branch_id || 1;
+            document.getElementById('userShift').value = user.shift_id || '';
             
             // إظهار/إخفاء قسم الصلاحيات
             const permSection = document.getElementById('permissionsSection');
@@ -9266,7 +9293,8 @@ async function loadAdminDashboard() {
     // تحميل البيانات بالتوازي
     await Promise.all([
         loadAdminDashInvoices(),
-        loadAdminDashStock()
+        loadAdminDashStock(),
+        loadAdminDashShiftPerformance()
     ]);
 }
 
@@ -9981,6 +10009,416 @@ async function downloadSavedXBRL(reportId) {
 }
 
 console.log('[XBRL/IFRS] Loaded ✅');
+
+// ===== نظام الشفتات =====
+
+async function loadShiftsForUserForm() {
+    try {
+        const response = await fetch(`${API_URL}/api/shifts`);
+        const data = await response.json();
+        if (data.success) {
+            const select = document.getElementById('userShift');
+            if (select) {
+                select.innerHTML = '<option value="">-- بدون شفت --</option>' +
+                    data.shifts.filter(s => s.is_active).map(s =>
+                        `<option value="${s.id}">${escHTML(s.name)}${s.start_time ? ` (${escHTML(s.start_time)} - ${escHTML(s.end_time)})` : ''}</option>`
+                    ).join('');
+            }
+        }
+    } catch (error) {
+        console.error('[Shifts] loadShiftsForUserForm error:', error);
+    }
+}
+
+function openShiftsManagement() {
+    document.getElementById('shiftsManagementModal').classList.add('active');
+    loadShiftsList();
+}
+
+function closeShiftsManagement() {
+    document.getElementById('shiftsManagementModal').classList.remove('active');
+}
+
+async function loadShiftsList() {
+    try {
+        const response = await fetch(`${API_URL}/api/shifts`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        const container = document.getElementById('shiftsListContainer');
+        if (data.shifts.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: #a0aec0; padding: 30px;">لا توجد شفتات. أضف شفت جديد.</div>';
+            return;
+        }
+
+        container.innerHTML = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #f7fafc;">
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #e2e8f0;">الاسم</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">من</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">إلى</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">الحالة</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.shifts.map(s => `
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 10px; font-weight: bold;">🕐 ${escHTML(s.name)}</td>
+                            <td style="padding: 10px; text-align: center;">${escHTML(s.start_time) || '-'}</td>
+                            <td style="padding: 10px; text-align: center;">${escHTML(s.end_time) || '-'}</td>
+                            <td style="padding: 10px; text-align: center;">
+                                <span style="padding: 3px 10px; border-radius: 12px; font-size: 12px; background: ${s.is_active ? '#c6f6d5' : '#fed7d7'}; color: ${s.is_active ? '#22543d' : '#9b2c2c'};">
+                                    ${s.is_active ? 'نشط' : 'معطل'}
+                                </span>
+                            </td>
+                            <td style="padding: 10px; text-align: center;">
+                                <button onclick="toggleShiftActive(${s.id}, '${escHTML(s.name)}', '${escHTML(s.start_time)}', '${escHTML(s.end_time)}', ${s.is_active ? 0 : 1})" class="btn" style="font-size: 11px; padding: 4px 10px; background: ${s.is_active ? '#e67e22' : '#38a169'};">${s.is_active ? 'تعطيل' : 'تفعيل'}</button>
+                                <button onclick="deleteShift(${s.id})" class="btn" style="font-size: 11px; padding: 4px 10px; background: #dc3545;">حذف</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    } catch (error) {
+        document.getElementById('shiftsListContainer').innerHTML = `<div style="color: #dc3545; text-align: center; padding: 20px;">خطأ: ${escHTML(error.message)}</div>`;
+    }
+}
+
+async function addNewShift() {
+    const name = document.getElementById('newShiftName').value.trim();
+    if (!name) { alert('أدخل اسم الشفت'); return; }
+    const startTime = document.getElementById('newShiftStart').value;
+    const endTime = document.getElementById('newShiftEnd').value;
+
+    try {
+        const response = await fetch(`${API_URL}/api/shifts`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, start_time: startTime, end_time: endTime })
+        });
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById('newShiftName').value = '';
+            document.getElementById('newShiftStart').value = '';
+            document.getElementById('newShiftEnd').value = '';
+            loadShiftsList();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ في الاتصال');
+    }
+}
+
+async function toggleShiftActive(id, name, startTime, endTime, newActive) {
+    try {
+        const response = await fetch(`${API_URL}/api/shifts/${id}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, start_time: startTime, end_time: endTime, is_active: newActive })
+        });
+        const data = await response.json();
+        if (data.success) loadShiftsList();
+    } catch (error) {
+        alert('خطأ في الاتصال');
+    }
+}
+
+async function deleteShift(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا الشفت؟')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/shifts/${id}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) loadShiftsList();
+        else alert('خطأ: ' + data.error);
+    } catch (error) {
+        alert('خطأ في الاتصال');
+    }
+}
+
+console.log('[Shifts] Loaded ✅');
+
+// ===== تعديل الفواتير =====
+
+// بيانات العناصر المعدلة
+window._editInvoiceItems = [];
+
+function closeEditInvoiceModal() {
+    document.getElementById('editInvoiceModal').classList.remove('active');
+}
+
+function renderEditInvoiceItems(items) {
+    const container = document.getElementById('editInvoiceItemsContainer');
+    container.innerHTML = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+                <tr style="background: #667eea; color: white;">
+                    <th style="padding: 8px; text-align: right;">المنتج</th>
+                    <th style="padding: 8px; text-align: center; width: 80px;">الكمية</th>
+                    <th style="padding: 8px; text-align: center; width: 100px;">السعر</th>
+                    <th style="padding: 8px; text-align: center; width: 100px;">الإجمالي</th>
+                    <th style="padding: 8px; text-align: center; width: 50px;">حذف</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${items.map((item, i) => `
+                    <tr style="border-bottom: 1px solid #e2e8f0;" data-index="${i}">
+                        <td style="padding: 8px;">${escHTML(item.product_name)}${item.variant_name ? ` (${escHTML(item.variant_name)})` : ''}</td>
+                        <td style="padding: 8px; text-align: center;">
+                            <input type="number" value="${item.quantity}" min="1" style="width: 60px; text-align: center; border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px;"
+                                onchange="updateEditItemQty(${i}, this.value)">
+                        </td>
+                        <td style="padding: 8px; text-align: center;">
+                            <input type="number" value="${item.price}" step="0.001" min="0" style="width: 80px; text-align: center; border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px;"
+                                onchange="updateEditItemPrice(${i}, this.value)">
+                        </td>
+                        <td style="padding: 8px; text-align: center; font-weight: bold;" id="editItemTotal_${i}">${(item.quantity * item.price).toFixed(3)}</td>
+                        <td style="padding: 8px; text-align: center;">
+                            <button onclick="removeEditItem(${i})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer;">✕</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>`;
+}
+
+function openEditInvoiceModal() {
+    if (!currentInvoice) return;
+    const inv = currentInvoice;
+
+    if (inv.order_status === 'منجز' && !window.userPermissions.canEditCompletedInvoices) {
+        alert('لا تملك صلاحية تعديل فاتورة منجزة');
+        return;
+    }
+    if (inv.cancelled) {
+        alert('لا يمكن تعديل فاتورة ملغية');
+        return;
+    }
+
+    document.getElementById('editInvoiceId').value = inv.id;
+    document.getElementById('editInvCustomerName').value = inv.customer_name || '';
+    document.getElementById('editInvCustomerPhone').value = inv.customer_phone || '';
+    document.getElementById('editInvCustomerAddress').value = inv.customer_address || '';
+    document.getElementById('editInvPaymentMethod').value = inv.payment_method || 'cash';
+    document.getElementById('editInvDeliveryFee').value = inv.delivery_fee || 0;
+    document.getElementById('editInvDiscount').value = inv.discount || 0;
+    document.getElementById('editInvNotes').value = inv.notes || '';
+
+    // نسخة عميقة من العناصر
+    window._editInvoiceItems = (inv.items || []).map(item => ({...item}));
+    renderEditInvoiceItems(window._editInvoiceItems);
+    recalcEditInvoiceTotal();
+
+    document.getElementById('invoiceViewModal').classList.remove('active');
+    document.getElementById('editInvoiceModal').classList.add('active');
+}
+
+function updateEditItemQty(index, value) {
+    const qty = parseInt(value) || 1;
+    window._editInvoiceItems[index].quantity = qty;
+    window._editInvoiceItems[index].total = qty * window._editInvoiceItems[index].price;
+    const totalEl = document.getElementById(`editItemTotal_${index}`);
+    if (totalEl) totalEl.textContent = window._editInvoiceItems[index].total.toFixed(3);
+    recalcEditInvoiceTotal();
+}
+
+function updateEditItemPrice(index, value) {
+    const price = parseFloat(value) || 0;
+    window._editInvoiceItems[index].price = price;
+    window._editInvoiceItems[index].total = window._editInvoiceItems[index].quantity * price;
+    const totalEl = document.getElementById(`editItemTotal_${index}`);
+    if (totalEl) totalEl.textContent = window._editInvoiceItems[index].total.toFixed(3);
+    recalcEditInvoiceTotal();
+}
+
+function removeEditItem(index) {
+    window._editInvoiceItems.splice(index, 1);
+    renderEditInvoiceItems(window._editInvoiceItems);
+    recalcEditInvoiceTotal();
+}
+
+function recalcEditInvoiceTotal() {
+    const subtotal = window._editInvoiceItems.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const discount = parseFloat(document.getElementById('editInvDiscount').value) || 0;
+    const deliveryFee = parseFloat(document.getElementById('editInvDeliveryFee').value) || 0;
+    const total = subtotal - discount + deliveryFee;
+    document.getElementById('editInvTotal').textContent = total.toFixed(3);
+}
+
+// ربط حقول الخصم والتوصيل بإعادة الحساب
+document.getElementById('editInvDiscount')?.addEventListener('input', recalcEditInvoiceTotal);
+document.getElementById('editInvDeliveryFee')?.addEventListener('input', recalcEditInvoiceTotal);
+
+async function saveEditedInvoice() {
+    const invoiceId = document.getElementById('editInvoiceId').value;
+    if (!invoiceId) return;
+
+    const items = window._editInvoiceItems;
+    if (items.length === 0) {
+        alert('لا يمكن حفظ فاتورة بدون عناصر');
+        return;
+    }
+
+    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const discount = parseFloat(document.getElementById('editInvDiscount').value) || 0;
+    const deliveryFee = parseFloat(document.getElementById('editInvDeliveryFee').value) || 0;
+    const total = subtotal - discount + deliveryFee;
+
+    const editData = {
+        customer_name: document.getElementById('editInvCustomerName').value,
+        customer_phone: document.getElementById('editInvCustomerPhone').value,
+        customer_address: document.getElementById('editInvCustomerAddress').value,
+        payment_method: document.getElementById('editInvPaymentMethod').value,
+        delivery_fee: deliveryFee,
+        discount: discount,
+        subtotal: subtotal,
+        total: total,
+        notes: document.getElementById('editInvNotes').value,
+        edited_by: currentUser.full_name,
+        edited_by_id: currentUser.id,
+        can_edit_completed: window.userPermissions.canEditCompletedInvoices,
+        items: items.map(item => ({
+            product_id: item.product_id,
+            product_name: item.product_name,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.quantity * item.price,
+            branch_stock_id: item.branch_stock_id,
+            variant_id: item.variant_id || null,
+            variant_name: item.variant_name || null
+        }))
+    };
+
+    try {
+        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/edit`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(editData)
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('تم حفظ التعديلات بنجاح');
+            closeEditInvoiceModal();
+            // إعادة تحميل الفاتورة المعدلة
+            await viewInvoiceDetails(parseInt(invoiceId));
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ في الاتصال: ' + error.message);
+    }
+}
+
+console.log('[Invoice Edit] Loaded ✅');
+
+// ===== أداء الشفتات - شاشة الأدمن =====
+
+async function loadAdminDashShiftPerformance() {
+    const container = document.getElementById('adminDashShiftPerformance');
+    if (!container) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/admin-dashboard/shift-performance`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        const { shift_stats, unassigned_employees } = data;
+
+        if (shift_stats.length === 0 && unassigned_employees.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: #a0aec0; padding: 20px;">لا توجد شفتات. أضف شفتات من إدارة المستخدمين.</div>';
+            return;
+        }
+
+        let html = '';
+
+        // بطاقات الشفتات
+        html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px;">';
+        shift_stats.forEach(ss => {
+            const s = ss.shift;
+            const st = ss.stats;
+            html += `
+                <div style="background: linear-gradient(135deg, #667eea22, #764ba222); border: 2px solid #667eea44; border-radius: 14px; padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h4 style="margin: 0; color: #667eea; font-size: 16px;">🕐 ${escHTML(s.name)}</h4>
+                        <span style="font-size: 12px; color: #718096;">${escHTML(s.start_time || '')} - ${escHTML(s.end_time || '')}</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                        <div style="background: white; padding: 10px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 22px; font-weight: bold; color: #667eea;">${st.total_invoices}</div>
+                            <div style="font-size: 11px; color: #718096;">إجمالي الفواتير</div>
+                        </div>
+                        <div style="background: white; padding: 10px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 22px; font-weight: bold; color: #38a169;">${Number(st.total_sales).toFixed(2)}</div>
+                            <div style="font-size: 11px; color: #718096;">إجمالي المبيعات</div>
+                        </div>
+                        <div style="background: white; padding: 10px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 22px; font-weight: bold; color: #e67e22;">${st.today_invoices}</div>
+                            <div style="font-size: 11px; color: #718096;">فواتير اليوم</div>
+                        </div>
+                        <div style="background: white; padding: 10px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 22px; font-weight: bold; color: #4facfe;">${Number(st.today_sales).toFixed(2)}</div>
+                            <div style="font-size: 11px; color: #718096;">مبيعات اليوم</div>
+                        </div>
+                    </div>
+                    ${ss.employees.length > 0 ? `
+                    <div style="font-size: 13px; font-weight: bold; color: #4a5568; margin-bottom: 8px;">موظفي الشفت:</div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="background: #f7fafc;">
+                                <th style="padding: 6px 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">الموظف</th>
+                                <th style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">الفواتير</th>
+                                <th style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">المبيعات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${ss.employees.map(emp => `
+                                <tr>
+                                    <td style="padding: 5px 8px; border-bottom: 1px solid #f0f0f0;">${escHTML(emp.full_name)}</td>
+                                    <td style="padding: 5px 8px; text-align: center; border-bottom: 1px solid #f0f0f0;">${emp.invoice_count}</td>
+                                    <td style="padding: 5px 8px; text-align: center; border-bottom: 1px solid #f0f0f0; color: #38a169; font-weight: bold;">${Number(emp.total_sales).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>` : '<div style="font-size: 12px; color: #a0aec0; text-align: center;">لا يوجد موظفين في هذا الشفت</div>'}
+                </div>`;
+        });
+        html += '</div>';
+
+        // موظفين بدون شفت
+        if (unassigned_employees.length > 0) {
+            html += `
+                <div style="background: #fff3cd22; border: 2px solid #ffc10744; border-radius: 14px; padding: 20px;">
+                    <h4 style="margin: 0 0 15px; color: #856404; font-size: 15px;">⚠️ موظفين بدون شفت</h4>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="background: #f7fafc;">
+                                <th style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">الموظف</th>
+                                <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">الفواتير</th>
+                                <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">المبيعات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${unassigned_employees.map(emp => `
+                                <tr>
+                                    <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0;">${escHTML(emp.full_name)}</td>
+                                    <td style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #f0f0f0;">${emp.invoice_count}</td>
+                                    <td style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #f0f0f0; color: #38a169; font-weight: bold;">${Number(emp.total_sales).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        container.innerHTML = html;
+    } catch (error) {
+        container.innerHTML = `<div style="color: #dc3545; text-align: center; padding: 20px;">خطأ في تحميل أداء الشفتات: ${escHTML(error.message)}</div>`;
+    }
+}
+
+console.log('[Shift Performance] Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 

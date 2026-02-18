@@ -1182,7 +1182,10 @@
             <div style="padding: 20px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
                     <h2>👥 المستخدمين</h2>
-                    <button class="add-btn" onclick="showAddUser()">➕ إضافة</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="add-btn" onclick="openShiftsManagement()" style="background: #e67e22;">🕐 الشفتات</button>
+                        <button class="add-btn" onclick="showAddUser()">➕ إضافة</button>
+                    </div>
                 </div>
                 <div id="usersTableContainer"></div>
             </div>
@@ -1499,6 +1502,14 @@
                         <input type="text" id="adminDashStockSearch" placeholder="🔍 ابحث عن منتج..." oninput="filterAdminDashStock()" style="padding: 8px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; width: 250px;">
                     </div>
                     <div id="adminDashStockTable" style="overflow-x: auto;">
+                        <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                    </div>
+                </div>
+
+                <!-- أداء الشفتات -->
+                <div style="background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px; margin-top: 25px;">
+                    <h3 style="margin: 0 0 20px; color: #2d3748; font-size: 18px;">🕐 أداء الشفتات</h3>
+                    <div id="adminDashShiftPerformance" style="overflow-x: auto;">
                         <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
                     </div>
                 </div>
@@ -1928,6 +1939,12 @@
                             <option value="1">الفرع الرئيسي</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label>الشفت:</label>
+                        <select id="userShift">
+                            <option value="">-- بدون شفت --</option>
+                        </select>
+                    </div>
                     <div class="form-group"><label>بادئة الفاتورة:</label><input type="text" id="invoicePrefix" maxlength="10" placeholder="AHM, S1"></div>
                     
                     <div class="form-group" id="permissionsSection" style="display: none;">
@@ -1992,6 +2009,10 @@
                                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
                                         <input type="checkbox" name="can_cancel_invoices" style="width: 18px; height: 18px;">
                                         <span>❌ إلغاء الفواتير</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_edit_completed_invoices" style="width: 18px; height: 18px;">
+                                        <span>✏️ تعديل الفواتير المنجزة</span>
                                     </label>
                                 </div>
                             </div>
@@ -2323,11 +2344,91 @@
                 <div style="display: flex; gap: 10px;">
                     <button onclick="printInvoiceFromView()" class="btn">🖨️ طباعة</button>
                     <button onclick="printThermalInvoice()" class="btn" style="background: #e67e22; font-size: 12px;">🧾 57×40</button>
+                    <button onclick="openEditInvoiceModal()" class="btn" id="editInvoiceBtn" style="background: #38a169; font-size: 12px;">✏️ تعديل</button>
                     <button onclick="showCancelInvoiceModal()" class="btn" id="cancelInvoiceBtn" style="background: #dc3545; font-size: 12px;">🚫 إلغاء</button>
                     <button class="close-btn" onclick="closeInvoiceView()">✖️</button>
                 </div>
             </div>
             <div class="modal-body" id="invoiceViewContent"></div>
+        </div>
+    </div>
+
+    <!-- Edit Invoice Modal -->
+    <div class="modal" id="editInvoiceModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2>✏️ تعديل الفاتورة</h2>
+                <button class="close-btn" onclick="closeEditInvoiceModal()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editInvoiceId">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>اسم العميل:</label>
+                        <input type="text" id="editInvCustomerName">
+                    </div>
+                    <div class="form-group">
+                        <label>هاتف العميل:</label>
+                        <input type="text" id="editInvCustomerPhone">
+                    </div>
+                    <div class="form-group">
+                        <label>عنوان العميل:</label>
+                        <input type="text" id="editInvCustomerAddress">
+                    </div>
+                    <div class="form-group">
+                        <label>طريقة الدفع:</label>
+                        <select id="editInvPaymentMethod">
+                            <option value="cash">نقداً</option>
+                            <option value="knet">كي نت</option>
+                            <option value="visa">فيزا</option>
+                            <option value="other">أخرى</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>رسوم التوصيل:</label>
+                        <input type="number" id="editInvDeliveryFee" step="0.001" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>الخصم:</label>
+                        <input type="number" id="editInvDiscount" step="0.001" value="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>ملاحظات:</label>
+                    <textarea id="editInvNotes" rows="2" style="width: 100%;"></textarea>
+                </div>
+
+                <h3 style="margin: 20px 0 10px; color: #667eea;">عناصر الفاتورة</h3>
+                <div id="editInvoiceItemsContainer" style="max-height: 300px; overflow-y: auto;"></div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 15px; border-top: 2px solid #667eea;">
+                    <div>
+                        <span style="font-size: 18px; font-weight: bold; color: #667eea;">الإجمالي: <span id="editInvTotal">0.000</span> د.ك</span>
+                    </div>
+                    <button onclick="saveEditedInvoice()" class="btn" style="background: #38a169; padding: 12px 30px;">حفظ التعديلات</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shifts Management Modal -->
+    <div class="modal" id="shiftsManagementModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>🕐 إدارة الشفتات</h2>
+                <button class="close-btn" onclick="closeShiftsManagement()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <input type="text" id="newShiftName" placeholder="اسم الشفت (مثل: شفت أ)" style="flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                    <input type="time" id="newShiftStart" style="padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                    <input type="time" id="newShiftEnd" style="padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                    <button onclick="addNewShift()" class="btn" style="background: #667eea; white-space: nowrap;">➕ إضافة</button>
+                </div>
+                <div id="shiftsListContainer" style="min-height: 100px;">
+                    <div style="text-align: center; color: #a0aec0; padding: 30px;">جاري التحميل...</div>
+                </div>
+            </div>
         </div>
     </div>
 
