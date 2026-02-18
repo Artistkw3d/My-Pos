@@ -5440,6 +5440,27 @@ def generate_xbrl():
         equity_closing_other = equity_opening_other + other_comprehensive_income
         equity_closing_total = equity_closing_capital + equity_closing_retained + equity_closing_other
 
+        # === بيانات الشركاء (IAS 1 - تفصيل حقوق الملكية لكل شريك) ===
+        partners = manual_adjustments.get('partners', [])
+        partners_data = []
+        for p in partners:
+            p_name = p.get('name', '')
+            p_capital_opening = p.get('capital_opening', 0)
+            p_share_pct = p.get('share_percent', 0)
+            p_profit = net_profit * (p_share_pct / 100) if p_share_pct > 0 else 0
+            p_distributions = p.get('distributions', 0)
+            p_capital_change = p.get('capital_change', 0)
+            p_capital_closing = p_capital_opening + p_profit - p_distributions + p_capital_change
+            partners_data.append({
+                'name': p_name,
+                'capital_opening': p_capital_opening,
+                'share_percent': p_share_pct,
+                'profit_share': round(p_profit, 2),
+                'distributions': p_distributions,
+                'capital_change': p_capital_change,
+                'capital_closing': round(p_capital_closing, 2)
+            })
+
         # Inline XBRL (iXBRL) HTML Generation (IFRS Taxonomy 2024)
         def fmt(v):
             return f'{v:,.2f}'
@@ -5750,13 +5771,13 @@ def generate_xbrl():
       <td class="num">{fmt(other_comprehensive_income)}</td>
     </tr>
     <tr>
-      <td>أرباح موزعة</td>
+      <td>أرباح موزعة (توزيعات على الشركاء)</td>
       <td class="num">-</td>
       <td class="num">(<ix:nonFraction name="ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(dividends_declared)}</ix:nonFraction>)</td>
       <td class="num">({fmt(dividends_declared)})</td>
     </tr>
     <tr>
-      <td>زيادة رأس المال</td>
+      <td>زيادة / تغير في رأس المال</td>
       <td class="num"><ix:nonFraction name="ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_new_capital)}</ix:nonFraction></td>
       <td class="num">-</td>
       <td class="num">{fmt(equity_new_capital)}</td>
@@ -5768,6 +5789,40 @@ def generate_xbrl():
       <td class="num">{fmt(equity_closing_total)}</td>
     </tr>
   </table>
+
+  {''.join(f"""
+  <!-- تفصيل حقوق الملكية لكل شريك -->
+  <h3 style="color: #2b6cb0; margin-top: 25px;">تفصيل حقوق الملكية حسب الشركاء</h3>
+  <table>
+    <tr>
+      <th>الشريك</th>
+      <th style="width:100px">نسبة الملكية</th>
+      <th style="width:130px">رأس المال الافتتاحي</th>
+      <th style="width:130px">نصيب الربح</th>
+      <th style="width:130px">التوزيعات</th>
+      <th style="width:130px">تغير رأس المال</th>
+      <th style="width:130px">الرصيد الختامي</th>
+    </tr>
+    """ + ''.join(f"""<tr>
+      <td style="font-weight: bold;">{pd['name']}</td>
+      <td class="num">{pd['share_percent']:.1f}%</td>
+      <td class="num">{fmt(pd['capital_opening'])}</td>
+      <td class="num" style="color: #38a169;">{fmt(pd['profit_share'])}</td>
+      <td class="num" style="color: #c53030;">({fmt(pd['distributions'])})</td>
+      <td class="num">{fmt(pd['capital_change'])}</td>
+      <td class="num" style="font-weight: bold;">{fmt(pd['capital_closing'])}</td>
+    </tr>""" for pd in partners_data) + f"""
+    <tr class="grand-total">
+      <td>الإجمالي</td>
+      <td class="num">{sum(pd['share_percent'] for pd in partners_data):.1f}%</td>
+      <td class="num">{fmt(sum(pd['capital_opening'] for pd in partners_data))}</td>
+      <td class="num">{fmt(sum(pd['profit_share'] for pd in partners_data))}</td>
+      <td class="num">({fmt(sum(pd['distributions'] for pd in partners_data))})</td>
+      <td class="num">{fmt(sum(pd['capital_change'] for pd in partners_data))}</td>
+      <td class="num">{fmt(sum(pd['capital_closing'] for pd in partners_data))}</td>
+    </tr>
+  </table>
+  """ if partners_data else '')}
 
   <div class="footer">
     <p>تقرير مالي مولّد آلياً وفق معايير IFRS - صيغة Inline XBRL (iXBRL)</p>
@@ -5813,7 +5868,8 @@ def generate_xbrl():
                 'net_profit': net_profit,
                 'dividends': dividends_declared,
                 'new_capital': equity_new_capital,
-                'other_comprehensive_income': other_comprehensive_income
+                'other_comprehensive_income': other_comprehensive_income,
+                'partners': partners_data
             },
             'company': company,
             'manual_adjustments': manual_adjustments
@@ -5854,7 +5910,8 @@ def generate_xbrl():
                 'equity_opening_total': equity_opening_total,
                 'equity_closing_total': equity_closing_total,
                 'dividends_declared': dividends_declared,
-                'other_comprehensive_income': other_comprehensive_income
+                'other_comprehensive_income': other_comprehensive_income,
+                'partners': partners_data
             }
         })
     except Exception as e:

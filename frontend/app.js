@@ -9735,6 +9735,103 @@ function recalcXBRLCashFlow() {
     document.getElementById('xbrl_cash_ending').textContent = fmt(cashEnding);
 }
 
+// ===== بيانات الشركاء - XBRL =====
+let _xbrlPartnerCount = 0;
+
+function addXBRLPartner(data) {
+    _xbrlPartnerCount++;
+    const idx = _xbrlPartnerCount;
+    const container = document.getElementById('xbrl_partners_container');
+    const div = document.createElement('div');
+    div.id = `xbrl_partner_${idx}`;
+    div.style.cssText = 'background: #fef9ee; border: 2px solid #e67e2244; border-radius: 10px; padding: 15px; margin-bottom: 12px; position: relative;';
+    div.innerHTML = `
+        <button type="button" onclick="removeXBRLPartner(${idx})" style="position: absolute; top: 8px; left: 8px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 14px;">✕</button>
+        <div style="font-weight: bold; color: #e67e22; margin-bottom: 10px;">👤 شريك ${idx}</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+            <div class="form-group">
+                <label style="font-size: 12px;">اسم الشريك:</label>
+                <input type="text" class="xbrl-partner-name" value="${escHTML((data && data.name) || '')}" style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; width: 100%;">
+            </div>
+            <div class="form-group">
+                <label style="font-size: 12px;">نسبة الملكية %:</label>
+                <input type="number" class="xbrl-partner-share" step="0.01" value="${(data && data.share_percent) || 0}" onchange="recalcXBRLPartners()" style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; width: 100%;">
+            </div>
+            <div class="form-group">
+                <label style="font-size: 12px;">رأس المال الافتتاحي:</label>
+                <input type="number" class="xbrl-partner-capital-opening" step="0.01" value="${(data && data.capital_opening) || 0}" onchange="recalcXBRLPartners()" style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; width: 100%;">
+            </div>
+            <div class="form-group">
+                <label style="font-size: 12px;">التوزيعات (مسحوبات):</label>
+                <input type="number" class="xbrl-partner-distributions" step="0.01" value="${(data && data.distributions) || 0}" onchange="recalcXBRLPartners()" style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; width: 100%;">
+            </div>
+            <div class="form-group">
+                <label style="font-size: 12px;">تغير رأس المال:</label>
+                <input type="number" class="xbrl-partner-capital-change" step="0.01" value="${(data && data.capital_change) || 0}" onchange="recalcXBRLPartners()" style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; width: 100%;">
+            </div>
+            <div class="form-group">
+                <label style="font-size: 12px;">نصيب الربح <span style="color: #48bb78;">✓ تلقائي</span>:</label>
+                <input type="number" class="xbrl-partner-profit" step="0.01" value="0" readonly style="padding: 8px; border: 1px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+            </div>
+        </div>
+        <div style="text-align: left; margin-top: 8px; font-weight: bold; color: #2b6cb0;">
+            الرصيد الختامي: <span class="xbrl-partner-closing" style="font-size: 16px;">0.00</span>
+        </div>
+    `;
+    container.appendChild(div);
+    recalcXBRLPartners();
+}
+
+function removeXBRLPartner(idx) {
+    const div = document.getElementById(`xbrl_partner_${idx}`);
+    if (div) div.remove();
+    recalcXBRLPartners();
+}
+
+function recalcXBRLPartners() {
+    const netProfit = parseFloat(document.getElementById('xbrl_eq_net_profit')?.value) || 0;
+    const partnerDivs = document.querySelectorAll('#xbrl_partners_container > div');
+    let totalDistributions = 0;
+
+    partnerDivs.forEach(div => {
+        const sharePct = parseFloat(div.querySelector('.xbrl-partner-share')?.value) || 0;
+        const capitalOpening = parseFloat(div.querySelector('.xbrl-partner-capital-opening')?.value) || 0;
+        const distributions = parseFloat(div.querySelector('.xbrl-partner-distributions')?.value) || 0;
+        const capitalChange = parseFloat(div.querySelector('.xbrl-partner-capital-change')?.value) || 0;
+        const profitShare = netProfit * (sharePct / 100);
+        const closing = capitalOpening + profitShare - distributions + capitalChange;
+
+        const profitInput = div.querySelector('.xbrl-partner-profit');
+        if (profitInput) profitInput.value = profitShare.toFixed(2);
+        const closingSpan = div.querySelector('.xbrl-partner-closing');
+        if (closingSpan) closingSpan.textContent = closing.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        totalDistributions += distributions;
+    });
+
+    // تحديث إجمالي التوزيعات في حقل الأرباح الموزعة
+    const divField = document.getElementById('xbrl_eq_dividends');
+    if (divField && totalDistributions > 0) {
+        divField.value = totalDistributions.toFixed(2);
+    }
+    recalcXBRLEquityChanges();
+}
+
+function getXBRLPartnersData() {
+    const partners = [];
+    const partnerDivs = document.querySelectorAll('#xbrl_partners_container > div');
+    partnerDivs.forEach(div => {
+        partners.push({
+            name: div.querySelector('.xbrl-partner-name')?.value || '',
+            share_percent: parseFloat(div.querySelector('.xbrl-partner-share')?.value) || 0,
+            capital_opening: parseFloat(div.querySelector('.xbrl-partner-capital-opening')?.value) || 0,
+            distributions: parseFloat(div.querySelector('.xbrl-partner-distributions')?.value) || 0,
+            capital_change: parseFloat(div.querySelector('.xbrl-partner-capital-change')?.value) || 0
+        });
+    });
+    return partners;
+}
+
 function recalcXBRLEquityChanges() {
     const val = (id) => parseFloat(document.getElementById(id).value) || 0;
     const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -9843,7 +9940,9 @@ async function generateXBRLReport() {
         equity_opening_other: val('xbrl_eq_opening_other'),
         equity_new_capital: val('xbrl_eq_new_capital'),
         dividends_declared: val('xbrl_eq_dividends'),
-        other_comprehensive_income: val('xbrl_eq_oci')
+        other_comprehensive_income: val('xbrl_eq_oci'),
+        // بيانات الشركاء
+        partners: getXBRLPartnersData()
     };
 
     try {
@@ -9907,14 +10006,40 @@ async function generateXBRLReport() {
             </table>`;
 
         // ملخص التغيرات في حقوق الملكية
-        document.getElementById('xbrl_equity_summary').innerHTML = `
+        let equityHtml = `
             <table style="width: 100%; border-collapse: collapse;">
                 <tr style="background: #ebf8ff;"><td style="padding: 10px 15px; font-weight: bold; color: #2b6cb0;">حقوق الملكية - بداية الفترة</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #2b6cb0;">${fmt(s.equity_opening_total)} ${currency}</td></tr>
                 <tr><td style="padding: 10px 15px; color: #38a169;">+ صافي ربح الفترة</td><td style="padding: 10px 15px; text-align: left; color: #38a169;">${fmt(s.net_profit)} ${currency}</td></tr>
                 <tr><td style="padding: 10px 15px; color: #805ad5;">+ الدخل الشامل الآخر</td><td style="padding: 10px 15px; text-align: left; color: #805ad5;">${fmt(s.other_comprehensive_income)} ${currency}</td></tr>
-                <tr><td style="padding: 10px 15px; color: #c53030;">- أرباح موزعة</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.dividends_declared)}) ${currency}</td></tr>
+                <tr><td style="padding: 10px 15px; color: #c53030;">- أرباح موزعة (توزيعات على الشركاء)</td><td style="padding: 10px 15px; text-align: left; color: #c53030;">(${fmt(s.dividends_declared)}) ${currency}</td></tr>
                 <tr style="background: #38a169; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 16px;">حقوق الملكية - نهاية الفترة</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 18px;">${fmt(s.equity_closing_total)} ${currency}</td></tr>
             </table>`;
+
+        // تفصيل الشركاء
+        if (s.partners && s.partners.length > 0) {
+            equityHtml += `
+            <h4 style="color: #e67e22; margin: 15px 0 8px;">👥 تفصيل حقوق الشركاء</h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <tr style="background: #fef3c7;">
+                    <th style="padding: 8px 10px; text-align: right; color: #92400e;">الشريك</th>
+                    <th style="padding: 8px 10px; text-align: center; color: #92400e;">النسبة</th>
+                    <th style="padding: 8px 10px; text-align: center; color: #92400e;">رأس المال</th>
+                    <th style="padding: 8px 10px; text-align: center; color: #92400e;">نصيب الربح</th>
+                    <th style="padding: 8px 10px; text-align: center; color: #92400e;">التوزيعات</th>
+                    <th style="padding: 8px 10px; text-align: center; color: #92400e;">الرصيد الختامي</th>
+                </tr>
+                ${s.partners.map(p => `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 10px; font-weight: bold;">${escHTML(p.name)}</td>
+                    <td style="padding: 8px 10px; text-align: center;">${p.share_percent.toFixed(1)}%</td>
+                    <td style="padding: 8px 10px; text-align: center;">${fmt(p.capital_opening)} ${currency}</td>
+                    <td style="padding: 8px 10px; text-align: center; color: #38a169;">${fmt(p.profit_share)} ${currency}</td>
+                    <td style="padding: 8px 10px; text-align: center; color: #c53030;">(${fmt(p.distributions)}) ${currency}</td>
+                    <td style="padding: 8px 10px; text-align: center; font-weight: bold; color: #2b6cb0;">${fmt(p.capital_closing)} ${currency}</td>
+                </tr>`).join('')}
+            </table>`;
+        }
+        document.getElementById('xbrl_equity_summary').innerHTML = equityHtml;
 
         // عرض XML
         document.getElementById('xbrl_xml_preview').textContent = data.xbrl_xml;
