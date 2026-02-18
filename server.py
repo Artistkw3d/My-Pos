@@ -5365,172 +5365,341 @@ def generate_xbrl():
         equity_closing_other = equity_opening_other + other_comprehensive_income
         equity_closing_total = equity_closing_capital + equity_closing_retained + equity_closing_other
 
-        # XBRL XML Generation (IFRS Taxonomy 2024)
-        xbrl_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
-<xbrl xmlns="http://www.xbrl.org/2003/instance"
+        # Inline XBRL (iXBRL) HTML Generation (IFRS Taxonomy 2024)
+        def fmt(v):
+            return f'{v:,.2f}'
+
+        xbrl_xml = f'''<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2020-02-12"
       xmlns:link="http://www.xbrl.org/2003/linkbase"
       xmlns:xlink="http://www.w3.org/1999/xlink"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
       xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
-      xmlns:xbrli="http://www.xbrl.org/2003/instance">
+      xml:lang="ar">
+<head>
+  <meta charset="UTF-8"/>
+  <title>التقرير المالي - {entity_name_ar or entity_name} - {period_end}</title>
+  <style type="text/css">
+    body {{ font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; margin: 40px; background: #f9f9f9; color: #333; line-height: 1.6; }}
+    h1 {{ text-align: center; color: #1a365d; border-bottom: 3px solid #2b6cb0; padding-bottom: 15px; }}
+    h2 {{ color: #2b6cb0; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 35px; }}
+    .company-info {{ background: #edf2f7; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+    .company-info p {{ margin: 5px 0; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 15px 0; background: white; }}
+    th {{ background: #2b6cb0; color: white; padding: 12px 15px; text-align: right; }}
+    td {{ padding: 10px 15px; border-bottom: 1px solid #e2e8f0; }}
+    .num {{ text-align: left; direction: ltr; }}
+    .total {{ font-weight: bold; background: #edf2f7; }}
+    .grand-total {{ font-weight: bold; background: #e2e8f0; border-top: 2px solid #2b6cb0; }}
+    .section-head {{ background: #f7fafc; font-weight: bold; color: #2b6cb0; }}
+    .footer {{ text-align: center; margin-top: 40px; color: #a0aec0; font-size: 0.85em; border-top: 1px solid #e2e8f0; padding-top: 15px; }}
+    @media print {{ body {{ margin: 20px; background: white; }} }}
+  </style>
+</head>
+<body>
+  <ix:header>
+    <ix:references>
+      <link:schemaRef xlink:type="simple" xlink:href="https://xbrl.ifrs.org/taxonomy/2024-03-27/full_ifrs_entry_point_2024-03-27.xsd"/>
+    </ix:references>
+    <ix:resources>
+      <xbrli:context id="CurrentPeriod">
+        <xbrli:entity>
+          <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
+        </xbrli:entity>
+        <xbrli:period>
+          <xbrli:startDate>{period_start}</xbrli:startDate>
+          <xbrli:endDate>{period_end}</xbrli:endDate>
+        </xbrli:period>
+      </xbrli:context>
+      <xbrli:context id="CurrentInstant">
+        <xbrli:entity>
+          <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
+        </xbrli:entity>
+        <xbrli:period>
+          <xbrli:instant>{period_end}</xbrli:instant>
+        </xbrli:period>
+      </xbrli:context>
+      <xbrli:context id="PriorInstant">
+        <xbrli:entity>
+          <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
+        </xbrli:entity>
+        <xbrli:period>
+          <xbrli:instant>{period_start}</xbrli:instant>
+        </xbrli:period>
+      </xbrli:context>
+      <xbrli:unit id="{currency}">
+        <xbrli:measure>iso4217:{currency}</xbrli:measure>
+      </xbrli:unit>
+    </ix:resources>
+  </ix:header>
 
-  <!-- === مرجع التصنيف (Schema Reference) === -->
-  <link:schemaRef xlink:type="simple" xlink:href="https://xbrl.ifrs.org/taxonomy/2024-03-27/full_ifrs_entry_point_2024-03-27.xsd"/>
+  <h1>التقرير المالي وفق معايير IFRS</h1>
+  <p style="text-align:center; color:#718096;">الفترة من {period_start} إلى {period_end}</p>
 
-  <!-- === سياق التقرير (Context) === -->
-  <xbrli:context id="CurrentPeriod">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:startDate>{period_start}</xbrli:startDate>
-      <xbrli:endDate>{period_end}</xbrli:endDate>
-    </xbrli:period>
-  </xbrli:context>
+  <!-- ===== بيانات الشركة ===== -->
+  <div class="company-info">
+    <p><strong>اسم الشركة:</strong> <ix:nonNumeric name="ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification" contextRef="CurrentPeriod">{entity_name_ar or entity_name}</ix:nonNumeric></p>
+    <p><strong>البلد:</strong> <ix:nonNumeric name="ifrs-full:DomicileOfEntity" contextRef="CurrentPeriod">{company.get('country', 'SA')}</ix:nonNumeric></p>
+    <p><strong>الشكل القانوني:</strong> <ix:nonNumeric name="ifrs-full:LegalFormOfEntity" contextRef="CurrentPeriod">{company.get('legal_form', '')}</ix:nonNumeric></p>
+    <p><strong>طبيعة النشاط:</strong> <ix:nonNumeric name="ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities" contextRef="CurrentPeriod">{company.get('industry_sector', '')}</ix:nonNumeric></p>
+    <p><strong>السجل التجاري:</strong> {cr_number}</p>
+    <p><strong>الرقم الضريبي:</strong> {tax_number}</p>
+    <p><strong>العملة:</strong> {currency}</p>
+  </div>
 
-  <xbrli:context id="CurrentInstant">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:instant>{period_end}</xbrli:instant>
-    </xbrli:period>
-  </xbrli:context>
+  <!-- ===== قائمة الدخل الشامل - Statement of Comprehensive Income (IAS 1) ===== -->
+  <h2>قائمة الدخل الشامل</h2>
+  <table>
+    <tr><th>البند</th><th style="width:200px">المبلغ ({currency})</th></tr>
+    <tr>
+      <td>الإيرادات</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:Revenue" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_revenue)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>تكلفة المبيعات</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:CostOfSales" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cost_of_sales)}</ix:nonFraction>)</td>
+    </tr>
+    <tr class="total">
+      <td>مجمل الربح</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:GrossProfit" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(gross_profit)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>الاستهلاك والإطفاء</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:DepreciationAndAmortisationExpense" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(depreciation)}</ix:nonFraction>)</td>
+    </tr>
+    <tr>
+      <td>مصاريف تشغيلية أخرى</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:OtherExpenseByNature" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_opex)}</ix:nonFraction>)</td>
+    </tr>
+    <tr class="total">
+      <td>ربح العمليات</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ProfitLossFromOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(operating_profit)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>تكاليف التمويل</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:FinanceCosts" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(finance_costs)}</ix:nonFraction>)</td>
+    </tr>
+    <tr class="total">
+      <td>الربح قبل الزكاة/الضريبة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ProfitLossBeforeTax" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(profit_before_tax)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>الزكاة / ضريبة الدخل</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:IncomeTaxExpenseContinuingOperations" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(zakat_tax)}</ix:nonFraction>)</td>
+    </tr>
+    <tr class="grand-total">
+      <td>صافي الربح</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ProfitLoss" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_profit)}</ix:nonFraction></td>
+    </tr>
+  </table>
 
-  <xbrli:context id="PriorInstant">
-    <xbrli:entity>
-      <xbrli:identifier scheme="http://www.cr.gov.sa">{cr_number}</xbrli:identifier>
-    </xbrli:entity>
-    <xbrli:period>
-      <xbrli:instant>{period_start}</xbrli:instant>
-    </xbrli:period>
-  </xbrli:context>
+  <!-- ===== قائمة المركز المالي - Statement of Financial Position (IAS 1) ===== -->
+  <h2>قائمة المركز المالي</h2>
+  <table>
+    <tr><th>البند</th><th style="width:200px">المبلغ ({currency})</th></tr>
+    <tr class="section-head"><td colspan="2">الأصول المتداولة</td></tr>
+    <tr>
+      <td>النقد وما يعادله</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:CashAndCashEquivalents" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cash_equivalents)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>الذمم المدينة التجارية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:TradeAndOtherCurrentReceivables" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(receivables)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>المخزون</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:Inventories" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(inventory_val)}</ix:nonFraction></td>
+    </tr>
+    <tr class="total">
+      <td>إجمالي الأصول المتداولة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:CurrentAssets" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_current_assets)}</ix:nonFraction></td>
+    </tr>
+    <tr class="section-head"><td colspan="2">الأصول غير المتداولة</td></tr>
+    <tr>
+      <td>الممتلكات والمعدات</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:PropertyPlantAndEquipment" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(ppe)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>الأصول غير الملموسة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:IntangibleAssetsOtherThanGoodwill" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(intangible_assets)}</ix:nonFraction></td>
+    </tr>
+    <tr class="total">
+      <td>إجمالي الأصول غير المتداولة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:NoncurrentAssets" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_non_current_assets)}</ix:nonFraction></td>
+    </tr>
+    <tr class="grand-total">
+      <td>إجمالي الأصول</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:Assets" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_assets)}</ix:nonFraction></td>
+    </tr>
+    <tr class="section-head"><td colspan="2">الخصوم المتداولة</td></tr>
+    <tr>
+      <td>الذمم الدائنة التجارية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:TradeAndOtherCurrentPayables" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(trade_payables)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>قروض قصيرة الأجل</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ShorttermBorrowings" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(short_term_loans)}</ix:nonFraction></td>
+    </tr>
+    <tr class="total">
+      <td>إجمالي الخصوم المتداولة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:CurrentLiabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_current_liabilities)}</ix:nonFraction></td>
+    </tr>
+    <tr class="section-head"><td colspan="2">الخصوم غير المتداولة</td></tr>
+    <tr>
+      <td>قروض طويلة الأجل</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:LongtermBorrowings" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(long_term_loans)}</ix:nonFraction></td>
+    </tr>
+    <tr class="total">
+      <td>إجمالي الخصوم غير المتداولة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:NoncurrentLiabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_non_current_liabilities)}</ix:nonFraction></td>
+    </tr>
+    <tr class="grand-total">
+      <td>إجمالي الخصوم</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:Liabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_liabilities)}</ix:nonFraction></td>
+    </tr>
+    <tr class="section-head"><td colspan="2">حقوق الملكية</td></tr>
+    <tr>
+      <td>رأس المال</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:IssuedCapital" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(share_capital)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>الأرباح المبقاة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:RetainedEarnings" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(retained_earnings)}</ix:nonFraction></td>
+    </tr>
+    <tr class="total">
+      <td>إجمالي حقوق الملكية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:Equity" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_equity)}</ix:nonFraction></td>
+    </tr>
+    <tr class="grand-total">
+      <td>إجمالي الخصوم وحقوق الملكية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:EquityAndLiabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_liabilities + total_equity)}</ix:nonFraction></td>
+    </tr>
+  </table>
 
-  <xbrli:unit id="{currency}">
-    <xbrli:measure>iso4217:{currency}</xbrli:measure>
-  </xbrli:unit>
+  <!-- ===== قائمة التدفقات النقدية - Statement of Cash Flows (IAS 7) ===== -->
+  <h2>قائمة التدفقات النقدية</h2>
+  <table>
+    <tr><th>البند</th><th style="width:200px">المبلغ ({currency})</th></tr>
+    <tr class="section-head"><td colspan="2">الأنشطة التشغيلية (الطريقة المباشرة)</td></tr>
+    <tr>
+      <td>المقبوضات من العملاء</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ReceiptsFromSalesOfGoodsAndRenderingOfServices" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_customers_received)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>المدفوعات للموردين</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:PaymentsToSuppliersForGoodsAndServices" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_suppliers_paid)}</ix:nonFraction>)</td>
+    </tr>
+    <tr>
+      <td>المدفوعات للموظفين</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:PaymentsToAndOnBehalfOfEmployees" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_employees_paid)}</ix:nonFraction>)</td>
+    </tr>
+    <tr>
+      <td>فوائد مدفوعة</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:InterestPaidClassifiedAsOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_interest_paid)}</ix:nonFraction>)</td>
+    </tr>
+    <tr>
+      <td>ضرائب مدفوعة</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:IncomeTaxesPaidRefundClassifiedAsOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_taxes_paid)}</ix:nonFraction>)</td>
+    </tr>
+    <tr class="total">
+      <td>صافي النقد من الأنشطة التشغيلية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:CashFlowsFromUsedInOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_cash_operating)}</ix:nonFraction></td>
+    </tr>
+    <tr class="section-head"><td colspan="2">الأنشطة الاستثمارية</td></tr>
+    <tr>
+      <td>شراء ممتلكات ومعدات</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_ppe_purchased)}</ix:nonFraction>)</td>
+    </tr>
+    <tr>
+      <td>بيع ممتلكات ومعدات</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_ppe_sold)}</ix:nonFraction></td>
+    </tr>
+    <tr class="total">
+      <td>صافي النقد من الأنشطة الاستثمارية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:CashFlowsFromUsedInInvestingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_cash_investing)}</ix:nonFraction></td>
+    </tr>
+    <tr class="section-head"><td colspan="2">الأنشطة التمويلية</td></tr>
+    <tr>
+      <td>قروض مستلمة</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:ProceedsFromBorrowingsClassifiedAsFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_loans_received)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>سداد قروض</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:RepaymentsOfBorrowingsClassifiedAsFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_loans_repaid)}</ix:nonFraction>)</td>
+    </tr>
+    <tr>
+      <td>أرباح موزعة</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:DividendsPaidClassifiedAsFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_dividends_paid)}</ix:nonFraction>)</td>
+    </tr>
+    <tr class="total">
+      <td>صافي النقد من الأنشطة التمويلية</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:CashFlowsFromUsedInFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_cash_financing)}</ix:nonFraction></td>
+    </tr>
+    <tr class="grand-total">
+      <td>صافي التغير في النقد</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:IncreaseDecreaseInCashAndCashEquivalents" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_change_cash)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>رصيد النقد - بداية الفترة</td>
+      <td class="num">{fmt(cash_beginning)}</td>
+    </tr>
+    <tr class="grand-total">
+      <td>رصيد النقد - نهاية الفترة</td>
+      <td class="num">{fmt(cash_ending)}</td>
+    </tr>
+  </table>
 
-  <!-- === بيانات الشركة === -->
-  <ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification contextRef="CurrentPeriod">{entity_name}</ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification>
-  <ifrs-full:DomicileOfEntity contextRef="CurrentPeriod">{company.get('country', 'SA')}</ifrs-full:DomicileOfEntity>
-  <ifrs-full:LegalFormOfEntity contextRef="CurrentPeriod">{company.get('legal_form', '')}</ifrs-full:LegalFormOfEntity>
-  <ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities contextRef="CurrentPeriod">{company.get('industry_sector', '')}</ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities>
+  <!-- ===== قائمة التغيرات في حقوق الملكية - Statement of Changes in Equity (IAS 1) ===== -->
+  <h2>قائمة التغيرات في حقوق الملكية</h2>
+  <table>
+    <tr><th>البند</th><th style="width:150px">رأس المال</th><th style="width:150px">أرباح مبقاة</th><th style="width:150px">الإجمالي</th></tr>
+    <tr>
+      <td>الرصيد الافتتاحي</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:IssuedCapital" contextRef="PriorInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_opening_capital)}</ix:nonFraction></td>
+      <td class="num"><ix:nonFraction name="ifrs-full:RetainedEarnings" contextRef="PriorInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_opening_retained)}</ix:nonFraction></td>
+      <td class="num"><ix:nonFraction name="ifrs-full:Equity" contextRef="PriorInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_opening_total)}</ix:nonFraction></td>
+    </tr>
+    <tr>
+      <td>صافي الربح</td>
+      <td class="num">-</td>
+      <td class="num">{fmt(net_profit)}</td>
+      <td class="num">{fmt(net_profit)}</td>
+    </tr>
+    <tr>
+      <td>الدخل الشامل الآخر</td>
+      <td class="num">-</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:OtherComprehensiveIncome" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(other_comprehensive_income)}</ix:nonFraction></td>
+      <td class="num">{fmt(other_comprehensive_income)}</td>
+    </tr>
+    <tr>
+      <td>أرباح موزعة</td>
+      <td class="num">-</td>
+      <td class="num">(<ix:nonFraction name="ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(dividends_declared)}</ix:nonFraction>)</td>
+      <td class="num">({fmt(dividends_declared)})</td>
+    </tr>
+    <tr>
+      <td>زيادة رأس المال</td>
+      <td class="num"><ix:nonFraction name="ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_new_capital)}</ix:nonFraction></td>
+      <td class="num">-</td>
+      <td class="num">{fmt(equity_new_capital)}</td>
+    </tr>
+    <tr class="grand-total">
+      <td>الرصيد الختامي</td>
+      <td class="num">{fmt(equity_closing_capital)}</td>
+      <td class="num">{fmt(equity_closing_retained)}</td>
+      <td class="num">{fmt(equity_closing_total)}</td>
+    </tr>
+  </table>
 
-  <!-- ===================================================================== -->
-  <!-- قائمة الدخل الشامل - Statement of Comprehensive Income (IAS 1) -->
-  <!-- ===================================================================== -->
-
-  <!-- الإيرادات - Revenue (IFRS 15) -->
-  <ifrs-full:Revenue contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{total_revenue}</ifrs-full:Revenue>
-
-  <!-- تكلفة المبيعات - Cost of Sales (IAS 2) -->
-  <ifrs-full:CostOfSales contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cost_of_sales}</ifrs-full:CostOfSales>
-
-  <!-- مجمل الربح - Gross Profit -->
-  <ifrs-full:GrossProfit contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{gross_profit}</ifrs-full:GrossProfit>
-
-  <!-- مصاريف الاستهلاك - Depreciation (IAS 16) -->
-  <ifrs-full:DepreciationAndAmortisationExpense contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{depreciation}</ifrs-full:DepreciationAndAmortisationExpense>
-
-  <!-- مصاريف تشغيلية أخرى -->
-  <ifrs-full:OtherExpenseByNature contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{total_opex}</ifrs-full:OtherExpenseByNature>
-
-  <!-- ربح العمليات - Operating Profit -->
-  <ifrs-full:ProfitLossFromOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{operating_profit}</ifrs-full:ProfitLossFromOperatingActivities>
-
-  <!-- تكاليف التمويل - Finance Costs (IFRS 9) -->
-  <ifrs-full:FinanceCosts contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{finance_costs}</ifrs-full:FinanceCosts>
-
-  <!-- الربح قبل الزكاة والضريبة -->
-  <ifrs-full:ProfitLossBeforeTax contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{profit_before_tax}</ifrs-full:ProfitLossBeforeTax>
-
-  <!-- الزكاة / ضريبة الدخل (IAS 12) -->
-  <ifrs-full:IncomeTaxExpenseContinuingOperations contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{zakat_tax}</ifrs-full:IncomeTaxExpenseContinuingOperations>
-
-  <!-- صافي الربح - Net Profit -->
-  <ifrs-full:ProfitLoss contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_profit}</ifrs-full:ProfitLoss>
-
-  <!-- ===================================================================== -->
-  <!-- قائمة المركز المالي - Statement of Financial Position (IAS 1) -->
-  <!-- ===================================================================== -->
-
-  <!-- === الأصول المتداولة - Current Assets === -->
-  <ifrs-full:CashAndCashEquivalents contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{cash_equivalents}</ifrs-full:CashAndCashEquivalents>
-  <ifrs-full:TradeAndOtherCurrentReceivables contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{receivables}</ifrs-full:TradeAndOtherCurrentReceivables>
-  <ifrs-full:Inventories contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{inventory_val}</ifrs-full:Inventories>
-  <ifrs-full:CurrentAssets contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_current_assets}</ifrs-full:CurrentAssets>
-
-  <!-- === الأصول غير المتداولة - Non-Current Assets === -->
-  <ifrs-full:PropertyPlantAndEquipment contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{ppe}</ifrs-full:PropertyPlantAndEquipment>
-  <ifrs-full:IntangibleAssetsOtherThanGoodwill contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{intangible_assets}</ifrs-full:IntangibleAssetsOtherThanGoodwill>
-  <ifrs-full:NoncurrentAssets contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_non_current_assets}</ifrs-full:NoncurrentAssets>
-
-  <!-- إجمالي الأصول -->
-  <ifrs-full:Assets contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_assets}</ifrs-full:Assets>
-
-  <!-- === الخصوم المتداولة - Current Liabilities === -->
-  <ifrs-full:TradeAndOtherCurrentPayables contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{trade_payables}</ifrs-full:TradeAndOtherCurrentPayables>
-  <ifrs-full:ShorttermBorrowings contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{short_term_loans}</ifrs-full:ShorttermBorrowings>
-  <ifrs-full:CurrentLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_current_liabilities}</ifrs-full:CurrentLiabilities>
-
-  <!-- === الخصوم غير المتداولة - Non-Current Liabilities === -->
-  <ifrs-full:LongtermBorrowings contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{long_term_loans}</ifrs-full:LongtermBorrowings>
-  <ifrs-full:NoncurrentLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_non_current_liabilities}</ifrs-full:NoncurrentLiabilities>
-
-  <!-- إجمالي الخصوم -->
-  <ifrs-full:Liabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_liabilities}</ifrs-full:Liabilities>
-
-  <!-- === حقوق الملكية - Equity (IAS 1) === -->
-  <ifrs-full:IssuedCapital contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{share_capital}</ifrs-full:IssuedCapital>
-  <ifrs-full:RetainedEarnings contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{retained_earnings}</ifrs-full:RetainedEarnings>
-  <ifrs-full:Equity contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_equity}</ifrs-full:Equity>
-
-  <!-- إجمالي الخصوم وحقوق الملكية -->
-  <ifrs-full:EquityAndLiabilities contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{total_liabilities + total_equity}</ifrs-full:EquityAndLiabilities>
-
-  <!-- ===================================================================== -->
-  <!-- قائمة التدفقات النقدية - Statement of Cash Flows (IAS 7)              -->
-  <!-- ===================================================================== -->
-
-  <!-- === الأنشطة التشغيلية - Operating Activities (الطريقة المباشرة) === -->
-  <ifrs-full:ReceiptsFromSalesOfGoodsAndRenderingOfServices contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_customers_received}</ifrs-full:ReceiptsFromSalesOfGoodsAndRenderingOfServices>
-  <ifrs-full:PaymentsToSuppliersForGoodsAndServices contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_suppliers_paid}</ifrs-full:PaymentsToSuppliersForGoodsAndServices>
-  <ifrs-full:PaymentsToAndOnBehalfOfEmployees contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_employees_paid}</ifrs-full:PaymentsToAndOnBehalfOfEmployees>
-  <ifrs-full:InterestPaidClassifiedAsOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_interest_paid}</ifrs-full:InterestPaidClassifiedAsOperatingActivities>
-  <ifrs-full:IncomeTaxesPaidRefundClassifiedAsOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_taxes_paid}</ifrs-full:IncomeTaxesPaidRefundClassifiedAsOperatingActivities>
-  <ifrs-full:CashFlowsFromUsedInOperatingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_cash_operating}</ifrs-full:CashFlowsFromUsedInOperatingActivities>
-
-  <!-- === الأنشطة الاستثمارية - Investing Activities === -->
-  <ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_ppe_purchased}</ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities>
-  <ifrs-full:ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_ppe_sold}</ifrs-full:ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities>
-  <ifrs-full:CashFlowsFromUsedInInvestingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_cash_investing}</ifrs-full:CashFlowsFromUsedInInvestingActivities>
-
-  <!-- === الأنشطة التمويلية - Financing Activities === -->
-  <ifrs-full:ProceedsFromBorrowingsClassifiedAsFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_loans_received}</ifrs-full:ProceedsFromBorrowingsClassifiedAsFinancingActivities>
-  <ifrs-full:RepaymentsOfBorrowingsClassifiedAsFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_loans_repaid}</ifrs-full:RepaymentsOfBorrowingsClassifiedAsFinancingActivities>
-  <ifrs-full:DividendsPaidClassifiedAsFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{cf_dividends_paid}</ifrs-full:DividendsPaidClassifiedAsFinancingActivities>
-  <ifrs-full:CashFlowsFromUsedInFinancingActivities contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_cash_financing}</ifrs-full:CashFlowsFromUsedInFinancingActivities>
-
-  <!-- صافي التغير في النقد -->
-  <ifrs-full:IncreaseDecreaseInCashAndCashEquivalents contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_change_cash}</ifrs-full:IncreaseDecreaseInCashAndCashEquivalents>
-  <ifrs-full:CashAndCashEquivalents contextRef="CurrentInstant" unitRef="{currency}" decimals="2">{cash_ending}</ifrs-full:CashAndCashEquivalents>
-
-  <!-- ===================================================================== -->
-  <!-- قائمة التغيرات في حقوق الملكية - Statement of Changes in Equity (IAS 1) -->
-  <!-- ===================================================================== -->
-
-  <!-- أرصدة افتتاحية -->
-  <ifrs-full:Equity contextRef="PriorInstant" unitRef="{currency}" decimals="2">{equity_opening_total}</ifrs-full:Equity>
-  <ifrs-full:IssuedCapital contextRef="PriorInstant" unitRef="{currency}" decimals="2">{equity_opening_capital}</ifrs-full:IssuedCapital>
-  <ifrs-full:RetainedEarnings contextRef="PriorInstant" unitRef="{currency}" decimals="2">{equity_opening_retained}</ifrs-full:RetainedEarnings>
-
-  <!-- التغيرات خلال الفترة -->
-  <ifrs-full:ProfitLoss contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{net_profit}</ifrs-full:ProfitLoss>
-  <ifrs-full:OtherComprehensiveIncome contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{other_comprehensive_income}</ifrs-full:OtherComprehensiveIncome>
-  <ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{dividends_declared}</ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent>
-  <ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners contextRef="CurrentPeriod" unitRef="{currency}" decimals="2">{equity_new_capital}</ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners>
-
-</xbrl>'''
+  <div class="footer">
+    <p>تقرير مالي مولّد آلياً وفق معايير IFRS - صيغة Inline XBRL (iXBRL)</p>
+    <p>تم التوليد بتاريخ: {period_end}</p>
+  </div>
+</body>
+</html>'''
 
         # حفظ التقرير
         conn = get_db()
