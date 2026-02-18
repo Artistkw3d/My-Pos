@@ -1,4 +1,11 @@
 const API_URL = window.location.origin;
+
+// === دالة حماية من XSS - تنظيف النصوص قبل إدراجها في HTML ===
+function escHTML(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 // حماية من عدم تحميل localDB في وضع أوفلاين
 if (typeof localDB === 'undefined') {
     window.localDB = { isReady: false, init: async()=>{}, save:async()=>{}, saveAll:async()=>{}, getAll:async()=>[], get:async()=>null, add:async()=>{}, delete:async()=>{} };
@@ -752,14 +759,14 @@ function displayProducts(products) {
         // أيقونة عرض التوفر في الفروع الأخرى (مربوطة بصلاحية عرض مخزون الفروع)
         let crossBranchHTML = '';
         if (p.inventory_id && window.userPermissions.canViewCrossBranchStock) {
-            crossBranchHTML = `<button class="branch-stock-btn" onclick="event.stopPropagation(); showBranchStock(${p.inventory_id}, '${(p.display_name || p.name).replace(/'/g, "\\'")}')" title="عرض التوفر في الفروع الأخرى">🏢</button>`;
+            crossBranchHTML = `<button class="branch-stock-btn" onclick="event.stopPropagation(); showBranchStock(${p.inventory_id}, '${escHTML((p.display_name || p.name).replace(/'/g, "\\'"))}')" title="عرض التوفر في الفروع الأخرى">🏢</button>`;
         }
 
         return `
         <div class="product-card" style="position:relative;">
             ${crossBranchHTML}
             ${imgDisplay}
-            <div class="product-card-name">${p.display_name || p.name}</div>
+            <div class="product-card-name">${escHTML(p.display_name || p.name)}</div>
             <div class="product-card-price">${p.price.toFixed(3)} د.ك</div>
             ${variantBadge}
             <div class="product-card-stock">المخزون: ${p.stock}</div>
@@ -790,7 +797,7 @@ async function showBranchStock(inventoryId, productName) {
                 <button class="close-btn" onclick="document.getElementById('branchStockModal').classList.remove('active')">&times;</button>
             </div>
             <div class="modal-body" style="padding:20px;">
-                <div style="text-align:center; font-weight:600; margin-bottom:15px; color:#333;">${productName}</div>
+                <div style="text-align:center; font-weight:600; margin-bottom:15px; color:#333;">${escHTML(productName)}</div>
                 <div style="text-align:center; padding:30px;"><div class="spinner"></div> جاري التحميل...</div>
             </div>
         </div>
@@ -805,7 +812,7 @@ async function showBranchStock(inventoryId, productName) {
             // تصفية الفروع الأخرى فقط (استبعاد الفرع الحالي)
             const otherBranches = data.stock.filter(s => s.branch_id != branchId && s.stock > 0);
 
-            let bodyHTML = `<div style="text-align:center; font-weight:600; margin-bottom:15px; color:#333;">${productName}</div>`;
+            let bodyHTML = `<div style="text-align:center; font-weight:600; margin-bottom:15px; color:#333;">${escHTML(productName)}</div>`;
 
             if (otherBranches.length === 0) {
                 bodyHTML += `<div style="text-align:center; padding:20px; color:#999;">غير متوفر في فروع أخرى</div>`;
@@ -816,7 +823,7 @@ async function showBranchStock(inventoryId, productName) {
                     const stockClass = b.stock > 10 ? 'high' : b.stock > 3 ? 'medium' : 'low';
                     bodyHTML += `
                         <div class="branch-stock-item">
-                            <span class="branch-stock-name">🏪 ${b.branch_name || 'فرع ' + b.branch_id}</span>
+                            <span class="branch-stock-name">🏪 ${escHTML(b.branch_name) || 'فرع ' + b.branch_id}</span>
                             <span class="branch-stock-qty ${stockClass}">${b.stock}</span>
                         </div>
                     `;
@@ -1031,14 +1038,14 @@ function updateCart() {
             return `
             <div class="cart-item-simple" style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="flex: 1;">
-                    <div class="cart-item-name">${item.name}</div>
+                    <div class="cart-item-name">${escHTML(item.name)}</div>
                     <div class="cart-item-price">${item.price.toFixed(3)} × ${item.quantity} = ${(item.price * item.quantity).toFixed(3)} د.ك</div>
                 </div>
                 <div style="display: flex; gap: 4px; align-items: center;">
-                    <button onclick="updateQuantity('${key}', -1)" style="background: #e2e8f0; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-weight: bold;">-</button>
+                    <button onclick="updateQuantity('${escHTML(key)}', -1)" style="background: #e2e8f0; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-weight: bold;">-</button>
                     <span style="min-width: 20px; text-align: center;">${item.quantity}</span>
-                    <button onclick="updateQuantity('${key}', 1)" style="background: #e2e8f0; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-weight: bold;">+</button>
-                    <button onclick="removeFromCart('${key}')" style="background: #dc3545; color: white; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-size: 12px;">✕</button>
+                    <button onclick="updateQuantity('${escHTML(key)}', 1)" style="background: #e2e8f0; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-weight: bold;">+</button>
+                    <button onclick="removeFromCart('${escHTML(key)}')" style="background: #dc3545; color: white; border: none; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-size: 12px;">✕</button>
                 </div>
             </div>`;
         }).join('');
@@ -1523,7 +1530,7 @@ function displayInvoiceView(inv) {
             ${isCancelled ? `
             <div style="background: #dc3545; color: white; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; text-align: center;">
                 <div style="font-size: 18px; font-weight: bold;">🚫 فاتورة ملغية</div>
-                <div style="font-size: 13px; margin-top: 5px;">السبب: ${inv.cancel_reason || '-'}</div>
+                <div style="font-size: 13px; margin-top: 5px;">السبب: ${escHTML(inv.cancel_reason) || '-'}</div>
                 ${inv.stock_returned ? '<div style="font-size: 12px; margin-top: 3px;">📦 تم إرجاع المنتجات إلى المخزون</div>' : ''}
                 ${inv.cancelled_at ? `<div style="font-size: 11px; margin-top: 3px;">تاريخ الإلغاء: ${new Date(inv.cancelled_at).toLocaleDateString('ar')}</div>` : ''}
             </div>` : ''}
@@ -1532,15 +1539,15 @@ function displayInvoiceView(inv) {
                 <h2 style="margin: 5px 0;">فاتورة مبيعات</h2>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; margin-bottom: 15px;">
-                <div><strong>رقم:</strong> ${inv.invoice_number}</div>
+                <div><strong>رقم:</strong> ${escHTML(inv.invoice_number)}</div>
                 <div><strong>التاريخ:</strong> ${new Date(inv.created_at).toLocaleDateString('ar')}</div>
-                <div><strong>العميل:</strong> ${inv.customer_name || '-'}</div>
-                <div><strong>الهاتف:</strong> ${inv.customer_phone || '-'}</div>
-                <div><strong>العنوان:</strong> ${inv.customer_address || '-'}</div>
-                <div><strong>الدفع:</strong> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
-                ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><strong>رقم العملية (${paymentMethods[p.method]}):</strong> ${p.transaction_number}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${inv.transaction_number}</div>` : '')}
+                <div><strong>العميل:</strong> ${escHTML(inv.customer_name) || '-'}</div>
+                <div><strong>الهاتف:</strong> ${escHTML(inv.customer_phone) || '-'}</div>
+                <div><strong>العنوان:</strong> ${escHTML(inv.customer_address) || '-'}</div>
+                <div><strong>الدفع:</strong> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || escHTML(p.method)} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
+                ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><strong>رقم العملية (${paymentMethods[p.method]}):</strong> ${escHTML(p.transaction_number)}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column: 1/-1;"><strong>رقم العملية:</strong> ${escHTML(inv.transaction_number)}</div>` : '')}
                 <div style="grid-column: 1/-1;"><strong>حالة الطلب:</strong> <span class="order-status-badge status-${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'processing' : (inv.order_status === 'قيد التوصيل' ? 'delivering' : 'completed')}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
-                ${inv.table_name ? `<div><strong>🍽️ الطاولة:</strong> ${inv.table_name}</div>` : ''}
+                ${inv.table_name ? `<div><strong>🍽️ الطاولة:</strong> ${escHTML(inv.table_name)}</div>` : ''}
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
                 <thead><tr style="background:#667eea; color:white;">
@@ -1554,7 +1561,7 @@ function displayInvoiceView(inv) {
                     ${inv.items.map((item, i) => `
                         <tr style="border-bottom:1px solid #ddd;">
                             <td style="padding:5px;">${i+1}</td>
-                            <td style="padding:5px;">${item.product_name}</td>
+                            <td style="padding:5px;">${escHTML(item.product_name)}</td>
                             <td style="padding:5px; text-align:center;">${item.quantity}</td>
                             <td style="padding:5px;">${item.price.toFixed(3)}</td>
                             <td style="padding:5px;">${item.total.toFixed(3)}</td>
@@ -1727,16 +1734,16 @@ function generateThermalInvoiceHTML(inv) {
 </div>
 <div class="preview-wrapper">
 <div class="receipt">
-<div class="center r-header">${storeName}</div>
+<div class="center r-header">${escHTML(storeName)}</div>
 <div class="center r-sub">فاتورة مبيعات</div>
 <div class="sep"></div>
-<div class="row r-mid"><span>${inv.invoice_number}</span><span>${typeof formatKuwaitTime === 'function' ? formatKuwaitTime(inv.created_at) : new Date(inv.created_at).toLocaleDateString('ar')}</span></div>
-${inv.customer_name ? `<div class="r-small">العميل: ${inv.customer_name}</div>` : ''}
+<div class="row r-mid"><span>${escHTML(inv.invoice_number)}</span><span>${typeof formatKuwaitTime === 'function' ? formatKuwaitTime(inv.created_at) : new Date(inv.created_at).toLocaleDateString('ar')}</span></div>
+${inv.customer_name ? `<div class="r-small">العميل: ${escHTML(inv.customer_name)}</div>` : ''}
 <div class="sep"></div>
 <table>
 <thead><tr><th>المنتج</th><th>ك</th><th>السعر</th><th>المجموع</th></tr></thead>
 <tbody>
-${inv.items.map(item => `<tr><td>${item.product_name}</td><td style="text-align:center;">${item.quantity}</td><td>${item.price.toFixed(3)}</td><td>${item.total.toFixed(3)}</td></tr>`).join('')}
+${inv.items.map(item => `<tr><td>${escHTML(item.product_name)}</td><td style="text-align:center;">${item.quantity}</td><td>${item.price.toFixed(3)}</td><td>${item.total.toFixed(3)}</td></tr>`).join('')}
 </tbody>
 </table>
 <div class="sep"></div>
@@ -1795,20 +1802,20 @@ ${storeLogo ? `<img src="${storeLogo}">` : ''}
 <p>فاتورة مبيعات</p>
 </div>
 <div class="info">
-<div><b>رقم الفاتورة:</b> ${inv.invoice_number}</div>
+<div><b>رقم الفاتورة:</b> ${escHTML(inv.invoice_number)}</div>
 <div><b>التاريخ:</b> ${formatKuwaitTime(inv.created_at)}</div>
-<div><b>العميل:</b> ${inv.customer_name || '-'}</div>
-<div><b>الهاتف:</b> ${inv.customer_phone || '-'}</div>
-<div><b>العنوان:</b> ${inv.customer_address || '-'}</div>
-<div><b>طريقة الدفع:</b> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
-${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><b>رقم العملية (${paymentMethods[p.method]}):</b> ${p.transaction_number}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${inv.transaction_number}</div>` : '')}
-<div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${inv.order_status || 'قيد التنفيذ'}</span></div>
-${inv.table_name ? `<div><b>🍽️ الطاولة:</b> ${inv.table_name}</div>` : ''}
+<div><b>العميل:</b> ${escHTML(inv.customer_name) || '-'}</div>
+<div><b>الهاتف:</b> ${escHTML(inv.customer_phone) || '-'}</div>
+<div><b>العنوان:</b> ${escHTML(inv.customer_address) || '-'}</div>
+<div><b>طريقة الدفع:</b> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || escHTML(p.method)} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
+${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><b>رقم العملية (${paymentMethods[p.method]}):</b> ${escHTML(p.transaction_number)}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${escHTML(inv.transaction_number)}</div>` : '')}
+<div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${escHTML(inv.order_status) || 'قيد التنفيذ'}</span></div>
+${inv.table_name ? `<div><b>🍽️ الطاولة:</b> ${escHTML(inv.table_name)}</div>` : ''}
 </div>
 <table>
 <thead><tr><th style="width:40px;">#</th><th>المنتج</th><th style="width:80px;">الكمية</th><th style="width:100px;">السعر</th><th style="width:100px;">الإجمالي</th></tr></thead>
 <tbody>
-${inv.items.map((item, i) => `<tr><td>${i+1}</td><td>${item.product_name}</td><td style="text-align:center;">${item.quantity}</td><td>${item.price.toFixed(3)} د.ك</td><td>${item.total.toFixed(3)} د.ك</td></tr>`).join('')}
+${inv.items.map((item, i) => `<tr><td>${i+1}</td><td>${escHTML(item.product_name)}</td><td style="text-align:center;">${item.quantity}</td><td>${item.price.toFixed(3)} د.ك</td><td>${item.total.toFixed(3)} د.ك</td></tr>`).join('')}
 </tbody>
 </table>
 <div class="totals">
@@ -1870,10 +1877,10 @@ async function loadProductsTable() {
                                          onmouseover="this.style.boxShadow='0 4px 12px rgba(102,126,234,0.3)'; this.style.transform='translateY(-2px)';"
                                          onmouseout="this.style.boxShadow='none'; this.style.transform='translateY(0)';">
                                         <div style="margin-bottom:10px;">${imgDisplay}</div>
-                                        <div style="font-weight:bold; margin-bottom:5px; color:#2d3748;">${p.name}</div>
+                                        <div style="font-weight:bold; margin-bottom:5px; color:#2d3748;">${escHTML(p.name)}</div>
                                         <div style="color:#667eea; font-size:18px; font-weight:bold; margin:8px 0;">${p.price.toFixed(3)} د.ك</div>
                                         <div style="color:#6c757d; font-size:13px; margin-bottom:10px;">المخزون: ${p.stock}</div>
-                                        ${p.barcode ? `<div style="color:#6c757d; font-size:11px; margin-bottom:10px;">📊 ${p.barcode}</div>` : ''}
+                                        ${p.barcode ? `<div style="color:#6c757d; font-size:11px; margin-bottom:10px;">📊 ${escHTML(p.barcode)}</div>` : ''}
                                         
                                         <!-- عرض إجمالي التكلفة فقط -->
                                         ${p.cost && p.cost > 0 ? `
@@ -1893,7 +1900,7 @@ async function loadProductsTable() {
                                                 <div style="font-size:12px; color:#38a169; font-weight:bold; margin-bottom:5px;">📐 ${p.variants.length} خاصية</div>
                                                 ${p.variants.map(v => `
                                                     <div style="display:flex; justify-content:space-between; font-size:11px; padding:2px 0; border-bottom:1px solid #e8f5e9;">
-                                                        <span>${v.variant_name}</span>
+                                                        <span>${escHTML(v.variant_name)}</span>
                                                         <span style="font-weight:bold;">${v.price.toFixed(3)} د.ك</span>
                                                     </div>
                                                 `).join('')}
@@ -2156,12 +2163,12 @@ async function loadInvoicesTable() {
                         return `
                         <tr style="${isCancelled ? 'opacity:0.5; background:#fff5f5;' : ''}">
                             <td>
-                                <strong${isCancelled ? ' style="text-decoration:line-through;"' : ''}>${inv.invoice_number}</strong>
+                                <strong${isCancelled ? ' style="text-decoration:line-through;"' : ''}>${escHTML(inv.invoice_number)}</strong>
                                 ${isCancelled ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">🚫 ملغية</span>' : ''}
                                 ${isOffline ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span>' : ''}
                             </td>
-                            <td>${inv.customer_name || 'عميل'}</td>
-                            <td>${inv.employee_name}</td>
+                            <td>${escHTML(inv.customer_name) || 'عميل'}</td>
+                            <td>${escHTML(inv.employee_name)}</td>
                             <td style="color:${isCancelled ? '#dc3545' : '#28a745'}; font-weight:bold;${isCancelled ? ' text-decoration:line-through;' : ''}">${inv.total.toFixed(3)} د.ك</td>
                             <td>
                                 ${isCancelled ? '<span style="color:#dc3545; font-weight:bold; font-size:12px;">🚫 ملغية</span>' : `
@@ -2197,9 +2204,9 @@ async function loadInvoicesTable() {
                                 const status = inv.order_status || 'قيد التنفيذ';
                                 return `
                                 <tr>
-                                    <td><strong>${inv.invoice_number}</strong> <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span></td>
-                                    <td>${inv.customer_name || 'عميل'}</td>
-                                    <td>${inv.employee_name}</td>
+                                    <td><strong>${escHTML(inv.invoice_number)}</strong> <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span></td>
+                                    <td>${escHTML(inv.customer_name) || 'عميل'}</td>
+                                    <td>${escHTML(inv.employee_name)}</td>
                                     <td style="color:#28a745; font-weight:bold;">${inv.total.toFixed(3)} د.ك</td>
                                     <td>
                                         <span class="order-status-badge status-processing">⏳ ${status}</span>
@@ -2361,7 +2368,7 @@ function displayReports(report, topProducts) {
                     <div style="margin-top:15px;">
                         ${topProducts.map((p, i) => `
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; margin-bottom:5px; background:#f8f9fa; border-radius:6px;">
-                                <div style="display:flex; align-items:center; gap:8px;"><span style="font-weight:bold; color:#667eea; font-size:16px;">#${i+1}</span><span style="font-size:13px;">${p.product_name}</span></div>
+                                <div style="display:flex; align-items:center; gap:8px;"><span style="font-weight:bold; color:#667eea; font-size:16px;">#${i+1}</span><span style="font-size:13px;">${escHTML(p.product_name)}</span></div>
                                 <div style="text-align:left;"><div style="font-weight:bold; color:#28a745; font-size:13px;">${p.total_sales.toFixed(3)} د.ك</div><div style="font-size:10px; color:#6c757d;">${p.total_quantity} قطعة</div></div>
                             </div>
                         `).join('')}
@@ -2830,7 +2837,7 @@ async function loadBranchesDropdowns() {
             const userBranchSelect = document.getElementById('userBranch');
             if (userBranchSelect) {
                 userBranchSelect.innerHTML = data.branches.map(b => 
-                    `<option value="${b.id}">${b.name}</option>`
+                    `<option value="${b.id}">${escHTML(b.name)}</option>`
                 ).join('');
             }
             
@@ -2838,7 +2845,7 @@ async function loadBranchesDropdowns() {
             const productBranchSelect = document.getElementById('productBranch');
             if (productBranchSelect) {
                 productBranchSelect.innerHTML = data.branches.map(b => 
-                    `<option value="${b.id}">${b.name}</option>`
+                    `<option value="${b.id}">${escHTML(b.name)}</option>`
                 ).join('');
             }
         }
@@ -2859,9 +2866,9 @@ async function loadBranchesTable() {
                 html += `
                     <tr>
                         <td><strong style="background: #667eea; color: white; padding: 5px 10px; border-radius: 5px;">B${b.id}</strong></td>
-                        <td>${b.name}</td>
-                        <td>${b.location || '-'}</td>
-                        <td>${b.phone || '-'}</td>
+                        <td>${escHTML(b.name)}</td>
+                        <td>${escHTML(b.location) || '-'}</td>
+                        <td>${escHTML(b.phone) || '-'}</td>
                         <td>
                             <button onclick="editBranch(${b.id})" class="btn-sm">✏️</button>
                             <button onclick="deleteBranch(${b.id})" class="btn-sm btn-danger">🗑️</button>
@@ -3008,11 +3015,11 @@ async function loadAttendanceLog() {
         const userId = document.getElementById('filterAttendanceUser').value;
         const date = document.getElementById('filterAttendanceDate').value;
         
-        let url = `${API_URL}/api/attendance?`;
-        if (userId) url += `user_id=${userId}&`;
-        if (date) url += `date=${date}&`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (userId) params.append('user_id', userId);
+        if (date) params.append('date', date);
+
+        const response = await fetch(`${API_URL}/api/attendance?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -3204,8 +3211,8 @@ async function displayInventory() {
     
     allInventory.forEach(item => {
         let imgDisplay = '🛍️';
-        if (item.image_data && item.image_data.startsWith('data:image')) {
-            imgDisplay = `<img src="${item.image_data}" style="width:40px; height:40px; object-fit:cover; border-radius:5px;">`;
+        if (item.image_data && item.image_data.startsWith('data:image/')) {
+            imgDisplay = `<img src="${escHTML(item.image_data)}" style="width:40px; height:40px; object-fit:cover; border-radius:5px;">`;
         }
         
         const distributed = allDistributions[item.id] || 0;
@@ -3232,9 +3239,9 @@ async function displayInventory() {
         html += `
             <tr>
                 <td style="text-align: center;">${imgDisplay}</td>
-                <td><strong>${item.name}</strong>${variantBadge}</td>
-                <td>${item.barcode || '-'}</td>
-                <td>${item.category || '-'}</td>
+                <td><strong>${escHTML(item.name)}</strong>${variantBadge}</td>
+                <td>${escHTML(item.barcode) || '-'}</td>
+                <td>${escHTML(item.category) || '-'}</td>
                 <td>${item.price.toFixed(3)} د.ك</td>
                 <td>${(item.cost || 0).toFixed(3)} د.ك</td>
                 <td style="text-align: center;">${distributedDisplay}</td>
@@ -3266,10 +3273,10 @@ async function displayInventory() {
                             <tbody>
                                 ${item.variants.map(v => `
                                 <tr style="border-bottom: 1px solid #c6f6d5;">
-                                    <td style="padding: 8px; text-align: center; font-weight: bold;">${v.variant_name}</td>
+                                    <td style="padding: 8px; text-align: center; font-weight: bold;">${escHTML(v.variant_name)}</td>
                                     <td style="padding: 8px; text-align: center; color: #38a169; font-weight: bold;">${v.price.toFixed(3)} د.ك</td>
                                     <td style="padding: 8px; text-align: center; color: #e53e3e;">${(v.cost || 0).toFixed(3)} د.ك</td>
-                                    <td style="padding: 8px; text-align: center; color: #666;">${v.barcode || '-'}</td>
+                                    <td style="padding: 8px; text-align: center; color: #666;">${escHTML(v.barcode) || '-'}</td>
                                 </tr>`).join('')}
                             </tbody>
                         </table>
@@ -3551,7 +3558,7 @@ async function distributeToBranch(inventoryId) {
             <div style="margin-top: 10px; background: #f0fff4; padding: 10px; border-radius: 8px; border: 1px solid #c6f6d5;">
                 <strong style="color: #38a169;">📐 الخصائص:</strong>
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
-                    ${product.variants.map(v => `<span style="background: #38a169; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px;">${v.variant_name} - ${v.price.toFixed(3)} د.ك</span>`).join('')}
+                    ${product.variants.map(v => `<span style="background: #38a169; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px;">${escHTML(v.variant_name)} - ${v.price.toFixed(3)} د.ك</span>`).join('')}
                 </div>
             </div>
         `;
@@ -3561,7 +3568,7 @@ async function distributeToBranch(inventoryId) {
         <div style="display: flex; align-items: center; gap: 15px;">
             <div style="font-size: 50px;">🛍️</div>
             <div style="flex: 1;">
-                <h3 style="margin: 0;">${product.name}</h3>
+                <h3 style="margin: 0;">${escHTML(product.name)}</h3>
                 <p style="margin: 5px 0 0; color: #666;">السعر: ${product.price.toFixed(3)} د.ك | التكلفة: ${(product.cost || 0).toFixed(3)} د.ك</p>
                 ${variantsInfo}
             </div>
@@ -3574,7 +3581,7 @@ async function distributeToBranch(inventoryId) {
     if (product.variants && product.variants.length > 0) {
         variantGroup.style.display = 'block';
         variantSelect.innerHTML = '<option value="">المنتج الأساسي</option>' +
-            product.variants.map(v => `<option value="${v.id}">${v.variant_name} (${v.price.toFixed(3)} د.ك)</option>`).join('');
+            product.variants.map(v => `<option value="${v.id}">${escHTML(v.variant_name)} (${v.price.toFixed(3)} د.ك)</option>`).join('');
     } else {
         variantGroup.style.display = 'none';
         variantSelect.innerHTML = '<option value="">المنتج الأساسي</option>';
@@ -3597,7 +3604,7 @@ async function loadBranchesForDistribution() {
         if (data.success) {
             const select = document.getElementById('distributionBranch');
             select.innerHTML = data.branches.map(b => 
-                `<option value="${b.id}">${b.name}</option>`
+                `<option value="${b.id}">${escHTML(b.name)}</option>`
             ).join('');
         }
     } catch (error) {
@@ -3796,7 +3803,7 @@ async function reportDamage(inventoryId) {
         <div style="display: flex; align-items: center; gap: 15px;">
             <div style="font-size: 40px;">⚠️</div>
             <div>
-                <h3 style="margin: 0;">${product.name}</h3>
+                <h3 style="margin: 0;">${escHTML(product.name)}</h3>
                 <p style="margin: 5px 0 0; color: #666;">سعر القطعة: ${product.price.toFixed(3)} د.ك</p>
             </div>
         </div>
@@ -3831,7 +3838,7 @@ async function loadBranchesForDamage() {
             const select = document.getElementById('damageBranch');
             select.innerHTML = branchesData.branches
                 .filter(b => branchStockData[b.id] > 0)
-                .map(b => `<option value="${b.id}">${b.name} (متاح: ${branchStockData[b.id]})</option>`)
+                .map(b => `<option value="${b.id}">${escHTML(b.name)} (متاح: ${branchStockData[b.id]})</option>`)
                 .join('');
             
             if (select.options.length === 0) {
@@ -3914,7 +3921,7 @@ async function loadBranchesForReports() {
             if (select) {
                 select.innerHTML = '<option value="">كل الفروع</option>';
                 data.branches.forEach(b => {
-                    select.innerHTML += `<option value="${b.id}">${b.name}</option>`;
+                    select.innerHTML += `<option value="${b.id}">${escHTML(b.name)}</option>`;
                 });
             }
         }
@@ -3929,12 +3936,12 @@ async function loadSalesReport() {
     const branchId = document.getElementById('reportBranch').value;
     
     try {
-        let url = `${API_URL}/api/reports/sales?`;
-        if (startDate) url += `start_date=${startDate}&`;
-        if (endDate) url += `end_date=${endDate}&`;
-        if (branchId) url += `branch_id=${branchId}&`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        if (branchId) params.append('branch_id', branchId);
+
+        const response = await fetch(`${API_URL}/api/reports/sales?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -3986,7 +3993,7 @@ async function loadSalesReport() {
                 `;
                 
                 report.branches.forEach(b => {
-                    html += `<tr><td>${b.branch_name}</td><td>${b.count}</td><td>${b.total.toFixed(3)} د.ك</td></tr>`;
+                    html += `<tr><td>${escHTML(b.branch_name)}</td><td>${b.count}</td><td>${b.total.toFixed(3)} د.ك</td></tr>`;
                 });
                 
                 html += `</tbody></table></div>`;
@@ -4005,10 +4012,10 @@ async function loadInventoryReport() {
     const branchId = document.getElementById('reportBranch').value;
     
     try {
-        let url = `${API_URL}/api/reports/inventory?`;
-        if (branchId) url += `branch_id=${branchId}`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (branchId) params.append('branch_id', branchId);
+
+        const response = await fetch(`${API_URL}/api/reports/inventory?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4050,8 +4057,8 @@ async function loadInventoryReport() {
                 if (item.stock > 0) {
                     html += `
                         <tr>
-                            <td>${item.name}</td>
-                            <td>${item.branch_name || '-'}</td>
+                            <td>${escHTML(item.name)}</td>
+                            <td>${escHTML(item.branch_name) || '-'}</td>
                             <td>${item.stock}</td>
                             <td>${(item.cost || 0).toFixed(3)} د.ك</td>
                             <td><strong>${(item.stock_value || 0).toFixed(3)} د.ك</strong></td>
@@ -4076,12 +4083,12 @@ async function loadDamagedReport() {
     const branchId = document.getElementById('reportBranch').value;
     
     try {
-        let url = `${API_URL}/api/reports/damaged?`;
-        if (startDate) url += `start_date=${startDate}&`;
-        if (endDate) url += `end_date=${endDate}&`;
-        if (branchId) url += `branch_id=${branchId}&`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        if (branchId) params.append('branch_id', branchId);
+
+        const response = await fetch(`${API_URL}/api/reports/damaged?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4121,10 +4128,10 @@ async function loadDamagedReport() {
                 html += `
                     <tr>
                         <td>${date}</td>
-                        <td>${item.product_name}</td>
-                        <td>${item.branch_name || '-'}</td>
+                        <td>${escHTML(item.product_name)}</td>
+                        <td>${escHTML(item.branch_name) || '-'}</td>
                         <td>${item.quantity}</td>
-                        <td>${item.reason || '-'}</td>
+                        <td>${escHTML(item.reason) || '-'}</td>
                         <td><strong>${(item.damage_value || 0).toFixed(3)} د.ك</strong></td>
                     </tr>
                 `;
@@ -4312,7 +4319,7 @@ async function loadBranchesForUserForm() {
             const select = document.getElementById('userBranch');
             if (select) {
                 select.innerHTML = data.branches.map(b => 
-                    `<option value="${b.id}">${b.name}</option>`
+                    `<option value="${b.id}">${escHTML(b.name)}</option>`
                 ).join('');
             }
         }
@@ -4329,12 +4336,12 @@ async function loadExpenses() {
         const endDate = document.getElementById('expenseEndDate').value;
         const branchId = document.getElementById('expenseBranchFilter').value;
         
-        let url = `${API_URL}/api/expenses?`;
-        if (startDate) url += `start_date=${startDate}&`;
-        if (endDate) url += `end_date=${endDate}&`;
-        if (branchId) url += `branch_id=${branchId}`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        if (branchId) params.append('branch_id', branchId);
+
+        const response = await fetch(`${API_URL}/api/expenses?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4380,9 +4387,9 @@ function displayExpenses(expenses) {
                     let row = `
                     <tr>
                         <td>${new Date(e.expense_date).toLocaleDateString('ar')}</td>
-                        <td><strong>${e.expense_type}</strong>${hasSalary ? ` <button onclick="toggleSalaryExpand(${e.id})" class="btn-sm" style="background:#667eea;color:white;padding:2px 8px;font-size:11px;border-radius:6px;cursor:pointer;">👥 ${e.salary_details.length} موظف</button>` : ''}</td>
+                        <td><strong>${escHTML(e.expense_type)}</strong>${hasSalary ? ` <button onclick="toggleSalaryExpand(${e.id})" class="btn-sm" style="background:#667eea;color:white;padding:2px 8px;font-size:11px;border-radius:6px;cursor:pointer;">👥 ${e.salary_details.length} موظف</button>` : ''}</td>
                         <td style="color: #dc3545; font-weight: bold;">${e.amount.toFixed(3)} د.ك</td>
-                        <td>${e.description || '-'}</td>
+                        <td>${escHTML(e.description) || '-'}</td>
                         <td>${e.branch_id || 'عام'}</td>
                         <td>
                             <button onclick="deleteExpense(${e.id})" class="btn-sm btn-danger">🗑️</button>
@@ -4403,7 +4410,7 @@ function displayExpenses(expenses) {
                                     <tbody>
                                         ${e.salary_details.map(s => `
                                         <tr style="border-bottom: 1px solid #e2e8f0;">
-                                            <td style="padding: 8px; text-align: center;">${s.employee_name}</td>
+                                            <td style="padding: 8px; text-align: center;">${escHTML(s.employee_name)}</td>
                                             <td style="padding: 8px; text-align: center; color: #dc3545; font-weight: bold;">${s.monthly_salary.toFixed(3)} د.ك</td>
                                         </tr>`).join('')}
                                     </tbody>
@@ -4523,7 +4530,7 @@ async function loadBranchesForExpense() {
         if (data.success) {
             const select = document.getElementById('expenseBranch');
             select.innerHTML = '<option value="">عام</option>' + 
-                data.branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                data.branches.map(b => `<option value="${b.id}">${escHTML(b.name)}</option>`).join('');
         }
     } catch (error) {
         console.error('خطأ:', error);
@@ -4537,7 +4544,7 @@ async function loadBranchesForExpenseFilter() {
         if (data.success) {
             const select = document.getElementById('expenseBranchFilter');
             select.innerHTML = '<option value="">كل الفروع</option>' + 
-                data.branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                data.branches.map(b => `<option value="${b.id}">${escHTML(b.name)}</option>`).join('');
         }
     } catch (error) {
         console.error('خطأ:', error);
@@ -4610,12 +4617,12 @@ async function loadProductReport() {
         const endDate = document.getElementById('advReportEndDate').value;
         const branchId = document.getElementById('advReportBranchFilter').value;
         
-        let url = `${API_URL}/api/reports/sales-by-product?`;
-        if (startDate) url += `start_date=${startDate}&`;
-        if (endDate) url += `end_date=${endDate}&`;
-        if (branchId) url += `branch_id=${branchId}`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        if (branchId) params.append('branch_id', branchId);
+
+        const response = await fetch(`${API_URL}/api/reports/sales-by-product?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4662,7 +4669,7 @@ function displayProductReport(data) {
             <tbody>
                 ${data.products.map(p => `
                     <tr>
-                        <td><strong>${p.product_name}</strong></td>
+                        <td><strong>${escHTML(p.product_name)}</strong></td>
                         <td>${p.total_quantity}</td>
                         <td style="color: #28a745; font-weight: bold;">${p.total_sales.toFixed(3)} د.ك</td>
                         <td>${p.invoice_count}</td>
@@ -4681,7 +4688,7 @@ function displayProductReport(data) {
         new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: data.products.map(p => p.product_name),
+                labels: data.products.map(p => escHTML(p.product_name)),
                 datasets: [{
                     label: 'المبيعات (د.ك)',
                     data: data.products.map(p => p.total_sales),
@@ -4709,11 +4716,11 @@ async function loadBranchReport() {
         const startDate = document.getElementById('advReportStartDate').value;
         const endDate = document.getElementById('advReportEndDate').value;
         
-        let url = `${API_URL}/api/reports/sales-by-branch?`;
-        if (startDate) url += `start_date=${startDate}&`;
-        if (endDate) url += `end_date=${endDate}`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+
+        const response = await fetch(`${API_URL}/api/reports/sales-by-branch?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4760,7 +4767,7 @@ function displayBranchReport(data) {
             <tbody>
                 ${data.branches.map(b => `
                     <tr>
-                        <td><strong>${b.branch_name}</strong></td>
+                        <td><strong>${escHTML(b.branch_name)}</strong></td>
                         <td>${b.invoice_count}</td>
                         <td style="color: #28a745; font-weight: bold;">${b.total_sales.toFixed(3)} د.ك</td>
                         <td style="color: #dc3545;">${b.total_discount.toFixed(3)} د.ك</td>
@@ -4809,12 +4816,12 @@ async function loadProfitLossReport() {
         const endDate = document.getElementById('advReportEndDate').value;
         const branchId = document.getElementById('advReportBranchFilter').value;
         
-        let url = `${API_URL}/api/reports/profit-loss?`;
-        if (startDate) url += `start_date=${startDate}&`;
-        if (endDate) url += `end_date=${endDate}&`;
-        if (branchId) url += `branch_id=${branchId}`;
-        
-        const response = await fetch(url);
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        if (branchId) params.append('branch_id', branchId);
+
+        const response = await fetch(`${API_URL}/api/reports/profit-loss?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4914,7 +4921,7 @@ async function loadBranchesForAdvReports() {
         if (data.success) {
             const select = document.getElementById('advReportBranchFilter');
             select.innerHTML = '<option value="">كل الفروع</option>' + 
-                data.branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                data.branches.map(b => `<option value="${b.id}">${escHTML(b.name)}</option>`).join('');
         }
     } catch (error) {
         console.error('خطأ:', error);
@@ -5052,8 +5059,8 @@ function searchCustomerInPOS(query) {
 function customerResultItem(c) {
     return `<div onclick="pickCustomerFromSearch('${c.id}')" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px; display:flex; justify-content:space-between; align-items:center;"
         onmouseover="this.style.background='#f0f0ff'" onmouseout="this.style.background='white'">
-        <span><strong>${c.name}</strong></span>
-        <span style="color:#667eea; font-size:12px; direction:ltr;">${c.phone || ''}</span>
+        <span><strong>${escHTML(c.name)}</strong></span>
+        <span style="color:#667eea; font-size:12px; direction:ltr;">${escHTML(c.phone) || ''}</span>
     </div>`;
 }
 
@@ -5956,8 +5963,8 @@ function displayCustomersTable(customers) {
         const pointsValueKd = (points * pointValue).toFixed(3);
         html += `
             <tr>
-                <td>${c.name}</td>
-                <td>${c.phone}</td>
+                <td>${escHTML(c.name)}</td>
+                <td>${escHTML(c.phone)}</td>
                 <td>
                     <span style="font-weight: bold; color: #0ea5e9; font-size: 16px;">${points}</span>
                     <div style="font-size: 10px; color: #64748b;">= ${pointsValueKd} د.ك</div>
@@ -6377,8 +6384,9 @@ let allReturns = [];
 // تحميل المرتجعات
 async function loadReturns(status = '') {
     try {
-        let url = `${API_URL}/api/returns`;
-        if (status) url += `?status=${status}`;
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        let url = `${API_URL}/api/returns?${params}`;
         
         const response = await fetch(url);
         const data = await response.json();
@@ -6433,13 +6441,13 @@ function displayReturnsTable(returns) {
         html += `
             <tr>
                 <td><strong>#${r.id}</strong></td>
-                <td>${r.invoice_number || '-'}</td>
-                <td><strong>${r.product_name}</strong></td>
+                <td>${escHTML(r.invoice_number) || '-'}</td>
+                <td><strong>${escHTML(r.product_name)}</strong></td>
                 <td>${r.quantity}</td>
                 <td>${(r.price || 0).toFixed(3)} د.ك</td>
                 <td><strong style="color: #dc3545;">${(r.total || 0).toFixed(3)} د.ك</strong></td>
-                <td style="max-width: 200px; white-space: normal;">${r.reason || '-'}</td>
-                <td>${r.employee_name || '-'}</td>
+                <td style="max-width: 200px; white-space: normal;">${escHTML(r.reason) || '-'}</td>
+                <td>${escHTML(r.employee_name) || '-'}</td>
                 <td style="font-size: 12px;">${date}</td>
                 <td>
                     <button onclick="viewReturnDetails(${r.id})" class="btn-sm" style="background: #0ea5e9;" title="عرض التفاصيل">👁️</button>
@@ -6674,7 +6682,7 @@ async function printReturn(id) {
                         <h3>تفاصيل المرتجع:</h3>
                         <div class="info-row">
                             <span class="label">المنتج:</span>
-                            <span>${r.product_name}</span>
+                            <span>${escHTML(r.product_name)}</span>
                         </div>
                         <div class="info-row">
                             <span class="label">الكمية:</span>
@@ -6687,7 +6695,7 @@ async function printReturn(id) {
                         ${r.reason ? `
                         <div class="info-row">
                             <span class="label">سبب الإرجاع:</span>
-                            <span>${r.reason}</span>
+                            <span>${escHTML(r.reason)}</span>
                         </div>
                         ` : ''}
                     </div>
@@ -6776,16 +6784,16 @@ async function printThermalReturn(id) {
 </div>
 <div class="preview-wrapper">
 <div class="receipt">
-<div class="center r-header">${storeName}</div>
+<div class="center r-header">${escHTML(storeName)}</div>
 <div class="center r-sub" style="color:#dc3545;">إيصال مرتجع</div>
 <div class="sep"></div>
 <div class="row r-mid"><span>رقم: #${r.id}</span><span>${date}</span></div>
-${r.invoice_number ? `<div class="r-small">الفاتورة: ${r.invoice_number}</div>` : ''}
-${r.employee_name ? `<div class="r-small">الموظف: ${r.employee_name}</div>` : ''}
+${r.invoice_number ? `<div class="r-small">الفاتورة: ${escHTML(r.invoice_number)}</div>` : ''}
+${r.employee_name ? `<div class="r-small">الموظف: ${escHTML(r.employee_name)}</div>` : ''}
 <div class="sep"></div>
-<div class="bold">${r.product_name}</div>
+<div class="bold">${escHTML(r.product_name)}</div>
 <div class="row r-mid"><span>الكمية: ${r.quantity}</span><span>السعر: ${(r.price || 0).toFixed(3)}</span></div>
-${r.reason ? `<div class="r-small">السبب: ${r.reason}</div>` : ''}
+${r.reason ? `<div class="r-small">السبب: ${escHTML(r.reason)}</div>` : ''}
 <div class="sep"></div>
 <div class="row r-total"><span>المسترجع:</span><span>${(r.total || 0).toFixed(3)} د.ك</span></div>
 <div class="sep"></div>
@@ -6893,12 +6901,12 @@ function filterInvoicesByStatus() {
                     return `
                     <tr style="${isCancelled ? 'opacity:0.5; background:#fff5f5;' : ''}">
                         <td>
-                            <strong${isCancelled ? ' style="text-decoration:line-through;"' : ''}>${inv.invoice_number}</strong>
+                            <strong${isCancelled ? ' style="text-decoration:line-through;"' : ''}>${escHTML(inv.invoice_number)}</strong>
                             ${isCancelled ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">🚫 ملغية</span>' : ''}
                             ${isOffline ? ' <span style="background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:10px;">📴 معلقة</span>' : ''}
                         </td>
-                        <td>${inv.customer_name || 'عميل'}</td>
-                        <td>${inv.employee_name}</td>
+                        <td>${escHTML(inv.customer_name) || 'عميل'}</td>
+                        <td>${escHTML(inv.employee_name)}</td>
                         <td style="color:${isCancelled ? '#dc3545' : '#28a745'}; font-weight:bold;${isCancelled ? ' text-decoration:line-through;' : ''}">${inv.total.toFixed(3)} د.ك</td>
                         <td>
                             ${isCancelled ? '<span style="color:#dc3545; font-weight:bold; font-size:12px;">🚫 ملغية</span>' : `
@@ -6988,13 +6996,13 @@ function displaySuppliersTable(suppliers) {
             <tbody>
                 ${suppliers.map(s => `
                     <tr>
-                        <td><strong>${s.name}</strong></td>
-                        <td>${s.company || '-'}</td>
-                        <td>${s.phone || '-'}</td>
+                        <td><strong>${escHTML(s.name)}</strong></td>
+                        <td>${escHTML(s.company) || '-'}</td>
+                        <td>${escHTML(s.phone) || '-'}</td>
                         <td><span style="background: #667eea; color: white; padding: 3px 10px; border-radius: 12px; font-weight: bold;">${s.invoice_count || 0}</span></td>
                         <td style="color: #e53e3e; font-weight: bold;">${(s.total_amount || 0).toFixed(3)} د.ك</td>
                         <td>
-                            <button onclick="viewSupplierInvoices(${s.id}, '${(s.name || '').replace(/'/g, "\\'")}')" class="btn-sm" style="background: #667eea;">📄</button>
+                            <button onclick="viewSupplierInvoices(${s.id}, '${escHTML((s.name || '').replace(/'/g, "\\'"))}')" class="btn-sm" style="background: #667eea;">📄</button>
                             <button onclick="editSupplier(${s.id})" class="btn-sm">✏️</button>
                             <button onclick="deleteSupplier(${s.id})" class="btn-sm btn-danger">🗑️</button>
                         </td>
@@ -7154,7 +7162,7 @@ function validateSupplierFile(input) {
     }
 
     const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-    info.innerHTML = `<span style="color: #28a745;">✅ ${file.name} (${sizeMB} MB)</span>`;
+    info.innerHTML = `<span style="color: #28a745;">✅ ${escHTML(file.name)} (${sizeMB} MB)</span>`;
 }
 
 document.getElementById('supplierInvoiceForm').addEventListener('submit', async (e) => {
@@ -7342,7 +7350,7 @@ function displayCouponsTable(coupons) {
         }
 
         html += `<tr style="border-bottom:1px solid #e2e8f0;">
-            <td style="padding:12px; font-weight:bold; color:#667eea; font-family:monospace; font-size:16px;">${c.code}</td>
+            <td style="padding:12px; font-weight:bold; color:#667eea; font-family:monospace; font-size:16px;">${escHTML(c.code)}</td>
             <td style="padding:12px; text-align:center;">${c.discount_type === 'percent' ? '📊 نسبة' : '💵 مبلغ'}</td>
             <td style="padding:12px; text-align:center; font-weight:bold;">${c.discount_type === 'percent' ? c.discount_value + '%' : c.discount_value.toFixed(3) + ' د.ك'}</td>
             <td style="padding:12px; text-align:center;">${c.min_amount > 0 ? c.min_amount.toFixed(3) + ' د.ك' : '-'}</td>
@@ -7578,7 +7586,7 @@ function displayAdditionalOperations() {
     additionalOperations.forEach(op => {
         html += `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
-                <span style="font-size: 12px;">${op.name}</span>
+                <span style="font-size: 12px;">${escHTML(op.name)}</span>
                 <div>
                     <span style="font-weight: bold; margin-right: 10px;">${op.amount.toFixed(3)} د.ك</span>
                     <button onclick="removeAdditionalOperation(${op.id})" style="background: #ef4444; color: white; border: none; padding: 2px 6px; border-radius: 3px; cursor: pointer;">✖</button>
@@ -7663,7 +7671,7 @@ async function loadTablesDropdown() {
             data.tables.forEach(t => {
                 const statusText = t.status === 'occupied' ? ' (مشغولة)' : t.status === 'reserved' ? ' (محجوزة)' : '';
                 const isDisabled = t.status === 'occupied' || t.status === 'reserved';
-                select.innerHTML += `<option value="${t.id}" ${isDisabled ? 'disabled' : ''}>${t.name}${statusText}</option>`;
+                select.innerHTML += `<option value="${t.id}" ${isDisabled ? 'disabled' : ''}>${escHTML(t.name)}${statusText}</option>`;
             });
             section.style.display = 'block';
         } else {
@@ -7797,15 +7805,15 @@ function displayTablesFloorPlan() {
 
         tableEl.innerHTML = `
             <div style="font-size: 24px; margin-bottom: 6px;">${statusIcon}</div>
-            <div style="font-weight: bold; font-size: 14px; color: #1e293b;">${table.name}</div>
+            <div style="font-weight: bold; font-size: 14px; color: #1e293b;">${escHTML(table.name)}</div>
             <div style="font-size: 11px; color: #64748b; margin-top: 2px;">🪑 ${table.seats} مقاعد</div>
             <div style="font-size: 11px; color: ${statusColor}; margin-top: 4px; font-weight: bold;">
                 ${statusText}
             </div>
             ${isOccupied && table.invoice_number ? `
                 <div style="background: rgba(255,255,255,0.8); border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin-top: 6px; font-size: 10px; width: 100%;">
-                    <div style="color: #3b82f6; font-weight: bold;">📄 ${table.invoice_number}</div>
-                    ${table.invoice_customer ? `<div style="color: #64748b;">👤 ${table.invoice_customer}</div>` : ''}
+                    <div style="color: #3b82f6; font-weight: bold;">📄 ${escHTML(table.invoice_number)}</div>
+                    ${table.invoice_customer ? `<div style="color: #64748b;">👤 ${escHTML(table.invoice_customer)}</div>` : ''}
                     ${table.invoice_total ? `<div style="color: #059669; font-weight: bold;">${parseFloat(table.invoice_total).toFixed(3)} د.ك</div>` : ''}
                 </div>
             ` : ''}
@@ -8051,10 +8059,10 @@ async function viewTableInvoice(tableId) {
             content.innerHTML = `
                 <div style="padding: 15px;">
                     <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #86efac;">
-                        <strong>🍽️ ${table.name}</strong> | <strong>📄 فاتورة: ${inv.invoice_number}</strong>
+                        <strong>🍽️ ${escHTML(table.name)}</strong> | <strong>📄 فاتورة: ${escHTML(inv.invoice_number)}</strong>
                     </div>
                     <div style="font-size: 13px; margin-bottom: 10px;">
-                        <div><strong>العميل:</strong> ${inv.customer_name || '-'}</div>
+                        <div><strong>العميل:</strong> ${escHTML(inv.customer_name) || '-'}</div>
                         <div><strong>التاريخ:</strong> ${new Date(inv.created_at).toLocaleDateString('ar')}</div>
                         <div><strong>الدفع:</strong> ${inv.payments && inv.payments.length > 0 ? inv.payments.map(p => `${paymentMethods[p.method] || p.method} (${parseFloat(p.amount).toFixed(3)})`).join(' + ') : paymentMethods[inv.payment_method]}</div>
                     </div>
@@ -8068,7 +8076,7 @@ async function viewTableInvoice(tableId) {
                         <tbody>
                             ${(inv.items || []).map(item => `
                                 <tr style="border-bottom: 1px solid #e5e7eb;">
-                                    <td style="padding: 5px;">${item.product_name}</td>
+                                    <td style="padding: 5px;">${escHTML(item.product_name)}</td>
                                     <td style="padding: 5px; text-align: center;">${item.quantity}</td>
                                     <td style="padding: 5px;">${parseFloat(item.price).toFixed(3)}</td>
                                     <td style="padding: 5px;">${parseFloat(item.total).toFixed(3)}</td>
@@ -8345,9 +8353,9 @@ async function loadSuperAdminDashboard() {
                 tableHTML += `
                     <tr style="border-bottom: 1px solid #f1f5f9;">
                         <td style="padding: 10px;">${i + 1}</td>
-                        <td style="padding: 10px; font-weight: bold;">${t.name}</td>
-                        <td style="padding: 10px; direction: ltr; color: #64748b;">${t.slug}</td>
-                        <td style="padding: 10px;">${t.owner_name}</td>
+                        <td style="padding: 10px; font-weight: bold;">${escHTML(t.name)}</td>
+                        <td style="padding: 10px; direction: ltr; color: #64748b;">${escHTML(t.slug)}</td>
+                        <td style="padding: 10px;">${escHTML(t.owner_name)}</td>
                         <td style="padding: 10px;"><span style="background: ${t.plan === 'enterprise' ? '#fef3c7' : t.plan === 'premium' ? '#dbeafe' : '#f1f5f9'}; padding: 3px 8px; border-radius: 6px; font-size: 11px;">${planNames[t.plan] || t.plan}</span></td>
                         <td style="padding: 10px; text-align: center;">${t.is_active ? '<span style="color: #10b981; font-weight: bold;">✅ نشط</span>' : '<span style="color: #ef4444;">❌ معطل</span>'}</td>
                         <td style="padding: 10px; text-align: center; font-size: 12px;">${subStatus}</td>
@@ -8356,10 +8364,10 @@ async function loadSuperAdminDashboard() {
                             <div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
                                 <button onclick="openSubscriptionModal(${t.id})" style="background: #8b5cf6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="الاشتراك">💳</button>
                                 <button onclick="viewTenantStats(${t.id})" style="background: #3b82f6; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="إحصائيات">📊</button>
-                                <button onclick="superAdminBackupTenant(${t.id}, '${t.name}')" style="background: #10b981; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="نسخ احتياطي">💾</button>
+                                <button onclick="superAdminBackupTenant(${t.id}, '${escHTML(t.name)}')" style="background: #10b981; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="نسخ احتياطي">💾</button>
                                 <button onclick="editTenant(${t.id})" style="background: #f59e0b; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="تعديل">✏️</button>
                                 <button onclick="toggleTenant(${t.id}, ${t.is_active ? 0 : 1})" style="background: ${t.is_active ? '#ef4444' : '#10b981'}; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="${t.is_active ? 'تعطيل' : 'تفعيل'}">${t.is_active ? '🚫' : '✅'}</button>
-                                <button onclick="deleteTenantAction(${t.id}, '${t.name}')" style="background: #dc2626; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="حذف">🗑️</button>
+                                <button onclick="deleteTenantAction(${t.id}, '${escHTML(t.name)}')" style="background: #dc2626; color: white; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px;" title="حذف">🗑️</button>
                             </div>
                         </td>
                     </tr>
@@ -8668,7 +8676,7 @@ async function openSubscriptionModal(tenantId) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center;">
                         <div>
                             <div style="font-size: 12px; color: #64748b;">المتجر</div>
-                            <div style="font-weight: bold;">${t.name}</div>
+                            <div style="font-weight: bold;">${escHTML(t.name)}</div>
                         </div>
                         <div>
                             <div style="font-size: 12px; color: #64748b;">ينتهي في</div>
@@ -9222,7 +9230,7 @@ async function loadGDriveFiles() {
             html += `
                 <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-weight: bold; color: #2d3748; font-size: 13px;">${f.name}</div>
+                        <div style="font-weight: bold; color: #2d3748; font-size: 13px;">${escHTML(f.name)}</div>
                         <div style="font-size: 12px; color: #718096;">${dateStr} - ${timeStr} | ${formatFileSize(f.size)}</div>
                     </div>
                     <div style="display: flex; gap: 5px;">
@@ -9319,7 +9327,7 @@ async function loadAdminDashInvoices() {
             const bgColor = idx % 2 === 0 ? '#ffffff' : '#f7fafc';
             tableHtml += `
                 <tr style="background: ${bgColor};">
-                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748;">🏢 ${b.branch_name}</td>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748;">🏢 ${escHTML(b.branch_name)}</td>
                     <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #4a5568;">${b.total_invoices}</td>
                     <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #38a169; font-weight: bold;">${Number(b.total_sales).toFixed(2)}</td>
                     <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #667eea; font-weight: bold;">${b.today_invoices}</td>
@@ -9370,7 +9378,7 @@ function renderAdminDashStockTable(branches, products) {
                     <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 100px;">التصنيف</th>`;
 
     branches.forEach(b => {
-        html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 120px;">🏢 ${b.name}</th>`;
+        html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 120px;">🏢 ${escHTML(b.name)}</th>`;
     });
 
     html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 100px; background: #edf2f7;">الإجمالي</th>
@@ -9383,8 +9391,8 @@ function renderAdminDashStockTable(branches, products) {
         let totalStock = 0;
 
         html += `<tr style="background: ${bgColor};">
-            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748; position: sticky; right: 0; background: ${bgColor};">${p.name}</td>
-            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; color: #718096;">${p.category || '-'}</td>`;
+            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748; position: sticky; right: 0; background: ${bgColor};">${escHTML(p.name)}</td>
+            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; color: #718096;">${escHTML(p.category) || '-'}</td>`;
 
         branches.forEach(b => {
             const branchData = p.branches[b.id];
