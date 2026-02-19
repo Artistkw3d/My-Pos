@@ -955,8 +955,9 @@ def add_user():
                              can_view_returns, can_view_expenses, can_view_suppliers, can_view_coupons,
                              can_view_tables, can_view_attendance, can_view_advanced_reports,
                              can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches,
-                             can_view_cross_branch_stock, can_view_xbrl, shift_id, can_edit_completed_invoices)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             can_view_cross_branch_stock, can_view_xbrl, shift_id, can_edit_completed_invoices,
+                             can_create_transfer, can_approve_transfer, can_deliver_transfer, can_view_transfers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
             hash_password(data.get('password')),
@@ -996,7 +997,11 @@ def add_user():
             data.get('can_view_cross_branch_stock', 0),
             data.get('can_view_xbrl', 0),
             data.get('shift_id'),
-            data.get('can_edit_completed_invoices', 0)
+            data.get('can_edit_completed_invoices', 0),
+            data.get('can_create_transfer', 0),
+            data.get('can_approve_transfer', 0),
+            data.get('can_deliver_transfer', 0),
+            data.get('can_view_transfers', 0)
         ))
 
         user_id = cursor.lastrowid
@@ -1139,6 +1144,18 @@ def update_user(user_id):
         if 'can_edit_completed_invoices' in data:
             updates.append('can_edit_completed_invoices = ?')
             params.append(data['can_edit_completed_invoices'])
+        if 'can_create_transfer' in data:
+            updates.append('can_create_transfer = ?')
+            params.append(data['can_create_transfer'])
+        if 'can_approve_transfer' in data:
+            updates.append('can_approve_transfer = ?')
+            params.append(data['can_approve_transfer'])
+        if 'can_deliver_transfer' in data:
+            updates.append('can_deliver_transfer = ?')
+            params.append(data['can_deliver_transfer'])
+        if 'can_view_transfers' in data:
+            updates.append('can_view_transfers = ?')
+            params.append(data['can_view_transfers'])
         if 'is_active' in data:
             updates.append('is_active = ?')
             params.append(data['is_active'])
