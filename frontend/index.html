@@ -256,6 +256,7 @@
                 <button class="header-btn" onclick="showTab('backup')" data-tab="backup" id="backupBtn" style="display: none;">💾 النسخ الاحتياطي</button>
                 <button class="header-btn" onclick="showTab('xbrl')" data-tab="xbrl" id="xbrlBtn" style="display: none;">📄 XBRL</button>
                 <button class="header-btn" onclick="showTab('admindashboard')" data-tab="admindashboard" id="adminDashboardBtn" style="display: none;">📊 شاشة الأدمن</button>
+                <button class="header-btn" onclick="showTab('transfers')" data-tab="transfers" id="transfersBtn" style="display: none;">🚚 طلبات النقل</button>
             </div>
             <div class="header-center">
                 <h1>🛍️ نظام نقاط البيع</h1>
@@ -595,6 +596,11 @@
                             <option value="add_expense">💸 إضافة مصروف</option>
                             <option value="delete_expense">🗑️ حذف مصروف</option>
                             <option value="shift_lock">🔒 قفل شفت</option>
+                            <option value="create_transfer">🚚 طلب نقل</option>
+                            <option value="approve_transfer">✅ موافقة نقل</option>
+                            <option value="reject_transfer">❌ رفض نقل</option>
+                            <option value="pickup_transfer">🚗 استلام سائق</option>
+                            <option value="receive_transfer">📦 تأكيد استلام نقل</option>
                         </select>
                     </div>
                     <div style="flex: 1; min-width: 150px;">
@@ -2190,6 +2196,28 @@
                             </div>
 
                             <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #cbd5e0;">
+                                <strong style="color: #667eea; font-size: 14px;">🚚 طلبات النقل المخزني</strong>
+                                <div style="margin: 10px 0 5px 20px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_view_transfers" style="width: 18px; height: 18px;">
+                                        <span>👁️ عرض طلبات النقل</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_create_transfer" style="width: 18px; height: 18px;">
+                                        <span>➕ إنشاء طلب نقل</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_approve_transfer" style="width: 18px; height: 18px;">
+                                        <span>✅ الموافقة/رفض الطلبات</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_deliver_transfer" style="width: 18px; height: 18px;">
+                                        <span>🚗 استلام وتوصيل (سائق)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #cbd5e0;">
                                 <strong style="color: #667eea; font-size: 14px;">🍽️ الطاولات</strong>
                                 <div style="margin: 10px 0 5px 20px;">
                                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
@@ -2268,6 +2296,95 @@
                 <div id="suppliersContainer"></div>
             </div>
         </div>
+
+    <!-- Stock Transfers Tab -->
+        <div class="tab-content" id="transfersTab" style="display: none;">
+            <div style="padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                    <h2>🚚 طلبات النقل المخزني</h2>
+                    <button onclick="showCreateTransfer()" class="add-btn" id="createTransferBtn">➕ طلب نقل جديد</button>
+                </div>
+                <!-- فلاتر -->
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; align-items: center;">
+                    <select id="transferStatusFilter" onchange="loadStockTransfers()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+                        <option value="">كل الحالات</option>
+                        <option value="pending">⏳ قيد الانتظار</option>
+                        <option value="approved">✅ تم التجهيز</option>
+                        <option value="in_transit">🚚 جاري التوصيل</option>
+                        <option value="completed">📦 مكتمل</option>
+                        <option value="rejected">❌ مرفوض</option>
+                    </select>
+                    <select id="transferBranchFilter" onchange="loadStockTransfers()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+                        <option value="">كل الفروع</option>
+                    </select>
+                </div>
+                <div id="transfersStats" style="margin-bottom:10px; font-size:13px; color:#666;"></div>
+                <div id="transfersTableContainer"></div>
+            </div>
+        </div>
+
+    <!-- Create Transfer Modal -->
+    <div class="modal" id="createTransferModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>🚚 طلب نقل مخزني جديد</h2>
+                <button class="close-btn" onclick="closeCreateTransfer()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>الفرع المصدر (يُصرف منه):</label>
+                        <select id="transferFromBranch" required style="width:100%; padding:10px; border:2px solid #e2e8f0; border-radius:8px;">
+                            <option value="">اختر الفرع</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>الفرع الطالب (يستلم):</label>
+                        <select id="transferToBranch" required style="width:100%; padding:10px; border:2px solid #e2e8f0; border-radius:8px;">
+                            <option value="">اختر الفرع</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label>ملاحظات:</label>
+                    <input type="text" id="transferNotes" placeholder="سبب الطلب أو ملاحظات..." style="width:100%; padding:10px; border:2px solid #e2e8f0; border-radius:8px;">
+                </div>
+                <!-- بحث وإضافة المنتجات -->
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:8px;">إضافة أصناف:</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="transferProductSearch" placeholder="ابحث عن منتج..." oninput="searchTransferProducts()" style="flex:1; padding:10px; border:2px solid #e2e8f0; border-radius:8px;">
+                    </div>
+                    <div id="transferProductResults" style="max-height:200px; overflow-y:auto; border:1px solid #eee; border-radius:8px; margin-top:5px; display:none;"></div>
+                </div>
+                <!-- عناصر الطلب -->
+                <div id="transferItemsContainer" style="margin-bottom: 15px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#f7fafc;">
+                                <th style="padding:8px; text-align:right; border-bottom:2px solid #e2e8f0;">الصنف</th>
+                                <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0; width:120px;">الكمية</th>
+                                <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0; width:60px;">حذف</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transferItemsBody"></tbody>
+                    </table>
+                </div>
+                <button onclick="submitTransferRequest()" class="btn" style="width:100%; padding:12px; background:#667eea; font-size:16px; border:none; color:#fff; border-radius:8px; cursor:pointer;">📤 إرسال الطلب</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transfer Details Modal -->
+    <div class="modal" id="transferDetailsModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>📋 تفاصيل طلب النقل</h2>
+                <button class="close-btn" onclick="closeTransferDetails()">✖️</button>
+            </div>
+            <div class="modal-body" id="transferDetailsContent"></div>
+        </div>
+    </div>
 
     <!-- Add/Edit Supplier Modal -->
     <div class="modal" id="addSupplierModal">

@@ -195,9 +195,13 @@ async function initializeUI() {
         canViewBranches: hasPerm('can_view_branches'),
         canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock'),
         canViewXbrl: hasPerm('can_view_xbrl'),
-        canEditCompletedInvoices: hasPerm('can_edit_completed_invoices')
+        canEditCompletedInvoices: hasPerm('can_edit_completed_invoices'),
+        canViewTransfers: hasPerm('can_view_transfers'),
+        canCreateTransfer: hasPerm('can_create_transfer'),
+        canApproveTransfer: hasPerm('can_approve_transfer'),
+        canDeliverTransfer: hasPerm('can_deliver_transfer')
     };
-    
+
     // إخفاء/إظهار الأزرار والتبويبات
     document.getElementById('settingsBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
     document.getElementById('backupBtn').style.display = window.userPermissions.canAccessSettings ? 'inline-block' : 'none';
@@ -215,6 +219,7 @@ async function initializeUI() {
     document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
     document.getElementById('xbrlBtn').style.display = window.userPermissions.canViewXbrl ? 'inline-block' : 'none';
     document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
+    document.getElementById('transfersBtn').style.display = window.userPermissions.canViewTransfers ? 'inline-block' : 'none';
     // عرض خانة اختيار الطاولة في نقطة البيع
     loadTablesDropdown();
 
@@ -379,7 +384,11 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 canViewBranches: hasPerm('can_view_branches'),
                 canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock'),
                 canViewXbrl: hasPerm('can_view_xbrl'),
-                canEditCompletedInvoices: hasPerm('can_edit_completed_invoices')
+                canEditCompletedInvoices: hasPerm('can_edit_completed_invoices'),
+                canViewTransfers: hasPerm('can_view_transfers'),
+                canCreateTransfer: hasPerm('can_create_transfer'),
+                canApproveTransfer: hasPerm('can_approve_transfer'),
+                canDeliverTransfer: hasPerm('can_deliver_transfer')
             };
 
             // إخفاء/إظهار الأزرار والتبويبات
@@ -399,6 +408,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('attendanceBtn').style.display = window.userPermissions.canViewAttendance ? 'inline-block' : 'none';
             document.getElementById('xbrlBtn').style.display = window.userPermissions.canViewXbrl ? 'inline-block' : 'none';
             document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
+            document.getElementById('transfersBtn').style.display = window.userPermissions.canViewTransfers ? 'inline-block' : 'none';
             // عرض خانة اختيار الطاولة في نقطة البيع
             loadTablesDropdown();
 
@@ -597,7 +607,8 @@ function showTab(tabName) {
         'settings': 'settingsTab',
         'backup': 'backupTab',
         'admindashboard': 'admindashboardTab',
-        'xbrl': 'xbrlTab'
+        'xbrl': 'xbrlTab',
+        'transfers': 'transfersTab'
     };
     
     const tabId = tabMap[tabName];
@@ -667,6 +678,7 @@ function showTab(tabName) {
         if (tabName === 'accounting') loadAccounting();
         if (tabName === 'xbrl') loadXBRLTab();
         if (tabName === 'admindashboard') loadAdminDashboard();
+        if (tabName === 'transfers') loadStockTransfers();
     }
 }
 
@@ -2549,6 +2561,10 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         userData.can_view_branches = 1;
         userData.can_view_cross_branch_stock = 1;
         userData.can_edit_completed_invoices = 1;
+        userData.can_view_transfers = 1;
+        userData.can_create_transfer = 1;
+        userData.can_approve_transfer = 1;
+        userData.can_deliver_transfer = 1;
     }
     
     if (userId && !userData.password) delete userData.password;
@@ -4262,7 +4278,13 @@ async function loadSystemLogs(page) {
                 'delete_customer': '🗑️ حذف عميل',
                 'add_expense': '💸 إضافة مصروف',
                 'delete_expense': '🗑️ حذف مصروف',
-                'shift_lock': '🔒 قفل شفت'
+                'shift_lock': '🔒 قفل شفت',
+                'create_transfer': '🚚 طلب نقل',
+                'approve_transfer': '✅ موافقة نقل',
+                'reject_transfer': '❌ رفض نقل',
+                'pickup_transfer': '🚗 استلام سائق',
+                'receive_transfer': '📦 تأكيد استلام نقل',
+                'delete_transfer': '🗑️ حذف طلب نقل'
             };
 
             // تطبيق فلتر التاريخ على العميل (الـ API يدعمها أيضاً)
@@ -10792,6 +10814,569 @@ async function loadAdminDashShiftPerformance() {
 }
 
 console.log('[Shift Performance] Loaded ✅');
+
+// ===== نظام طلبات النقل المخزني (Stock Transfer Requests) =====
+
+let _transferItems = []; // عناصر الطلب الحالي
+let _transferBranches = []; // قائمة الفروع المحملة
+
+const _transferStatusLabels = {
+    'pending': '⏳ قيد الانتظار',
+    'approved': '✅ تم التجهيز',
+    'in_transit': '🚚 جاري التوصيل',
+    'completed': '📦 مكتمل',
+    'rejected': '❌ مرفوض'
+};
+const _transferStatusColors = {
+    'pending': '#f39c12',
+    'approved': '#27ae60',
+    'in_transit': '#3498db',
+    'completed': '#2ecc71',
+    'rejected': '#e74c3c'
+};
+
+async function loadStockTransfers() {
+    try {
+        const statusFilter = document.getElementById('transferStatusFilter')?.value || '';
+        const branchFilter = document.getElementById('transferBranchFilter')?.value || '';
+
+        const params = new URLSearchParams();
+        if (statusFilter) params.set('status', statusFilter);
+        if (branchFilter) params.set('branch_id', branchFilter);
+
+        const response = await fetch(`${API_URL}/api/stock-transfers?${params.toString()}`);
+        const data = await response.json();
+
+        // تحميل قائمة الفروع للفلتر
+        await _loadTransferBranchesFilter();
+
+        // إخفاء/إظهار زر إنشاء الطلب حسب الصلاحية
+        const createBtn = document.getElementById('createTransferBtn');
+        if (createBtn) createBtn.style.display = window.userPermissions?.canCreateTransfer ? 'inline-block' : 'none';
+
+        const container = document.getElementById('transfersTableContainer');
+        const statsEl = document.getElementById('transfersStats');
+
+        if (!data.success || !data.transfers || data.transfers.length === 0) {
+            if (statsEl) statsEl.textContent = '';
+            container.innerHTML = '<p style="text-align:center; padding:40px; color:#999;">لا توجد طلبات نقل</p>';
+            return;
+        }
+
+        const transfers = data.transfers;
+        if (statsEl) {
+            const pending = transfers.filter(t => t.status === 'pending').length;
+            const inTransit = transfers.filter(t => t.status === 'in_transit').length;
+            statsEl.textContent = `الإجمالي: ${transfers.length} | قيد الانتظار: ${pending} | جاري التوصيل: ${inTransit}`;
+        }
+
+        let html = `<table class="data-table" style="font-size:13px;">
+            <thead><tr>
+                <th>رقم الطلب</th>
+                <th>من (المصدر)</th>
+                <th>إلى (الطالب)</th>
+                <th>الحالة</th>
+                <th>عدد الأصناف</th>
+                <th>الطالب</th>
+                <th>التاريخ</th>
+                <th>إجراءات</th>
+            </tr></thead><tbody>`;
+
+        transfers.forEach(t => {
+            const statusLabel = _transferStatusLabels[t.status] || t.status;
+            const statusColor = _transferStatusColors[t.status] || '#666';
+            const date = new Date(t.requested_at).toLocaleString('ar-EG');
+            const itemCount = t.items ? t.items.length : 0;
+
+            html += `<tr>
+                <td style="font-weight:bold; color:#667eea;">${escHTML(t.transfer_number)}</td>
+                <td>${escHTML(t.from_branch_name || '-')}</td>
+                <td>${escHTML(t.to_branch_name || '-')}</td>
+                <td><span style="padding:3px 10px; border-radius:12px; font-size:12px; background:${statusColor}22; color:${statusColor}; font-weight:bold;">${statusLabel}</span></td>
+                <td style="text-align:center;">${itemCount}</td>
+                <td>${escHTML(t.requested_by_name || '-')}</td>
+                <td style="font-size:11px;">${date}</td>
+                <td>
+                    <button onclick="viewTransferDetails(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#667eea;">تفاصيل</button>
+                    ${t.status === 'pending' && window.userPermissions?.canApproveTransfer ?
+                        `<button onclick="approveTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#27ae60;">موافقة</button>
+                         <button onclick="rejectTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#e74c3c;">رفض</button>` : ''}
+                    ${t.status === 'approved' && window.userPermissions?.canDeliverTransfer ?
+                        `<button onclick="pickupTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#f39c12;">استلام سائق</button>` : ''}
+                    ${t.status === 'in_transit' && window.userPermissions?.canCreateTransfer ?
+                        `<button onclick="receiveTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#2ecc71;">تأكيد استلام</button>` : ''}
+                    ${(t.status === 'pending' || t.status === 'rejected') && window.userPermissions?.canCreateTransfer ?
+                        `<button onclick="deleteTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#dc3545;">حذف</button>` : ''}
+                </td>
+            </tr>`;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('[Transfers] Error:', error);
+        document.getElementById('transfersTableContainer').innerHTML = `<p style="color:#dc3545; text-align:center;">خطأ: ${escHTML(error.message)}</p>`;
+    }
+}
+
+async function _loadTransferBranchesFilter() {
+    try {
+        const res = await fetch(`${API_URL}/api/branches`);
+        const data = await res.json();
+        if (data.success) {
+            _transferBranches = data.branches || [];
+            const select = document.getElementById('transferBranchFilter');
+            if (select && select.options.length <= 1) {
+                _transferBranches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = b.name;
+                    select.appendChild(opt);
+                });
+            }
+        }
+    } catch (e) {}
+}
+
+// === إنشاء طلب نقل ===
+
+async function showCreateTransfer() {
+    _transferItems = [];
+    document.getElementById('transferNotes').value = '';
+    document.getElementById('transferProductSearch').value = '';
+    document.getElementById('transferProductResults').style.display = 'none';
+    document.getElementById('transferItemsBody').innerHTML = '';
+
+    // تحميل الفروع
+    try {
+        const res = await fetch(`${API_URL}/api/branches`);
+        const data = await res.json();
+        if (data.success) {
+            _transferBranches = data.branches || [];
+            const fromSelect = document.getElementById('transferFromBranch');
+            const toSelect = document.getElementById('transferToBranch');
+            const options = '<option value="">اختر الفرع</option>' +
+                _transferBranches.map(b => `<option value="${b.id}">${escHTML(b.name)}</option>`).join('');
+            fromSelect.innerHTML = options;
+            toSelect.innerHTML = options;
+
+            // تحديد الفرع الحالي للمستخدم كفرع الطالب
+            if (currentUser?.branch_id) {
+                toSelect.value = currentUser.branch_id;
+            }
+        }
+    } catch (e) {}
+
+    document.getElementById('createTransferModal').classList.add('active');
+}
+
+function closeCreateTransfer() {
+    document.getElementById('createTransferModal').classList.remove('active');
+}
+
+async function searchTransferProducts() {
+    const query = document.getElementById('transferProductSearch').value.trim();
+    const resultsDiv = document.getElementById('transferProductResults');
+
+    if (query.length < 2) {
+        resultsDiv.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/api/inventory`);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const filtered = data.inventory.filter(p =>
+            (p.name && p.name.includes(query)) ||
+            (p.sku && p.sku.includes(query)) ||
+            (p.barcode && p.barcode.includes(query))
+        ).slice(0, 20);
+
+        if (filtered.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">لا توجد نتائج</div>';
+            resultsDiv.style.display = 'block';
+            return;
+        }
+
+        let html = '';
+        filtered.forEach(p => {
+            // إذا كان له متغيرات
+            if (p.variants && p.variants.length > 0) {
+                p.variants.forEach(v => {
+                    html += `<div onclick="addTransferItem(${p.id}, '${escHTML(p.name)} - ${escHTML(v.name)}', ${v.id}, '${escHTML(v.name)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''">
+                        ${escHTML(p.name)} - <span style="color:#667eea;">${escHTML(v.name)}</span>
+                    </div>`;
+                });
+            } else {
+                html += `<div onclick="addTransferItem(${p.id}, '${escHTML(p.name)}', null, '')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''">
+                    ${escHTML(p.name)}
+                </div>`;
+            }
+        });
+
+        resultsDiv.innerHTML = html;
+        resultsDiv.style.display = 'block';
+    } catch (e) {
+        console.error('[Transfers] Search error:', e);
+    }
+}
+
+function addTransferItem(inventoryId, productName, variantId, variantName) {
+    // تحقق من التكرار
+    const exists = _transferItems.find(i => i.inventory_id === inventoryId && i.variant_id === variantId);
+    if (exists) {
+        alert('هذا الصنف موجود بالفعل في القائمة');
+        return;
+    }
+
+    _transferItems.push({
+        inventory_id: inventoryId,
+        product_name: productName,
+        variant_id: variantId,
+        variant_name: variantName,
+        quantity: 1
+    });
+
+    document.getElementById('transferProductSearch').value = '';
+    document.getElementById('transferProductResults').style.display = 'none';
+    renderTransferItems();
+}
+
+function renderTransferItems() {
+    const tbody = document.getElementById('transferItemsBody');
+    if (_transferItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:#999;">لم تتم إضافة أصناف بعد</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = _transferItems.map((item, idx) => `
+        <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:8px;">${escHTML(item.product_name)}</td>
+            <td style="padding:8px; text-align:center;">
+                <input type="number" min="1" value="${item.quantity}" onchange="updateTransferItemQty(${idx}, this.value)" style="width:80px; padding:6px; text-align:center; border:1px solid #ddd; border-radius:6px;">
+            </td>
+            <td style="padding:8px; text-align:center;">
+                <button onclick="removeTransferItem(${idx})" style="background:#e74c3c; color:#fff; border:none; padding:4px 10px; border-radius:6px; cursor:pointer; font-size:12px;">حذف</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function updateTransferItemQty(idx, val) {
+    const qty = parseInt(val);
+    if (qty > 0) _transferItems[idx].quantity = qty;
+}
+
+function removeTransferItem(idx) {
+    _transferItems.splice(idx, 1);
+    renderTransferItems();
+}
+
+async function submitTransferRequest() {
+    const fromBranch = document.getElementById('transferFromBranch').value;
+    const toBranch = document.getElementById('transferToBranch').value;
+    const notes = document.getElementById('transferNotes').value.trim();
+
+    if (!fromBranch) { alert('اختر الفرع المصدر'); return; }
+    if (!toBranch) { alert('اختر الفرع الطالب'); return; }
+    if (fromBranch === toBranch) { alert('لا يمكن النقل من وإلى نفس الفرع'); return; }
+    if (_transferItems.length === 0) { alert('أضف صنف واحد على الأقل'); return; }
+
+    try {
+        const response = await fetch(`${API_URL}/api/stock-transfers`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                from_branch_id: parseInt(fromBranch),
+                to_branch_id: parseInt(toBranch),
+                requested_by: currentUser.id,
+                requested_by_name: currentUser.full_name,
+                notes: notes,
+                items: _transferItems.map(i => ({
+                    inventory_id: i.inventory_id,
+                    product_name: i.product_name,
+                    variant_id: i.variant_id,
+                    variant_name: i.variant_name,
+                    quantity: i.quantity
+                }))
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            logAction('create_transfer', `إنشاء طلب نقل ${data.transfer_number} - ${_transferItems.length} أصناف`, data.id);
+            alert(`تم إنشاء طلب النقل بنجاح\nرقم الطلب: ${data.transfer_number}`);
+            closeCreateTransfer();
+            loadStockTransfers();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ في الاتصال: ' + error.message);
+    }
+}
+
+// === تفاصيل طلب النقل ===
+
+async function viewTransferDetails(transferId) {
+    try {
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
+        const data = await response.json();
+        if (!data.success) { alert('خطأ: ' + data.error); return; }
+
+        const t = data.transfer;
+        const statusLabel = _transferStatusLabels[t.status] || t.status;
+        const statusColor = _transferStatusColors[t.status] || '#666';
+
+        let html = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div style="background:#f7fafc; padding:12px; border-radius:8px;">
+                    <strong>رقم الطلب:</strong> <span style="color:#667eea; font-weight:bold;">${escHTML(t.transfer_number)}</span>
+                </div>
+                <div style="background:#f7fafc; padding:12px; border-radius:8px;">
+                    <strong>الحالة:</strong> <span style="padding:3px 10px; border-radius:12px; font-size:12px; background:${statusColor}22; color:${statusColor}; font-weight:bold;">${statusLabel}</span>
+                </div>
+                <div style="background:#f7fafc; padding:12px; border-radius:8px;">
+                    <strong>من:</strong> ${escHTML(t.from_branch_name || '-')}
+                </div>
+                <div style="background:#f7fafc; padding:12px; border-radius:8px;">
+                    <strong>إلى:</strong> ${escHTML(t.to_branch_name || '-')}
+                </div>
+                <div style="background:#f7fafc; padding:12px; border-radius:8px;">
+                    <strong>طلب بواسطة:</strong> ${escHTML(t.requested_by_name || '-')}
+                </div>
+                <div style="background:#f7fafc; padding:12px; border-radius:8px;">
+                    <strong>تاريخ الطلب:</strong> ${new Date(t.requested_at).toLocaleString('ar-EG')}
+                </div>`;
+
+        if (t.approved_by_name) {
+            html += `<div style="background:#e8f5e9; padding:12px; border-radius:8px;">
+                <strong>${t.status === 'rejected' ? 'رفض بواسطة' : 'موافقة بواسطة'}:</strong> ${escHTML(t.approved_by_name)}
+                ${t.approved_at ? ' - ' + new Date(t.approved_at).toLocaleString('ar-EG') : ''}
+            </div>`;
+        }
+        if (t.driver_name) {
+            html += `<div style="background:#e3f2fd; padding:12px; border-radius:8px;">
+                <strong>السائق:</strong> ${escHTML(t.driver_name)}
+                ${t.picked_up_at ? ' - استلم: ' + new Date(t.picked_up_at).toLocaleString('ar-EG') : ''}
+            </div>`;
+        }
+        if (t.received_by_name) {
+            html += `<div style="background:#e8f5e9; padding:12px; border-radius:8px;">
+                <strong>استلم بواسطة:</strong> ${escHTML(t.received_by_name)}
+                ${t.completed_at ? ' - ' + new Date(t.completed_at).toLocaleString('ar-EG') : ''}
+            </div>`;
+        }
+        if (t.reject_reason) {
+            html += `<div style="background:#ffebee; padding:12px; border-radius:8px; grid-column:1/3;">
+                <strong>سبب الرفض:</strong> ${escHTML(t.reject_reason)}
+            </div>`;
+        }
+        if (t.notes) {
+            html += `<div style="background:#fff8e1; padding:12px; border-radius:8px; grid-column:1/3;">
+                <strong>ملاحظات:</strong> ${escHTML(t.notes)}
+            </div>`;
+        }
+
+        html += `</div>`;
+
+        // جدول العناصر
+        html += `<h3 style="margin-bottom:10px;">📦 الأصناف</h3>
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead><tr style="background:#f7fafc;">
+                    <th style="padding:8px; text-align:right; border-bottom:2px solid #e2e8f0;">الصنف</th>
+                    <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0;">الكمية المطلوبة</th>
+                    <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0;">الكمية المعتمدة</th>
+                    <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0;">الكمية المستلمة</th>
+                </tr></thead><tbody>`;
+
+        (t.items || []).forEach(item => {
+            html += `<tr style="border-bottom:1px solid #eee;">
+                <td style="padding:8px;">${escHTML(item.product_name)}${item.variant_name ? ' - <span style="color:#667eea;">' + escHTML(item.variant_name) + '</span>' : ''}</td>
+                <td style="padding:8px; text-align:center;">${item.quantity_requested}</td>
+                <td style="padding:8px; text-align:center;">${item.quantity_approved || '-'}</td>
+                <td style="padding:8px; text-align:center;">${item.quantity_received || '-'}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table>';
+
+        // أزرار الإجراءات
+        html += '<div style="margin-top:20px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">';
+        if (t.status === 'pending' && window.userPermissions?.canApproveTransfer) {
+            html += `<button onclick="approveTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#27ae60; font-size:14px;">✅ موافقة وتجهيز</button>`;
+            html += `<button onclick="rejectTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#e74c3c; font-size:14px;">❌ رفض</button>`;
+        }
+        if (t.status === 'approved' && window.userPermissions?.canDeliverTransfer) {
+            html += `<button onclick="pickupTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#f39c12; font-size:14px;">🚗 استلام السائق</button>`;
+        }
+        if (t.status === 'in_transit' && window.userPermissions?.canCreateTransfer) {
+            html += `<button onclick="receiveTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#2ecc71; font-size:14px;">📦 تأكيد الاستلام</button>`;
+        }
+        html += '</div>';
+
+        document.getElementById('transferDetailsContent').innerHTML = html;
+        document.getElementById('transferDetailsModal').classList.add('active');
+    } catch (error) {
+        alert('خطأ: ' + error.message);
+    }
+}
+
+function closeTransferDetails() {
+    document.getElementById('transferDetailsModal').classList.remove('active');
+}
+
+// === إجراءات Workflow ===
+
+async function approveTransferPrompt(transferId) {
+    if (!confirm('هل أنت متأكد من الموافقة على هذا الطلب؟\n\nسيتم خصم الكميات من مخزون الفرع المصدر.')) return;
+
+    try {
+        // جلب العناصر لتعيين الكميات المعتمدة
+        const res = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
+        const tData = await res.json();
+        if (!tData.success) { alert('خطأ: ' + tData.error); return; }
+
+        const approvedItems = tData.transfer.items.map(item => ({
+            item_id: item.id,
+            quantity_approved: item.quantity_requested
+        }));
+
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/approve`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                approved_by: currentUser.id,
+                approved_by_name: currentUser.full_name,
+                items: approvedItems
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            logAction('approve_transfer', `موافقة على طلب نقل #${transferId}`, transferId);
+            alert('تمت الموافقة وتجهيز البضاعة');
+            closeTransferDetails();
+            loadStockTransfers();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ: ' + error.message);
+    }
+}
+
+async function rejectTransferPrompt(transferId) {
+    const reason = prompt('أدخل سبب الرفض:');
+    if (reason === null) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/reject`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                approved_by: currentUser.id,
+                approved_by_name: currentUser.full_name,
+                reject_reason: reason
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            logAction('reject_transfer', `رفض طلب نقل #${transferId} - السبب: ${reason}`, transferId);
+            alert('تم رفض الطلب');
+            closeTransferDetails();
+            loadStockTransfers();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ: ' + error.message);
+    }
+}
+
+async function pickupTransferPrompt(transferId) {
+    if (!confirm('هل تم استلام البضاعة من المستودع؟\n\nسيتم تحويل الحالة إلى "جاري التوصيل"')) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/pickup`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                driver_id: currentUser.id,
+                driver_name: currentUser.full_name
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            logAction('pickup_transfer', `استلام سائق لطلب نقل #${transferId}`, transferId);
+            alert('تم تسجيل الاستلام - جاري التوصيل');
+            closeTransferDetails();
+            loadStockTransfers();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ: ' + error.message);
+    }
+}
+
+async function receiveTransferPrompt(transferId) {
+    if (!confirm('هل تم استلام البضاعة بالكامل؟\n\nسيتم إضافة الكميات لمخزون فرعك وإكمال الطلب.')) return;
+
+    try {
+        // جلب العناصر لتعيين الكميات المستلمة
+        const res = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
+        const tData = await res.json();
+        if (!tData.success) { alert('خطأ: ' + tData.error); return; }
+
+        const receivedItems = tData.transfer.items.map(item => ({
+            item_id: item.id,
+            quantity_received: item.quantity_approved || item.quantity_requested
+        }));
+
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/receive`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                received_by: currentUser.id,
+                received_by_name: currentUser.full_name,
+                items: receivedItems
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            logAction('receive_transfer', `تأكيد استلام طلب نقل #${transferId}`, transferId);
+            alert('تم تأكيد الاستلام - اكتمل الطلب بنجاح');
+            closeTransferDetails();
+            loadStockTransfers();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ: ' + error.message);
+    }
+}
+
+async function deleteTransferPrompt(transferId) {
+    if (!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            logAction('delete_transfer', `حذف طلب نقل #${transferId}`, transferId);
+            alert('تم حذف الطلب');
+            closeTransferDetails();
+            loadStockTransfers();
+        } else {
+            alert('خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('خطأ: ' + error.message);
+    }
+}
+
+console.log('[Stock Transfers] Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 
