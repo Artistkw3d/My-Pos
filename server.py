@@ -5563,13 +5563,36 @@ def generate_xbrl():
         def fmt(v):
             return f'{v:,.2f}'
 
+        # مُعرف فريد لكل حقيقة XBRL
+        _fact_id_counter = [0]
+        def fid():
+            _fact_id_counter[0] += 1
+            return f'fact_{_fact_id_counter[0]}'
+
+        # تاغ رقمي مع كل الخصائص اللازمة للمفتش
+        def nf(concept, ctx, val, sign_neg=False):
+            """ix:nonFraction tag with full inspector properties"""
+            fid_val = fid()
+            abs_val = abs(val) if val else 0
+            sign_attr = ' sign="-"' if (sign_neg and abs_val > 0) else ''
+            return f'<ix:nonFraction id="{fid_val}" name="ifrs-full:{concept}" contextRef="{ctx}" unitRef="{currency}" decimals="0" scale="0" format="ixt:num-dot-decimal"{sign_attr}>{fmt(abs_val)}</ix:nonFraction>'
+
+        # تاغ نصي
+        def nt(concept, ctx, text):
+            """ix:nonNumeric tag with full inspector properties"""
+            fid_val = fid()
+            safe_text = str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            return f'<ix:nonNumeric id="{fid_val}" name="ifrs-full:{concept}" contextRef="{ctx}" xml:lang="ar">{safe_text}</ix:nonNumeric>'
+
         xbrl_xml = f'''<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
       xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2020-02-12"
+      xmlns:ixt4="http://www.xbrl.org/inlineXBRL/transformation/2020-02-12"
       xmlns:link="http://www.xbrl.org/2003/linkbase"
       xmlns:xlink="http://www.w3.org/1999/xlink"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
       xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xml:lang="ar">
@@ -5595,6 +5618,14 @@ def generate_xbrl():
 </head>
 <body>
   <ix:header>
+    <ix:hidden>
+      <!-- حقائق مخفية - بيانات الكيان والفترة -->
+      <ix:nonNumeric id="h_entity_name" name="ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification" contextRef="CurrentPeriod" xml:lang="ar">{entity_name_ar or entity_name}</ix:nonNumeric>
+      <ix:nonNumeric id="h_domicile" name="ifrs-full:DomicileOfEntity" contextRef="CurrentPeriod" xml:lang="ar">{company.get('country', 'SA')}</ix:nonNumeric>
+      <ix:nonNumeric id="h_legal_form" name="ifrs-full:LegalFormOfEntity" contextRef="CurrentPeriod" xml:lang="ar">{company.get('legal_form', '')}</ix:nonNumeric>
+      <ix:nonNumeric id="h_nature" name="ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities" contextRef="CurrentPeriod" xml:lang="ar">{company.get('industry_sector', '')}</ix:nonNumeric>
+      <ix:nonNumeric id="h_currency" name="ifrs-full:DescriptionOfPresentationCurrency" contextRef="CurrentPeriod" xml:lang="ar">{currency}</ix:nonNumeric>
+    </ix:hidden>
     <ix:references>
       <link:schemaRef xlink:type="simple" xlink:href="https://xbrl.ifrs.org/taxonomy/2024-03-27/full_ifrs_entry_point_2024-03-27.xsd"/>
     </ix:references>
@@ -5635,10 +5666,10 @@ def generate_xbrl():
 
   <!-- ===== بيانات الشركة ===== -->
   <div class="company-info">
-    <p><strong>اسم الشركة:</strong> <ix:nonNumeric name="ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification" contextRef="CurrentPeriod">{entity_name_ar or entity_name}</ix:nonNumeric></p>
-    <p><strong>البلد:</strong> <ix:nonNumeric name="ifrs-full:DomicileOfEntity" contextRef="CurrentPeriod">{company.get('country', 'SA')}</ix:nonNumeric></p>
-    <p><strong>الشكل القانوني:</strong> <ix:nonNumeric name="ifrs-full:LegalFormOfEntity" contextRef="CurrentPeriod">{company.get('legal_form', '')}</ix:nonNumeric></p>
-    <p><strong>طبيعة النشاط:</strong> <ix:nonNumeric name="ifrs-full:DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities" contextRef="CurrentPeriod">{company.get('industry_sector', '')}</ix:nonNumeric></p>
+    <p><strong>اسم الشركة:</strong> {nt('NameOfReportingEntityOrOtherMeansOfIdentification', 'CurrentPeriod', entity_name_ar or entity_name)}</p>
+    <p><strong>البلد:</strong> {nt('DomicileOfEntity', 'CurrentPeriod', company.get('country', 'SA'))}</p>
+    <p><strong>الشكل القانوني:</strong> {nt('LegalFormOfEntity', 'CurrentPeriod', company.get('legal_form', ''))}</p>
+    <p><strong>طبيعة النشاط:</strong> {nt('DescriptionOfNatureOfEntitysOperationsAndPrincipalActivities', 'CurrentPeriod', company.get('industry_sector', ''))}</p>
     <p><strong>السجل التجاري:</strong> {cr_number}</p>
     <p><strong>الرقم الضريبي:</strong> {tax_number}</p>
     <p><strong>العملة:</strong> {currency}</p>
@@ -5650,43 +5681,43 @@ def generate_xbrl():
     <tr><th>البند</th><th style="width:200px">المبلغ ({currency})</th></tr>
     <tr>
       <td>الإيرادات</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:Revenue" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_revenue)}</ix:nonFraction></td>
+      <td class="num">{nf('Revenue', 'CurrentPeriod', total_revenue)}</td>
     </tr>
     <tr>
       <td>تكلفة المبيعات</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:CostOfSales" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cost_of_sales)}</ix:nonFraction>)</td>
+      <td class="num">({nf('CostOfSales', 'CurrentPeriod', cost_of_sales)})</td>
     </tr>
     <tr class="total">
       <td>مجمل الربح</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:GrossProfit" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(gross_profit)}</ix:nonFraction></td>
+      <td class="num">{nf('GrossProfit', 'CurrentPeriod', gross_profit)}</td>
     </tr>
     <tr>
       <td>الاستهلاك والإطفاء</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:DepreciationAndAmortisationExpense" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(depreciation)}</ix:nonFraction>)</td>
+      <td class="num">({nf('DepreciationAndAmortisationExpense', 'CurrentPeriod', depreciation)})</td>
     </tr>
     <tr>
       <td>مصاريف تشغيلية أخرى</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:OtherExpenseByNature" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_opex)}</ix:nonFraction>)</td>
+      <td class="num">({nf('OtherExpenseByNature', 'CurrentPeriod', total_opex)})</td>
     </tr>
     <tr class="total">
       <td>ربح العمليات</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ProfitLossFromOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(operating_profit)}</ix:nonFraction></td>
+      <td class="num">{nf('ProfitLossFromOperatingActivities', 'CurrentPeriod', operating_profit)}</td>
     </tr>
     <tr>
       <td>تكاليف التمويل</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:FinanceCosts" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(finance_costs)}</ix:nonFraction>)</td>
+      <td class="num">({nf('FinanceCosts', 'CurrentPeriod', finance_costs)})</td>
     </tr>
     <tr class="total">
       <td>الربح قبل الزكاة/الضريبة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ProfitLossBeforeTax" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(profit_before_tax)}</ix:nonFraction></td>
+      <td class="num">{nf('ProfitLossBeforeTax', 'CurrentPeriod', profit_before_tax)}</td>
     </tr>
     <tr>
       <td>الزكاة / ضريبة الدخل</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:IncomeTaxExpenseContinuingOperations" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(zakat_tax)}</ix:nonFraction>)</td>
+      <td class="num">({nf('IncomeTaxExpenseContinuingOperations', 'CurrentPeriod', zakat_tax)})</td>
     </tr>
     <tr class="grand-total">
       <td>صافي الربح</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ProfitLoss" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_profit)}</ix:nonFraction></td>
+      <td class="num">{nf('ProfitLoss', 'CurrentPeriod', net_profit)}</td>
     </tr>
   </table>
 
@@ -5697,79 +5728,79 @@ def generate_xbrl():
     <tr class="section-head"><td colspan="2">الأصول المتداولة</td></tr>
     <tr>
       <td>النقد وما يعادله</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:CashAndCashEquivalents" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cash_equivalents)}</ix:nonFraction></td>
+      <td class="num">{nf('CashAndCashEquivalents', 'CurrentInstant', cash_equivalents)}</td>
     </tr>
     <tr>
       <td>الذمم المدينة التجارية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:TradeAndOtherCurrentReceivables" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(receivables)}</ix:nonFraction></td>
+      <td class="num">{nf('TradeAndOtherCurrentReceivables', 'CurrentInstant', receivables)}</td>
     </tr>
     <tr>
       <td>المخزون</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:Inventories" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(inventory_val)}</ix:nonFraction></td>
+      <td class="num">{nf('Inventories', 'CurrentInstant', inventory_val)}</td>
     </tr>
     <tr class="total">
       <td>إجمالي الأصول المتداولة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:CurrentAssets" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_current_assets)}</ix:nonFraction></td>
+      <td class="num">{nf('CurrentAssets', 'CurrentInstant', total_current_assets)}</td>
     </tr>
     <tr class="section-head"><td colspan="2">الأصول غير المتداولة</td></tr>
     <tr>
       <td>الممتلكات والمعدات</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:PropertyPlantAndEquipment" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(ppe)}</ix:nonFraction></td>
+      <td class="num">{nf('PropertyPlantAndEquipment', 'CurrentInstant', ppe)}</td>
     </tr>
     <tr>
       <td>الأصول غير الملموسة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:IntangibleAssetsOtherThanGoodwill" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(intangible_assets)}</ix:nonFraction></td>
+      <td class="num">{nf('IntangibleAssetsOtherThanGoodwill', 'CurrentInstant', intangible_assets)}</td>
     </tr>
     <tr class="total">
       <td>إجمالي الأصول غير المتداولة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:NoncurrentAssets" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_non_current_assets)}</ix:nonFraction></td>
+      <td class="num">{nf('NoncurrentAssets', 'CurrentInstant', total_non_current_assets)}</td>
     </tr>
     <tr class="grand-total">
       <td>إجمالي الأصول</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:Assets" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_assets)}</ix:nonFraction></td>
+      <td class="num">{nf('Assets', 'CurrentInstant', total_assets)}</td>
     </tr>
     <tr class="section-head"><td colspan="2">الخصوم المتداولة</td></tr>
     <tr>
       <td>الذمم الدائنة التجارية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:TradeAndOtherCurrentPayables" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(trade_payables)}</ix:nonFraction></td>
+      <td class="num">{nf('TradeAndOtherCurrentPayables', 'CurrentInstant', trade_payables)}</td>
     </tr>
     <tr>
       <td>قروض قصيرة الأجل</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ShorttermBorrowings" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(short_term_loans)}</ix:nonFraction></td>
+      <td class="num">{nf('ShorttermBorrowings', 'CurrentInstant', short_term_loans)}</td>
     </tr>
     <tr class="total">
       <td>إجمالي الخصوم المتداولة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:CurrentLiabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_current_liabilities)}</ix:nonFraction></td>
+      <td class="num">{nf('CurrentLiabilities', 'CurrentInstant', total_current_liabilities)}</td>
     </tr>
     <tr class="section-head"><td colspan="2">الخصوم غير المتداولة</td></tr>
     <tr>
       <td>قروض طويلة الأجل</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:LongtermBorrowings" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(long_term_loans)}</ix:nonFraction></td>
+      <td class="num">{nf('LongtermBorrowings', 'CurrentInstant', long_term_loans)}</td>
     </tr>
     <tr class="total">
       <td>إجمالي الخصوم غير المتداولة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:NoncurrentLiabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_non_current_liabilities)}</ix:nonFraction></td>
+      <td class="num">{nf('NoncurrentLiabilities', 'CurrentInstant', total_non_current_liabilities)}</td>
     </tr>
     <tr class="grand-total">
       <td>إجمالي الخصوم</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:Liabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_liabilities)}</ix:nonFraction></td>
+      <td class="num">{nf('Liabilities', 'CurrentInstant', total_liabilities)}</td>
     </tr>
     <tr class="section-head"><td colspan="2">حقوق الملكية</td></tr>
     <tr>
       <td>رأس المال</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:IssuedCapital" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(share_capital)}</ix:nonFraction></td>
+      <td class="num">{nf('IssuedCapital', 'CurrentInstant', share_capital)}</td>
     </tr>
     <tr>
       <td>الأرباح المبقاة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:RetainedEarnings" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(retained_earnings)}</ix:nonFraction></td>
+      <td class="num">{nf('RetainedEarnings', 'CurrentInstant', retained_earnings)}</td>
     </tr>
     <tr class="total">
       <td>إجمالي حقوق الملكية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:Equity" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_equity)}</ix:nonFraction></td>
+      <td class="num">{nf('Equity', 'CurrentInstant', total_equity)}</td>
     </tr>
     <tr class="grand-total">
       <td>إجمالي الخصوم وحقوق الملكية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:EquityAndLiabilities" contextRef="CurrentInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(total_liabilities + total_equity)}</ix:nonFraction></td>
+      <td class="num">{nf('EquityAndLiabilities', 'CurrentInstant', total_liabilities + total_equity)}</td>
     </tr>
   </table>
 
@@ -5780,69 +5811,69 @@ def generate_xbrl():
     <tr class="section-head"><td colspan="2">الأنشطة التشغيلية (الطريقة المباشرة)</td></tr>
     <tr>
       <td>المقبوضات من العملاء</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ReceiptsFromSalesOfGoodsAndRenderingOfServices" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_customers_received)}</ix:nonFraction></td>
+      <td class="num">{nf('ReceiptsFromSalesOfGoodsAndRenderingOfServices', 'CurrentPeriod', cf_customers_received)}</td>
     </tr>
     <tr>
       <td>المدفوعات للموردين</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:PaymentsToSuppliersForGoodsAndServices" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_suppliers_paid)}</ix:nonFraction>)</td>
+      <td class="num">({nf('PaymentsToSuppliersForGoodsAndServices', 'CurrentPeriod', cf_suppliers_paid)})</td>
     </tr>
     <tr>
       <td>المدفوعات للموظفين</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:PaymentsToAndOnBehalfOfEmployees" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_employees_paid)}</ix:nonFraction>)</td>
+      <td class="num">({nf('PaymentsToAndOnBehalfOfEmployees', 'CurrentPeriod', cf_employees_paid)})</td>
     </tr>
     <tr>
       <td>فوائد مدفوعة</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:InterestPaidClassifiedAsOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_interest_paid)}</ix:nonFraction>)</td>
+      <td class="num">({nf('InterestPaidClassifiedAsOperatingActivities', 'CurrentPeriod', cf_interest_paid)})</td>
     </tr>
     <tr>
       <td>ضرائب مدفوعة</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:IncomeTaxesPaidRefundClassifiedAsOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_taxes_paid)}</ix:nonFraction>)</td>
+      <td class="num">({nf('IncomeTaxesPaidRefundClassifiedAsOperatingActivities', 'CurrentPeriod', cf_taxes_paid)})</td>
     </tr>
     <tr class="total">
       <td>صافي النقد من الأنشطة التشغيلية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:CashFlowsFromUsedInOperatingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_cash_operating)}</ix:nonFraction></td>
+      <td class="num">{nf('CashFlowsFromUsedInOperatingActivities', 'CurrentPeriod', net_cash_operating)}</td>
     </tr>
     <tr class="section-head"><td colspan="2">الأنشطة الاستثمارية</td></tr>
     <tr>
       <td>شراء ممتلكات ومعدات</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_ppe_purchased)}</ix:nonFraction>)</td>
+      <td class="num">({nf('PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities', 'CurrentPeriod', cf_ppe_purchased)})</td>
     </tr>
     <tr>
       <td>بيع ممتلكات ومعدات</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_ppe_sold)}</ix:nonFraction></td>
+      <td class="num">{nf('ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities', 'CurrentPeriod', cf_ppe_sold)}</td>
     </tr>
     <tr class="total">
       <td>صافي النقد من الأنشطة الاستثمارية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:CashFlowsFromUsedInInvestingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_cash_investing)}</ix:nonFraction></td>
+      <td class="num">{nf('CashFlowsFromUsedInInvestingActivities', 'CurrentPeriod', net_cash_investing)}</td>
     </tr>
     <tr class="section-head"><td colspan="2">الأنشطة التمويلية</td></tr>
     <tr>
       <td>قروض مستلمة</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:ProceedsFromBorrowingsClassifiedAsFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_loans_received)}</ix:nonFraction></td>
+      <td class="num">{nf('ProceedsFromBorrowingsClassifiedAsFinancingActivities', 'CurrentPeriod', cf_loans_received)}</td>
     </tr>
     <tr>
       <td>سداد قروض</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:RepaymentsOfBorrowingsClassifiedAsFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_loans_repaid)}</ix:nonFraction>)</td>
+      <td class="num">({nf('RepaymentsOfBorrowingsClassifiedAsFinancingActivities', 'CurrentPeriod', cf_loans_repaid)})</td>
     </tr>
     <tr>
       <td>أرباح موزعة</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:DividendsPaidClassifiedAsFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(cf_dividends_paid)}</ix:nonFraction>)</td>
+      <td class="num">({nf('DividendsPaidClassifiedAsFinancingActivities', 'CurrentPeriod', cf_dividends_paid)})</td>
     </tr>
     <tr class="total">
       <td>صافي النقد من الأنشطة التمويلية</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:CashFlowsFromUsedInFinancingActivities" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_cash_financing)}</ix:nonFraction></td>
+      <td class="num">{nf('CashFlowsFromUsedInFinancingActivities', 'CurrentPeriod', net_cash_financing)}</td>
     </tr>
     <tr class="grand-total">
       <td>صافي التغير في النقد</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:IncreaseDecreaseInCashAndCashEquivalents" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(net_change_cash)}</ix:nonFraction></td>
+      <td class="num">{nf('IncreaseDecreaseInCashAndCashEquivalents', 'CurrentPeriod', net_change_cash)}</td>
     </tr>
     <tr>
       <td>رصيد النقد - بداية الفترة</td>
-      <td class="num">{fmt(cash_beginning)}</td>
+      <td class="num">{nf('CashAndCashEquivalents', 'PriorInstant', cash_beginning)}</td>
     </tr>
     <tr class="grand-total">
       <td>رصيد النقد - نهاية الفترة</td>
-      <td class="num">{fmt(cash_ending)}</td>
+      <td class="num">{nf('CashAndCashEquivalents', 'CurrentInstant', cash_ending)}</td>
     </tr>
   </table>
 
@@ -5852,39 +5883,39 @@ def generate_xbrl():
     <tr><th>البند</th><th style="width:150px">رأس المال</th><th style="width:150px">أرباح مبقاة</th><th style="width:150px">الإجمالي</th></tr>
     <tr>
       <td>الرصيد الافتتاحي</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:IssuedCapital" contextRef="PriorInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_opening_capital)}</ix:nonFraction></td>
-      <td class="num"><ix:nonFraction name="ifrs-full:RetainedEarnings" contextRef="PriorInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_opening_retained)}</ix:nonFraction></td>
-      <td class="num"><ix:nonFraction name="ifrs-full:Equity" contextRef="PriorInstant" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_opening_total)}</ix:nonFraction></td>
+      <td class="num">{nf('IssuedCapital', 'PriorInstant', equity_opening_capital)}</td>
+      <td class="num">{nf('RetainedEarnings', 'PriorInstant', equity_opening_retained)}</td>
+      <td class="num">{nf('Equity', 'PriorInstant', equity_opening_total)}</td>
     </tr>
     <tr>
       <td>صافي الربح</td>
       <td class="num">-</td>
-      <td class="num">{fmt(net_profit)}</td>
+      <td class="num">{nf('ProfitLoss', 'CurrentPeriod', net_profit)}</td>
       <td class="num">{fmt(net_profit)}</td>
     </tr>
     <tr>
       <td>الدخل الشامل الآخر</td>
       <td class="num">-</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:OtherComprehensiveIncome" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(other_comprehensive_income)}</ix:nonFraction></td>
+      <td class="num">{nf('OtherComprehensiveIncome', 'CurrentPeriod', other_comprehensive_income)}</td>
       <td class="num">{fmt(other_comprehensive_income)}</td>
     </tr>
     <tr>
       <td>أرباح موزعة (توزيعات على الشركاء)</td>
       <td class="num">-</td>
-      <td class="num">(<ix:nonFraction name="ifrs-full:DividendsRecognisedAsDistributionsToOwnersOfParent" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(dividends_declared)}</ix:nonFraction>)</td>
+      <td class="num">({nf('DividendsRecognisedAsDistributionsToOwnersOfParent', 'CurrentPeriod', dividends_declared)})</td>
       <td class="num">({fmt(dividends_declared)})</td>
     </tr>
     <tr>
       <td>زيادة / تغير في رأس المال</td>
-      <td class="num"><ix:nonFraction name="ifrs-full:IncreaseDecreaseThroughTransactionsWithOwners" contextRef="CurrentPeriod" unitRef="{currency}" decimals="2" format="ixt:num-dot-decimal">{fmt(equity_new_capital)}</ix:nonFraction></td>
+      <td class="num">{nf('IncreaseDecreaseThroughTransactionsWithOwners', 'CurrentPeriod', equity_new_capital)}</td>
       <td class="num">-</td>
       <td class="num">{fmt(equity_new_capital)}</td>
     </tr>
     <tr class="grand-total">
       <td>الرصيد الختامي</td>
-      <td class="num">{fmt(equity_closing_capital)}</td>
-      <td class="num">{fmt(equity_closing_retained)}</td>
-      <td class="num">{fmt(equity_closing_total)}</td>
+      <td class="num">{nf('IssuedCapital', 'CurrentInstant', equity_closing_capital)}</td>
+      <td class="num">{nf('RetainedEarnings', 'CurrentInstant', equity_closing_retained)}</td>
+      <td class="num">{nf('Equity', 'CurrentInstant', equity_closing_total)}</td>
     </tr>
   </table>
 
