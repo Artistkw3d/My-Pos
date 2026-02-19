@@ -275,6 +275,51 @@ def migrate_database(db_path=None):
         # قفل الشفت التلقائي
         add_column('shifts', 'auto_lock', 'INTEGER', 0)
 
+        # === نظام طلبات النقل المخزني ===
+        safe_exec('''CREATE TABLE IF NOT EXISTS stock_transfers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_number TEXT UNIQUE,
+            from_branch_id INTEGER,
+            from_branch_name TEXT,
+            to_branch_id INTEGER,
+            to_branch_name TEXT,
+            status TEXT DEFAULT 'pending',
+            requested_by INTEGER,
+            requested_by_name TEXT,
+            approved_by INTEGER,
+            approved_by_name TEXT,
+            driver_id INTEGER,
+            driver_name TEXT,
+            received_by INTEGER,
+            received_by_name TEXT,
+            notes TEXT,
+            reject_reason TEXT,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            approved_at TIMESTAMP,
+            picked_up_at TIMESTAMP,
+            delivered_at TIMESTAMP,
+            completed_at TIMESTAMP
+        )''', 'stock_transfers')
+
+        safe_exec('''CREATE TABLE IF NOT EXISTS stock_transfer_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_id INTEGER NOT NULL,
+            inventory_id INTEGER,
+            product_name TEXT,
+            variant_id INTEGER,
+            variant_name TEXT,
+            quantity_requested INTEGER DEFAULT 0,
+            quantity_approved INTEGER DEFAULT 0,
+            quantity_received INTEGER DEFAULT 0,
+            FOREIGN KEY (transfer_id) REFERENCES stock_transfers(id) ON DELETE CASCADE
+        )''', 'stock_transfer_items')
+
+        # صلاحيات النقل المخزني
+        add_column('users', 'can_create_transfer', 'INTEGER', 0)
+        add_column('users', 'can_approve_transfer', 'INTEGER', 0)
+        add_column('users', 'can_deliver_transfer', 'INTEGER', 0)
+        add_column('users', 'can_view_transfers', 'INTEGER', 0)
+
         # إعدادات الولاء الافتراضية
         try:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
@@ -734,6 +779,44 @@ def create_tenant_database(slug):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             notes TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS stock_transfers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_number TEXT UNIQUE,
+            from_branch_id INTEGER,
+            from_branch_name TEXT,
+            to_branch_id INTEGER,
+            to_branch_name TEXT,
+            status TEXT DEFAULT 'pending',
+            requested_by INTEGER,
+            requested_by_name TEXT,
+            approved_by INTEGER,
+            approved_by_name TEXT,
+            driver_id INTEGER,
+            driver_name TEXT,
+            received_by INTEGER,
+            received_by_name TEXT,
+            notes TEXT,
+            reject_reason TEXT,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            approved_at TIMESTAMP,
+            picked_up_at TIMESTAMP,
+            delivered_at TIMESTAMP,
+            completed_at TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS stock_transfer_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_id INTEGER NOT NULL,
+            inventory_id INTEGER,
+            product_name TEXT,
+            variant_id INTEGER,
+            variant_name TEXT,
+            quantity_requested INTEGER DEFAULT 0,
+            quantity_approved INTEGER DEFAULT 0,
+            quantity_received INTEGER DEFAULT 0,
+            FOREIGN KEY (transfer_id) REFERENCES stock_transfers(id) ON DELETE CASCADE
+        );
     ''')
 
     # إضافة إعدادات افتراضية
@@ -841,7 +924,8 @@ def ensure_user_permission_columns(cursor):
         'can_view_tables', 'can_view_attendance', 'can_view_advanced_reports',
         'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches',
         'can_view_cross_branch_stock', 'can_view_xbrl', 'can_edit_completed_invoices',
-        'shift_id'
+        'shift_id',
+        'can_create_transfer', 'can_approve_transfer', 'can_deliver_transfer', 'can_view_transfers'
     ]
     for col in new_cols:
         try:
@@ -6304,6 +6388,337 @@ def admin_dashboard_shift_performance():
             'shift_stats': shift_stats,
             'unassigned_employees': unassigned
         })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== نظام طلبات النقل المخزني =====
+
+@app.route('/api/stock-transfers', methods=['GET'])
+def get_stock_transfers():
+    """جلب جميع طلبات النقل"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        status = request.args.get('status')
+        branch_id = request.args.get('branch_id')
+
+        query = 'SELECT * FROM stock_transfers WHERE 1=1'
+        params = []
+
+        if status:
+            query += ' AND status = ?'
+            params.append(status)
+
+        if branch_id:
+            query += ' AND (from_branch_id = ? OR to_branch_id = ?)'
+            params.extend([branch_id, branch_id])
+
+        query += ' ORDER BY requested_at DESC LIMIT 200'
+        cursor.execute(query, params)
+        transfers = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # جلب عناصر كل طلب
+        for t in transfers:
+            cursor.execute('SELECT * FROM stock_transfer_items WHERE transfer_id = ?', (t['id'],))
+            t['items'] = [dict_from_row(r) for r in cursor.fetchall()]
+
+        conn.close()
+        return jsonify({'success': True, 'transfers': transfers})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers/<int:transfer_id>', methods=['GET'])
+def get_stock_transfer(transfer_id):
+    """جلب تفاصيل طلب نقل واحد"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM stock_transfers WHERE id = ?', (transfer_id,))
+        transfer = cursor.fetchone()
+        if not transfer:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطلب غير موجود'}), 404
+
+        transfer = dict_from_row(transfer)
+        cursor.execute('SELECT * FROM stock_transfer_items WHERE transfer_id = ?', (transfer_id,))
+        transfer['items'] = [dict_from_row(r) for r in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'transfer': transfer})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers', methods=['POST'])
+def create_stock_transfer():
+    """إنشاء طلب نقل مخزني جديد"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # إنشاء رقم الطلب
+        cursor.execute('SELECT COUNT(*) FROM stock_transfers')
+        count = cursor.fetchone()[0]
+        transfer_number = f'TR-{count + 1:05d}'
+
+        # جلب أسماء الفروع
+        from_branch_name = ''
+        to_branch_name = ''
+        if data.get('from_branch_id'):
+            cursor.execute('SELECT name FROM branches WHERE id = ?', (data['from_branch_id'],))
+            row = cursor.fetchone()
+            if row: from_branch_name = row['name']
+        if data.get('to_branch_id'):
+            cursor.execute('SELECT name FROM branches WHERE id = ?', (data['to_branch_id'],))
+            row = cursor.fetchone()
+            if row: to_branch_name = row['name']
+
+        cursor.execute('''
+            INSERT INTO stock_transfers
+            (transfer_number, from_branch_id, from_branch_name, to_branch_id, to_branch_name,
+             status, requested_by, requested_by_name, notes)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        ''', (
+            transfer_number,
+            data.get('from_branch_id'),
+            from_branch_name,
+            data.get('to_branch_id'),
+            to_branch_name,
+            data.get('requested_by'),
+            data.get('requested_by_name'),
+            data.get('notes', '')
+        ))
+        transfer_id = cursor.lastrowid
+
+        # إضافة العناصر
+        items = data.get('items', [])
+        for item in items:
+            cursor.execute('''
+                INSERT INTO stock_transfer_items
+                (transfer_id, inventory_id, product_name, variant_id, variant_name, quantity_requested)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                transfer_id,
+                item.get('inventory_id'),
+                item.get('product_name', ''),
+                item.get('variant_id'),
+                item.get('variant_name', ''),
+                item.get('quantity', 0)
+            ))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': transfer_id, 'transfer_number': transfer_number})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers/<int:transfer_id>/approve', methods=['PUT'])
+def approve_stock_transfer(transfer_id):
+    """الموافقة على طلب النقل وتجهيز البضاعة (خصم من المصدر)"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM stock_transfers WHERE id = ?', (transfer_id,))
+        transfer = cursor.fetchone()
+        if not transfer:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطلب غير موجود'}), 404
+        if transfer['status'] != 'pending':
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن الموافقة - الحالة الحالية: ' + transfer['status']}), 400
+
+        # تحديث الكميات المعتمدة
+        approved_items = data.get('items', [])
+        for ai in approved_items:
+            cursor.execute('''
+                UPDATE stock_transfer_items SET quantity_approved = ?
+                WHERE id = ? AND transfer_id = ?
+            ''', (ai.get('quantity_approved', 0), ai.get('item_id'), transfer_id))
+
+        # خصم المخزون من الفرع المصدر (بضاعة بالطريق)
+        cursor.execute('SELECT * FROM stock_transfer_items WHERE transfer_id = ?', (transfer_id,))
+        items = [dict_from_row(r) for r in cursor.fetchall()]
+
+        for item in items:
+            qty = item.get('quantity_approved') or item.get('quantity_requested', 0)
+            if qty > 0 and item.get('inventory_id'):
+                cursor.execute('''
+                    UPDATE branch_stock SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE inventory_id = ? AND branch_id = ?
+                    AND (variant_id = ? OR (variant_id IS NULL AND ? IS NULL))
+                ''', (qty, item['inventory_id'], transfer['from_branch_id'],
+                      item.get('variant_id'), item.get('variant_id')))
+
+        cursor.execute('''
+            UPDATE stock_transfers
+            SET status = 'approved', approved_by = ?, approved_by_name = ?, approved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (data.get('approved_by'), data.get('approved_by_name'), transfer_id))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers/<int:transfer_id>/reject', methods=['PUT'])
+def reject_stock_transfer(transfer_id):
+    """رفض طلب النقل"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT status FROM stock_transfers WHERE id = ?', (transfer_id,))
+        transfer = cursor.fetchone()
+        if not transfer:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطلب غير موجود'}), 404
+        if transfer['status'] != 'pending':
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن الرفض - الحالة: ' + transfer['status']}), 400
+
+        cursor.execute('''
+            UPDATE stock_transfers
+            SET status = 'rejected', reject_reason = ?, approved_by = ?, approved_by_name = ?, approved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (data.get('reject_reason', ''), data.get('approved_by'), data.get('approved_by_name'), transfer_id))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers/<int:transfer_id>/pickup', methods=['PUT'])
+def pickup_stock_transfer(transfer_id):
+    """استلام السائق للبضاعة - تحويل الحالة إلى جاري التوصيل"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT status FROM stock_transfers WHERE id = ?', (transfer_id,))
+        transfer = cursor.fetchone()
+        if not transfer:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطلب غير موجود'}), 404
+        if transfer['status'] != 'approved':
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن الاستلام - الحالة: ' + transfer['status']}), 400
+
+        cursor.execute('''
+            UPDATE stock_transfers
+            SET status = 'in_transit', driver_id = ?, driver_name = ?, picked_up_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (data.get('driver_id'), data.get('driver_name'), transfer_id))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers/<int:transfer_id>/receive', methods=['PUT'])
+def receive_stock_transfer(transfer_id):
+    """تأكيد الاستلام - إضافة المخزون للفرع الطالب وإتمام الطلب"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM stock_transfers WHERE id = ?', (transfer_id,))
+        transfer = cursor.fetchone()
+        if not transfer:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطلب غير موجود'}), 404
+        if transfer['status'] != 'in_transit':
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن تأكيد الاستلام - الحالة: ' + transfer['status']}), 400
+
+        transfer = dict_from_row(transfer)
+
+        # تحديث الكميات المستلمة
+        received_items = data.get('items', [])
+        for ri in received_items:
+            if ri.get('item_id') and ri.get('quantity_received') is not None:
+                cursor.execute('''
+                    UPDATE stock_transfer_items SET quantity_received = ?
+                    WHERE id = ? AND transfer_id = ?
+                ''', (ri['quantity_received'], ri['item_id'], transfer_id))
+
+        # جلب العناصر بعد التحديث
+        cursor.execute('SELECT * FROM stock_transfer_items WHERE transfer_id = ?', (transfer_id,))
+        items = [dict_from_row(r) for r in cursor.fetchall()]
+
+        # إضافة المخزون للفرع المستلم
+        to_branch_id = transfer['to_branch_id']
+        for item in items:
+            qty = item.get('quantity_received') or item.get('quantity_approved') or item.get('quantity_requested', 0)
+            if qty > 0 and item.get('inventory_id'):
+                # تحقق من وجود سجل branch_stock
+                cursor.execute('''
+                    SELECT id, stock FROM branch_stock
+                    WHERE inventory_id = ? AND branch_id = ?
+                    AND (variant_id = ? OR (variant_id IS NULL AND ? IS NULL))
+                ''', (item['inventory_id'], to_branch_id,
+                      item.get('variant_id'), item.get('variant_id')))
+                existing = cursor.fetchone()
+
+                if existing:
+                    cursor.execute('''
+                        UPDATE branch_stock SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (qty, existing['id']))
+                else:
+                    cursor.execute('''
+                        INSERT INTO branch_stock (inventory_id, branch_id, variant_id, stock)
+                        VALUES (?, ?, ?, ?)
+                    ''', (item['inventory_id'], to_branch_id, item.get('variant_id'), qty))
+
+        cursor.execute('''
+            UPDATE stock_transfers
+            SET status = 'completed', received_by = ?, received_by_name = ?,
+                delivered_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (data.get('received_by'), data.get('received_by_name'), transfer_id))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-transfers/<int:transfer_id>', methods=['DELETE'])
+def delete_stock_transfer(transfer_id):
+    """حذف طلب نقل (فقط الطلبات قيد الانتظار أو المرفوضة)"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT status, from_branch_id FROM stock_transfers WHERE id = ?', (transfer_id,))
+        transfer = cursor.fetchone()
+        if not transfer:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الطلب غير موجود'}), 404
+        if transfer['status'] not in ('pending', 'rejected'):
+            conn.close()
+            return jsonify({'success': False, 'error': 'لا يمكن حذف طلب في حالة: ' + transfer['status']}), 400
+
+        cursor.execute('DELETE FROM stock_transfer_items WHERE transfer_id = ?', (transfer_id,))
+        cursor.execute('DELETE FROM stock_transfers WHERE id = ?', (transfer_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
