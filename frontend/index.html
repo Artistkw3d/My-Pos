@@ -14,6 +14,17 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
+    <!-- Shift Lock Overlay -->
+    <div id="shiftLockOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; justify-content:center; align-items:center; flex-direction:column;">
+        <div style="text-align:center; color:#fff; padding:40px;">
+            <div style="font-size:80px; margin-bottom:20px;">🔒</div>
+            <h1 style="font-size:28px; margin-bottom:15px; color:#ff6b6b;">انتهى وقت الشفت</h1>
+            <p id="shiftLockMessage" style="font-size:18px; margin-bottom:10px; color:#ccc;"></p>
+            <p style="font-size:14px; color:#999; margin-bottom:30px;">تم قفل النظام تلقائياً. يرجى التواصل مع المدير أو تسجيل الخروج.</p>
+            <button onclick="logoutFromShiftLock()" style="padding:12px 40px; font-size:16px; border-radius:8px; border:none; background:#e74c3c; color:#fff; cursor:pointer;">تسجيل خروج</button>
+        </div>
+    </div>
+
     <!-- Login -->
     <div class="login-overlay" id="loginOverlay">
         <div class="login-box">
@@ -552,7 +563,61 @@
                 <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
                     <strong>ℹ️ ملاحظة:</strong> هذا السجل متاح للمدير فقط ويعرض جميع العمليات في النظام
                 </div>
+                <!-- فلاتر البحث -->
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; align-items: flex-end;">
+                    <div style="flex: 1; min-width: 150px;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">نوع العملية:</label>
+                        <select id="logFilterAction" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                            <option value="">الكل</option>
+                            <option value="login">🔐 تسجيل دخول</option>
+                            <option value="logout">🚪 تسجيل خروج</option>
+                            <option value="sale">💰 بيع</option>
+                            <option value="edit_invoice">✏️ تعديل فاتورة</option>
+                            <option value="cancel_invoice">❌ إلغاء فاتورة</option>
+                            <option value="print_invoice">🖨️ طباعة فاتورة</option>
+                            <option value="print_thermal">🧾 طباعة حرارية</option>
+                            <option value="view_invoice">👁️ عرض فاتورة</option>
+                            <option value="status_change">🔄 تغيير حالة</option>
+                            <option value="return">↩️ مرتجع</option>
+                            <option value="add_product">➕ إضافة منتج</option>
+                            <option value="edit_product">✏️ تعديل منتج</option>
+                            <option value="delete_product">🗑️ حذف منتج</option>
+                            <option value="add_inventory">📦 إضافة مخزون</option>
+                            <option value="edit_inventory">📦 تعديل مخزون</option>
+                            <option value="distribute">📤 توزيع</option>
+                            <option value="damage">💔 تالف</option>
+                            <option value="add_user">👤 إضافة مستخدم</option>
+                            <option value="edit_user">👤 تعديل مستخدم</option>
+                            <option value="delete_user">🗑️ حذف مستخدم</option>
+                            <option value="add_customer">👥 إضافة عميل</option>
+                            <option value="edit_customer">👥 تعديل عميل</option>
+                            <option value="delete_customer">🗑️ حذف عميل</option>
+                            <option value="add_expense">💸 إضافة مصروف</option>
+                            <option value="delete_expense">🗑️ حذف مصروف</option>
+                            <option value="shift_lock">🔒 قفل شفت</option>
+                        </select>
+                    </div>
+                    <div style="flex: 1; min-width: 150px;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">المستخدم:</label>
+                        <select id="logFilterUser" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                            <option value="">الكل</option>
+                        </select>
+                    </div>
+                    <div style="flex: 1; min-width: 140px;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">من تاريخ:</label>
+                        <input type="date" id="logFilterDateFrom" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                    </div>
+                    <div style="flex: 1; min-width: 140px;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">إلى تاريخ:</label>
+                        <input type="date" id="logFilterDateTo" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                    </div>
+                    <div>
+                        <button onclick="clearLogFilters()" style="padding:8px 16px; border-radius:6px; border:1px solid #ddd; background:#f8f9fa; cursor:pointer;">مسح الفلاتر</button>
+                    </div>
+                </div>
+                <div id="systemLogsStats" style="margin-bottom:10px; font-size:13px; color:#666;"></div>
                 <div id="systemLogsContent"></div>
+                <div id="systemLogsPagination" style="text-align:center; margin-top:15px;"></div>
             </div>
         </div>
 
@@ -2424,10 +2489,13 @@
                 <button class="close-btn" onclick="closeShiftsManagement()">✖️</button>
             </div>
             <div class="modal-body">
-                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                    <input type="text" id="newShiftName" placeholder="اسم الشفت (مثل: شفت أ)" style="flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; align-items: center;">
+                    <input type="text" id="newShiftName" placeholder="اسم الشفت (مثل: شفت أ)" style="flex: 1; min-width:120px; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
                     <input type="time" id="newShiftStart" style="padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
                     <input type="time" id="newShiftEnd" style="padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                    <label style="display:flex; align-items:center; gap:5px; font-size:13px; cursor:pointer; white-space:nowrap;">
+                        <input type="checkbox" id="newShiftAutoLock"> 🔒 قفل تلقائي
+                    </label>
                     <button onclick="addNewShift()" class="btn" style="background: #667eea; white-space: nowrap;">➕ إضافة</button>
                 </div>
                 <div id="shiftsListContainer" style="min-height: 100px;">

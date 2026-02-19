@@ -247,7 +247,10 @@ async function initializeUI() {
     await loadSettings();
     loadUserCart();
     showTab('pos');
-    
+
+    // تشغيل فاحص قفل الشفت
+    startShiftLockChecker();
+
     console.log('[App] User restored from localStorage ✅');
 }
 
@@ -375,7 +378,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 canCancelInvoices: hasPerm('can_cancel_invoices'),
                 canViewBranches: hasPerm('can_view_branches'),
                 canViewCrossBranchStock: hasPerm('can_view_cross_branch_stock'),
-                canViewXbrl: hasPerm('can_view_xbrl')
+                canViewXbrl: hasPerm('can_view_xbrl'),
+                canEditCompletedInvoices: hasPerm('can_edit_completed_invoices')
             };
 
             // إخفاء/إظهار الأزرار والتبويبات
@@ -431,11 +435,14 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             setTimeout(() => {
                 logAction('login', 'تسجيل دخول', null);
             }, 1000);
-            
+
             await loadProducts();
             await loadSettings();
             loadUserCart(); // تحميل سلة المستخدم
             showTab('pos');
+
+            // تشغيل فاحص قفل الشفت
+            startShiftLockChecker();
         } else {
             alert(data.error || 'فشل تسجيل الدخول');
         }
@@ -492,6 +499,9 @@ document.addEventListener('click', function(e) {
 }, true); // capture phase لاعتراضها قبل أي handler آخر
 
 async function logout() {
+    // إيقاف فاحص قفل الشفت
+    stopShiftLockChecker();
+
     // فحص الاتصال الحقيقي قبل السماح بالخروج
     const reallyOnline = await checkRealConnection();
     if (!reallyOnline || !navigator.onLine) {
@@ -499,7 +509,7 @@ async function logout() {
         updateLogoutButton();
         return;
     }
-    
+
     if (!confirm('هل أنت متأكد من تسجيل الخروج؟')) return;
     
     // تسجيل في سجل النظام أولاً
@@ -1506,6 +1516,7 @@ async function viewInvoiceDetails(invoiceId) {
             currentInvoice = data.invoice;
             displayInvoiceView(currentInvoice);
             document.getElementById('invoiceViewModal').classList.add('active');
+            logAction('view_invoice', `عرض فاتورة ${currentInvoice.invoice_number}`, currentInvoice.id);
         }
     } catch (error) {
         console.error('خطأ:', error);
@@ -1605,6 +1616,7 @@ function printInvoiceFromView() {
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+    logAction('print_invoice', `طباعة فاتورة ${currentInvoice.invoice_number}`, currentInvoice.id);
 }
 
 // طباعة فاتورة حرارية 57×40 ملم
@@ -1613,6 +1625,7 @@ function printThermalInvoice() {
     const printWindow = window.open('', '', 'width=820,height=600');
     printWindow.document.write(generateThermalInvoiceHTML(currentInvoice));
     printWindow.document.close();
+    logAction('print_thermal', `طباعة حرارية فاتورة ${currentInvoice.invoice_number}`, currentInvoice.id);
 }
 
 // ===== نظام إلغاء الفواتير =====
@@ -1664,6 +1677,7 @@ async function confirmCancelInvoice() {
 
         if (data.success) {
             alert(`✅ تم إلغاء الفاتورة بنجاح${data.stock_returned ? '\n📦 تم إرجاع المنتجات إلى المخزون' : ''}`);
+            await logAction('cancel_invoice', `إلغاء فاتورة ${currentInvoice?.invoice_number || invoiceId} - السبب: ${reason}${returnStock ? ' (مع إرجاع المخزون)' : ''}`, invoiceId);
             closeCancelInvoiceModal();
             closeInvoiceView();
             loadInvoicesTable();
@@ -2546,9 +2560,10 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحفظ');
+            await logAction(userId ? 'edit_user' : 'add_user', `${userId ? 'تعديل' : 'إضافة'} مستخدم: ${userData.full_name} (${userData.role})`, data.id || userId);
             closeAddUser();
             await loadUsersTable();
-            
+
             // إذا تم تعديل المستخدم الحالي، حدّث userInfo
             if (userId && parseInt(userId) === currentUser.id) {
                 // تحديث بيانات المستخدم الحالي
@@ -2634,6 +2649,7 @@ async function deleteUser(id) {
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
+            await logAction('delete_user', `حذف مستخدم رقم ${id}`, id);
             await loadUsersTable();
         }
     } catch (error) {
@@ -4189,63 +4205,186 @@ function exportDamagedReport() {
 
 // ===== سجل النظام =====
 
-async function loadSystemLogs() {
+let _systemLogsPage = 1;
+const _systemLogsPerPage = 50;
+
+async function loadSystemLogs(page) {
+    if (page) _systemLogsPage = page;
     try {
-        const response = await fetch(`${API_URL}/api/system-logs?limit=100`);
+        // بناء معلمات البحث
+        const params = new URLSearchParams();
+        params.set('limit', 500);
+
+        const actionFilter = document.getElementById('logFilterAction')?.value;
+        const userFilter = document.getElementById('logFilterUser')?.value;
+        const dateFrom = document.getElementById('logFilterDateFrom')?.value;
+        const dateTo = document.getElementById('logFilterDateTo')?.value;
+
+        if (actionFilter) params.set('action_type', actionFilter);
+        if (userFilter) params.set('user_id', userFilter);
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo) params.set('date_to', dateTo);
+
+        const response = await fetch(`${API_URL}/api/system-logs?${params.toString()}`);
         const data = await response.json();
-        
+
         if (data.success) {
+            // تحميل قائمة المستخدمين لفلتر المستخدم
+            _populateLogUsersFilter(data.logs);
+
             const container = document.getElementById('systemLogsContent');
+            const statsEl = document.getElementById('systemLogsStats');
+            const paginationEl = document.getElementById('systemLogsPagination');
+
+            const actionLabels = {
+                'login': '🔐 تسجيل دخول',
+                'logout': '🚪 تسجيل خروج',
+                'sale': '💰 بيع',
+                'edit_invoice': '✏️ تعديل فاتورة',
+                'cancel_invoice': '❌ إلغاء فاتورة',
+                'print_invoice': '🖨️ طباعة فاتورة',
+                'print_thermal': '🧾 طباعة حرارية',
+                'view_invoice': '👁️ عرض فاتورة',
+                'status_change': '🔄 تغيير حالة',
+                'return': '↩️ مرتجع',
+                'add_product': '➕ إضافة منتج',
+                'edit_product': '✏️ تعديل منتج',
+                'delete_product': '🗑️ حذف منتج',
+                'add_inventory': '📦 إضافة مخزون',
+                'edit_inventory': '📦 تعديل مخزون',
+                'distribute': '📤 توزيع',
+                'damage': '💔 تالف',
+                'add_user': '👤 إضافة مستخدم',
+                'edit_user': '👤 تعديل مستخدم',
+                'delete_user': '🗑️ حذف مستخدم',
+                'add_customer': '👥 إضافة عميل',
+                'edit_customer': '👥 تعديل عميل',
+                'delete_customer': '🗑️ حذف عميل',
+                'add_expense': '💸 إضافة مصروف',
+                'delete_expense': '🗑️ حذف مصروف',
+                'shift_lock': '🔒 قفل شفت'
+            };
+
+            // تطبيق فلتر التاريخ على العميل (الـ API يدعمها أيضاً)
+            let logs = data.logs;
+            if (dateFrom) {
+                logs = logs.filter(l => l.created_at >= dateFrom);
+            }
+            if (dateTo) {
+                const toDate = dateTo + 'T23:59:59';
+                logs = logs.filter(l => l.created_at <= toDate);
+            }
+
+            // إحصائيات
+            if (statsEl) {
+                statsEl.textContent = `إجمالي السجلات: ${logs.length}`;
+            }
+
+            // تقسيم الصفحات
+            const totalPages = Math.ceil(logs.length / _systemLogsPerPage);
+            if (_systemLogsPage > totalPages) _systemLogsPage = 1;
+            const startIdx = (_systemLogsPage - 1) * _systemLogsPerPage;
+            const pageLogs = logs.slice(startIdx, startIdx + _systemLogsPerPage);
+
             let html = `
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>التاريخ</th>
-                            <th>نوع العملية</th>
+                            <th style="width:160px;">التاريخ</th>
+                            <th style="width:150px;">نوع العملية</th>
                             <th>الوصف</th>
-                            <th>المستخدم</th>
-                            <th>الفرع</th>
+                            <th style="width:120px;">المستخدم</th>
+                            <th style="width:60px;">الفرع</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
-            
-            data.logs.forEach(log => {
+
+            pageLogs.forEach(log => {
                 const date = new Date(log.created_at).toLocaleString('ar-EG');
-                const actionIcons = {
-                    'add_product': '➕',
-                    'edit_product': '✏️',
-                    'delete_product': '🗑️',
-                    'distribute': '📤',
-                    'damage': '💔',
-                    'sale': '💰',
-                    'login': '🔐',
-                    'logout': '🚪'
-                };
-                const icon = actionIcons[log.action_type] || '📝';
-                
+                const label = actionLabels[log.action_type] || `📝 ${escHTML(log.action_type)}`;
+
+                // لون الخلفية حسب نوع العملية
+                let rowColor = '';
+                if (log.action_type === 'login') rowColor = 'background:#e8f5e9;';
+                else if (log.action_type === 'logout') rowColor = 'background:#fff3e0;';
+                else if (log.action_type === 'sale') rowColor = 'background:#e3f2fd;';
+                else if (log.action_type.includes('delete') || log.action_type === 'cancel_invoice') rowColor = 'background:#ffebee;';
+                else if (log.action_type === 'edit_invoice') rowColor = 'background:#fff8e1;';
+                else if (log.action_type === 'shift_lock') rowColor = 'background:#f3e5f5;';
+
                 html += `
-                    <tr>
-                        <td style="font-size: 12px;">${date}</td>
-                        <td>${icon} ${log.action_type}</td>
-                        <td>${log.description || '-'}</td>
-                        <td>${log.user_name || '-'}</td>
-                        <td>${log.branch_id ? `B${log.branch_id}` : '-'}</td>
+                    <tr style="${rowColor}">
+                        <td style="font-size: 12px; white-space:nowrap;">${date}</td>
+                        <td style="font-size: 13px;">${label}</td>
+                        <td style="font-size: 13px;">${escHTML(log.description || '-')}</td>
+                        <td>${escHTML(log.user_name || '-')}</td>
+                        <td style="text-align:center;">${log.branch_id ? `B${log.branch_id}` : '-'}</td>
                     </tr>
                 `;
             });
-            
+
             html += '</tbody></table>';
-            
-            if (data.logs.length === 0) {
+
+            if (logs.length === 0) {
                 html = '<p style="text-align: center; padding: 40px; color: #999;">لا توجد سجلات</p>';
             }
-            
+
             container.innerHTML = html;
+
+            // أزرار الصفحات
+            if (paginationEl && totalPages > 1) {
+                let pagHtml = '';
+                if (_systemLogsPage > 1) {
+                    pagHtml += `<button onclick="loadSystemLogs(${_systemLogsPage - 1})" style="margin:0 3px; padding:6px 12px; border-radius:6px; border:1px solid #ddd; cursor:pointer;">السابق</button>`;
+                }
+                pagHtml += `<span style="margin:0 10px; font-size:14px;">صفحة ${_systemLogsPage} من ${totalPages}</span>`;
+                if (_systemLogsPage < totalPages) {
+                    pagHtml += `<button onclick="loadSystemLogs(${_systemLogsPage + 1})" style="margin:0 3px; padding:6px 12px; border-radius:6px; border:1px solid #ddd; cursor:pointer;">التالي</button>`;
+                }
+                paginationEl.innerHTML = pagHtml;
+            } else if (paginationEl) {
+                paginationEl.innerHTML = '';
+            }
         }
     } catch (error) {
         console.error('خطأ:', error);
     }
+}
+
+function _populateLogUsersFilter(logs) {
+    const select = document.getElementById('logFilterUser');
+    if (!select) return;
+    const currentVal = select.value;
+    const usersSet = new Map();
+    logs.forEach(l => {
+        if (l.user_id && l.user_name) usersSet.set(String(l.user_id), l.user_name);
+    });
+    // لا تعيد بناء القائمة إذا كانت موجودة
+    if (select.options.length > 1) {
+        select.value = currentVal;
+        return;
+    }
+    usersSet.forEach((name, id) => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = name;
+        select.appendChild(opt);
+    });
+    select.value = currentVal;
+}
+
+function clearLogFilters() {
+    const el1 = document.getElementById('logFilterAction');
+    const el2 = document.getElementById('logFilterUser');
+    const el3 = document.getElementById('logFilterDateFrom');
+    const el4 = document.getElementById('logFilterDateTo');
+    if (el1) el1.value = '';
+    if (el2) el2.value = '';
+    if (el3) el3.value = '';
+    if (el4) el4.value = '';
+    _systemLogsPage = 1;
+    loadSystemLogs();
 }
 
 // دالة تسجيل العمليات
@@ -4610,6 +4749,7 @@ document.getElementById('expenseForm').addEventListener('submit', async (e) => {
 
         const data = await response.json();
         if (data.success) {
+            logAction('add_expense', `إضافة مصروف: ${expenseData.expense_type} - ${expenseData.amount}`, data.id);
             alert('✅ تم الحفظ');
             closeAddExpense();
             await loadExpenses();
@@ -4628,6 +4768,7 @@ async function deleteExpense(id) {
         const response = await fetch(`${API_URL}/api/expenses/${id}`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
+            logAction('delete_expense', `حذف مصروف رقم ${id}`, id);
             alert('✅ تم الحذف');
             await loadExpenses();
         }
@@ -6090,6 +6231,7 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
 
         if (data.success) {
             alert('✅ تم حفظ العميل بنجاح');
+            await logAction(customerId ? 'edit_customer' : 'add_customer', `${customerId ? 'تعديل' : 'إضافة'} عميل: ${customerData.name}`, data.id || customerId);
             closeAddCustomer();
             loadCustomers();
             await loadCustomersDropdown();
@@ -6175,6 +6317,7 @@ async function deleteCustomer(id) {
         
         if (data.success) {
             alert('✅ تم حذف العميل');
+            await logAction('delete_customer', `حذف عميل رقم ${id}`, id);
             loadCustomers();
             loadCustomersDropdown();
         } else {
@@ -6613,6 +6756,7 @@ async function submitReturn() {
         
         if (data.success) {
             alert('✅ ' + data.message);
+            await logAction('return', `مرتجع: ${quantity}x ${productName} - ${total.toFixed(3)} د.ك ${reason ? '(' + reason + ')' : ''}`, data.id);
             closeReturnModal();
             loadReturns();
         } else {
@@ -6887,6 +7031,7 @@ async function updateOrderStatus(invoiceId, newStatus) {
                     (newStatus === 'قيد التنفيذ' ? 'status-processing' :
                      newStatus === 'قيد التوصيل' ? 'status-delivering' : 'status-completed');
             }
+            logAction('status_change', `تغيير حالة فاتورة #${invoiceId} إلى: ${newStatus}`, invoiceId);
         } else {
             alert('❌ خطأ: ' + data.error);
             loadInvoicesTable();
@@ -10184,6 +10329,7 @@ async function loadShiftsList() {
                         <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">من</th>
                         <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">إلى</th>
                         <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">الحالة</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">قفل تلقائي</th>
                         <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e2e8f0;">إجراءات</th>
                     </tr>
                 </thead>
@@ -10199,7 +10345,10 @@ async function loadShiftsList() {
                                 </span>
                             </td>
                             <td style="padding: 10px; text-align: center;">
-                                <button onclick="toggleShiftActive(${s.id}, '${escHTML(s.name)}', '${escHTML(s.start_time)}', '${escHTML(s.end_time)}', ${s.is_active ? 0 : 1})" class="btn" style="font-size: 11px; padding: 4px 10px; background: ${s.is_active ? '#e67e22' : '#38a169'};">${s.is_active ? 'تعطيل' : 'تفعيل'}</button>
+                                <button onclick="toggleShiftAutoLock(${s.id}, ${s.auto_lock ? 0 : 1})" class="btn" style="font-size: 11px; padding: 4px 10px; background: ${s.auto_lock ? '#9b59b6' : '#95a5a6'};">${s.auto_lock ? '🔒 مفعل' : '🔓 معطل'}</button>
+                            </td>
+                            <td style="padding: 10px; text-align: center;">
+                                <button onclick="toggleShiftActive(${s.id}, '${escHTML(s.name)}', '${escHTML(s.start_time)}', '${escHTML(s.end_time)}', ${s.is_active ? 0 : 1}, ${s.auto_lock || 0})" class="btn" style="font-size: 11px; padding: 4px 10px; background: ${s.is_active ? '#e67e22' : '#38a169'};">${s.is_active ? 'تعطيل' : 'تفعيل'}</button>
                                 <button onclick="deleteShift(${s.id})" class="btn" style="font-size: 11px; padding: 4px 10px; background: #dc3545;">حذف</button>
                             </td>
                         </tr>
@@ -10216,18 +10365,20 @@ async function addNewShift() {
     if (!name) { alert('أدخل اسم الشفت'); return; }
     const startTime = document.getElementById('newShiftStart').value;
     const endTime = document.getElementById('newShiftEnd').value;
+    const autoLock = document.getElementById('newShiftAutoLock')?.checked ? 1 : 0;
 
     try {
         const response = await fetch(`${API_URL}/api/shifts`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ name, start_time: startTime, end_time: endTime })
+            body: JSON.stringify({ name, start_time: startTime, end_time: endTime, auto_lock: autoLock })
         });
         const data = await response.json();
         if (data.success) {
             document.getElementById('newShiftName').value = '';
             document.getElementById('newShiftStart').value = '';
             document.getElementById('newShiftEnd').value = '';
+            if (document.getElementById('newShiftAutoLock')) document.getElementById('newShiftAutoLock').checked = false;
             loadShiftsList();
         } else {
             alert('خطأ: ' + data.error);
@@ -10237,12 +10388,38 @@ async function addNewShift() {
     }
 }
 
-async function toggleShiftActive(id, name, startTime, endTime, newActive) {
+async function toggleShiftActive(id, name, startTime, endTime, newActive, autoLock) {
     try {
         const response = await fetch(`${API_URL}/api/shifts/${id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ name, start_time: startTime, end_time: endTime, is_active: newActive })
+            body: JSON.stringify({ name, start_time: startTime, end_time: endTime, is_active: newActive, auto_lock: autoLock || 0 })
+        });
+        const data = await response.json();
+        if (data.success) loadShiftsList();
+    } catch (error) {
+        alert('خطأ في الاتصال');
+    }
+}
+
+async function toggleShiftAutoLock(id, newAutoLock) {
+    try {
+        // جلب بيانات الشفت أولاً
+        const res = await fetch(`${API_URL}/api/shifts`);
+        const sData = await res.json();
+        const shift = sData.shifts?.find(s => s.id === id);
+        if (!shift) return;
+
+        const response = await fetch(`${API_URL}/api/shifts/${id}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: shift.name,
+                start_time: shift.start_time,
+                end_time: shift.end_time,
+                is_active: shift.is_active,
+                auto_lock: newAutoLock
+            })
         });
         const data = await response.json();
         if (data.success) loadShiftsList();
@@ -10264,6 +10441,76 @@ async function deleteShift(id) {
 }
 
 console.log('[Shifts] Loaded ✅');
+
+// ===== قفل الشفت التلقائي =====
+
+let _shiftLockInterval = null;
+
+function startShiftLockChecker() {
+    // إيقاف أي مؤقت سابق
+    if (_shiftLockInterval) clearInterval(_shiftLockInterval);
+
+    // لا تفعل شيئاً إذا لم يكن المستخدم مسجل دخول أو ليس له شفت
+    if (!currentUser || !currentUser.shift_id) return;
+
+    // المدير معفى من القفل
+    if (currentUser.role === 'admin') return;
+
+    // فحص كل 30 ثانية
+    _shiftLockInterval = setInterval(checkShiftLock, 30000);
+    // فحص فوري أيضاً
+    setTimeout(checkShiftLock, 3000);
+}
+
+function stopShiftLockChecker() {
+    if (_shiftLockInterval) {
+        clearInterval(_shiftLockInterval);
+        _shiftLockInterval = null;
+    }
+}
+
+async function checkShiftLock() {
+    if (!currentUser || !currentUser.shift_id) return;
+    if (currentUser.role === 'admin') return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/shifts/check-lock`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ shift_id: currentUser.shift_id })
+        });
+        const data = await response.json();
+
+        if (data.success && data.locked) {
+            // قفل النظام
+            const overlay = document.getElementById('shiftLockOverlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                const msg = document.getElementById('shiftLockMessage');
+                if (msg) {
+                    msg.textContent = `الشفت "${data.shift_name}" انتهى في الساعة ${data.end_time} - الوقت الحالي: ${data.current_time}`;
+                }
+            }
+            logAction('shift_lock', `تم قفل النظام - انتهاء شفت "${data.shift_name}" (${data.end_time})`);
+            stopShiftLockChecker();
+        }
+    } catch (error) {
+        // تجاهل أخطاء الاتصال - سنحاول مرة أخرى في الدورة التالية
+        console.log('[ShiftLock] Check failed:', error.message);
+    }
+}
+
+function logoutFromShiftLock() {
+    // إخفاء overlay القفل
+    const overlay = document.getElementById('shiftLockOverlay');
+    if (overlay) overlay.style.display = 'none';
+
+    // استدعاء دالة تسجيل الخروج الأصلية
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.click();
+}
+
+console.log('[ShiftLock] Loaded ✅');
 
 // ===== تعديل الفواتير =====
 
@@ -10424,6 +10671,7 @@ async function saveEditedInvoice() {
         });
         const data = await response.json();
         if (data.success) {
+            logAction('edit_invoice', `تعديل فاتورة رقم ${invoiceId}`, parseInt(invoiceId));
             alert('تم حفظ التعديلات بنجاح');
             closeEditInvoiceModal();
             // إعادة تحميل الفاتورة المعدلة
