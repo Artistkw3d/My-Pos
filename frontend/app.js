@@ -1133,6 +1133,10 @@ function clearSaleForm() {
         `;
     }
     
+    // مسح ملاحظات الطلب
+    const orderNotesEl = document.getElementById('orderNotes');
+    if (orderNotesEl) orderNotesEl.value = '';
+
     // مسح بيانات العميل والبحث
     document.getElementById('selectedCustomerId').value = '';
     const csInput = document.getElementById('customerSearchInput');
@@ -1355,6 +1359,7 @@ async function completeSale() {
         table_id: document.getElementById('selectedTableId')?.value || null,
         table_name: document.getElementById('selectedTableId')?.selectedOptions[0]?.textContent || '',
         shift_id: currentUser.shift_id || null,
+        notes: document.getElementById('orderNotes')?.value?.trim() || '',
         items: cart.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -1583,6 +1588,7 @@ function displayInvoiceView(inv) {
                 ${inv.table_name ? `<div><strong>🍽️ الطاولة:</strong> ${escHTML(inv.table_name)}</div>` : ''}
                 ${inv.shift_name ? `<div><strong>🕐 الشفت:</strong> ${escHTML(inv.shift_name)}</div>` : ''}
                 ${inv.edit_count > 0 ? `<div style="grid-column: 1/-1; color: #e67e22;"><strong>✏️ معدّلة:</strong> ${inv.edit_count} مرة - آخر تعديل: ${inv.edited_by || ''} ${inv.edited_at ? new Date(inv.edited_at).toLocaleDateString('ar') : ''}</div>` : ''}
+                ${inv.notes ? `<div style="grid-column: 1/-1; background: #fff3cd; border-right: 4px solid #ffc107; padding: 10px !important;"><strong>📝 ملاحظات:</strong> ${escHTML(inv.notes)}</div>` : ''}
             </div>
             <table style="width:100%; border-collapse:collapse; font-size:11px; margin:15px 0;">
                 <thead><tr style="background:#667eea; color:white;">
@@ -1791,6 +1797,7 @@ ${(inv.loyalty_discount || 0) > 0 ? `<div class="row r-small"><span>ولاء:</s
 ${inv.delivery_fee > 0 ? `<div class="row r-small"><span>توصيل:</span><span>+${inv.delivery_fee.toFixed(3)}</span></div>` : ''}
 <div class="row r-total"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
 <div class="r-small" style="margin-top:4px;">الدفع: ${payText}</div>
+${inv.notes ? `<div class="sep"></div><div class="r-small"><b>ملاحظات:</b> ${escHTML(inv.notes)}</div>` : ''}
 <div class="sep"></div>
 <div class="center r-small">شكراً لتعاملكم معنا</div>
 </div>
@@ -1849,6 +1856,7 @@ ${storeLogo ? `<img src="${storeLogo}">` : ''}
 ${inv.payments && inv.payments.length > 0 ? inv.payments.filter(p => p.transaction_number).map(p => `<div><b>رقم العملية (${paymentMethods[p.method]}):</b> ${escHTML(p.transaction_number)}</div>`).join('') : (inv.transaction_number ? `<div style="grid-column:1/-1;"><b>رقم العملية:</b> ${escHTML(inv.transaction_number)}</div>` : '')}
 <div style="grid-column:1/-1;"><b>حالة الطلب:</b> <span style="padding:4px 12px; border-radius:12px; font-weight:bold; ${(inv.order_status || 'قيد التنفيذ') === 'قيد التنفيذ' ? 'background:#fff3cd; color:#856404;' : inv.order_status === 'قيد التوصيل' ? 'background:#cce5ff; color:#004085;' : 'background:#d4edda; color:#155724;'}">${inv.order_status === 'قيد التنفيذ' ? '⏳' : inv.order_status === 'قيد التوصيل' ? '🚚' : '✅'} ${escHTML(inv.order_status) || 'قيد التنفيذ'}</span></div>
 ${inv.table_name ? `<div><b>🍽️ الطاولة:</b> ${escHTML(inv.table_name)}</div>` : ''}
+${inv.notes ? `<div style="grid-column:1/-1; background:#fff3cd; border-right:4px solid #ffc107; padding:10px !important;"><b>📝 ملاحظات:</b> ${escHTML(inv.notes)}</div>` : ''}
 </div>
 <table>
 <thead><tr><th style="width:40px;">#</th><th>المنتج</th><th style="width:80px;">الكمية</th><th style="width:100px;">السعر</th><th style="width:100px;">الإجمالي</th></tr></thead>
