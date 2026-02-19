@@ -5594,10 +5594,10 @@ def generate_xbrl():
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
       xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
       xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
-      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xml:lang="ar">
 <head>
-  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
   <title>التقرير المالي - {entity_name_ar or entity_name} - {period_end}</title>
   <style type="text/css">
     body {{ font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; margin: 40px; background: #f9f9f9; color: #333; line-height: 1.6; }}
