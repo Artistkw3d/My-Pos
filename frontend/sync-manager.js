@@ -47,8 +47,11 @@ class SyncManager {
         try {
             // 1. رفع الفواتير المعلقة
             await this.uploadPendingInvoices();
-            
-            // 2. تحديث المنتجات
+
+            // 2. رفع العملاء المعلقين
+            await this.uploadPendingCustomers();
+
+            // 3. تحديث المنتجات
             await this.downloadProducts();
             
             this.lastSync = new Date();
@@ -83,9 +86,14 @@ class SyncManager {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(invoice.data)
                     });
-                    
+
+                    if (!response.ok) {
+                        console.error(`[Sync] Server returned ${response.status} for invoice ${invoice.local_id}`);
+                        continue;
+                    }
+
                     const result = await response.json();
-                    
+
                     if (result.success) {
                         // حذف من المعلقة
                         await localDB.delete('pending_invoices', invoice.local_id);
@@ -106,11 +114,55 @@ class SyncManager {
         }
     }
     
+    // رفع العملاء المعلقين
+    async uploadPendingCustomers() {
+        try {
+            const pending = await localDB.getAll('pending_customers');
+
+            if (pending.length === 0) {
+                console.log('[Sync] No pending customers');
+                return;
+            }
+
+            console.log(`[Sync] Uploading ${pending.length} customers...`);
+
+            for (const customer of pending) {
+                try {
+                    const response = await fetch(`${API_URL}/api/customers`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(customer)
+                    });
+
+                    if (!response.ok) {
+                        console.error(`[Sync] Server returned ${response.status} for customer ${customer.name}`);
+                        continue;
+                    }
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        await localDB.delete('pending_customers', customer.id);
+                        console.log(`[Sync] Uploaded customer ${customer.name}`);
+                    }
+                } catch (error) {
+                    console.error(`[Sync] Failed to upload customer:`, error);
+                }
+            }
+        } catch (error) {
+            console.error('[Sync] Customer upload error:', error);
+        }
+    }
+
     // تحديث المنتجات
     async downloadProducts() {
         try {
             const branchId = (typeof currentUser !== 'undefined' && currentUser?.branch_id) ? currentUser.branch_id : 1;
             const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
+            if (!response.ok) {
+                console.error(`[Sync] Products download failed: ${response.status}`);
+                return;
+            }
             const data = await response.json();
             
             if (data.success && data.products) {
