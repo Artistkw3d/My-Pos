@@ -2,8 +2,8 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v35';
-const STATIC_CACHE = 'pos-static-v35';
+const CACHE_NAME = 'pos-cache-v36';
+const STATIC_CACHE = 'pos-static-v36';
 
 // الملفات الأساسية (بدون manifest - لا يسبب فشل التثبيت)
 const STATIC_ASSETS = [
@@ -71,10 +71,12 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then(response => {
-                    const responseClone = response.clone();
-                    caches.open(CACHE_NAME).then(cache => {
-                        cache.put(request, responseClone);
-                    });
+                    if (response.ok) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(request, responseClone);
+                        });
+                    }
                     return response;
                 })
                 .catch(() => {
@@ -87,10 +89,12 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then(response => {
-                    const responseClone = response.clone();
-                    caches.open(STATIC_CACHE).then(cache => {
-                        cache.put(request, responseClone);
-                    });
+                    if (response.ok) {
+                        const responseClone = response.clone();
+                        caches.open(STATIC_CACHE).then(cache => {
+                            cache.put(request, responseClone);
+                        });
+                    }
                     return response;
                 })
                 .catch(() => {

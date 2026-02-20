@@ -454,7 +454,11 @@ def create_tenant_database(slug):
             can_view_xbrl INTEGER DEFAULT 0,
             last_login TIMESTAMP,
             shift_id INTEGER,
-            can_edit_completed_invoices INTEGER DEFAULT 0
+            can_edit_completed_invoices INTEGER DEFAULT 0,
+            can_create_transfer INTEGER DEFAULT 0,
+            can_approve_transfer INTEGER DEFAULT 0,
+            can_deliver_transfer INTEGER DEFAULT 0,
+            can_view_transfers INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS branches (

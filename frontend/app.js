@@ -1891,6 +1891,13 @@ async function loadProductsTable() {
             // حفظ المنتجات للتعديل
             allProductsTable = data.products;
 
+            // تحديث فلتر الفئات في البحث المتقدم
+            const catSelect = document.getElementById('searchProductCategory');
+            if (catSelect) {
+                const categories = [...new Set(data.products.map(p => p.category || 'بدون فئة'))].sort();
+                catSelect.innerHTML = '<option value="">كل الفئات</option>' + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            }
+
             // تجميع حسب الفئة
             const byCategory = {};
             data.products.forEach(p => {
@@ -1970,6 +1977,74 @@ async function loadProductsTable() {
     } catch (error) {
         console.error('خطأ:', error);
     }
+}
+
+function advancedSearchProducts() {
+    const nameFilter = (document.getElementById('searchProductName')?.value || '').toLowerCase();
+    const barcodeFilter = (document.getElementById('searchProductBarcode')?.value || '').toLowerCase();
+    const categoryFilter = document.getElementById('searchProductCategory')?.value || '';
+    const priceMin = parseFloat(document.getElementById('searchPriceMin')?.value) || 0;
+    const priceMax = parseFloat(document.getElementById('searchPriceMax')?.value) || Infinity;
+
+    const filtered = allProductsTable.filter(p => {
+        if (nameFilter && !p.name.toLowerCase().includes(nameFilter)) return false;
+        if (barcodeFilter && !(p.barcode || '').toLowerCase().includes(barcodeFilter)) return false;
+        if (categoryFilter && (p.category || 'بدون فئة') !== categoryFilter) return false;
+        if (p.price < priceMin) return false;
+        if (priceMax !== Infinity && p.price > priceMax) return false;
+        return true;
+    });
+
+    const container = document.getElementById('productsTableContainer');
+    if (filtered.length === 0) {
+        container.innerHTML = '<p style="text-align:center; padding:40px; color:#6c757d;">لا توجد نتائج</p>';
+        return;
+    }
+
+    const byCategory = {};
+    filtered.forEach(p => {
+        const cat = p.category || 'بدون فئة';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(p);
+    });
+
+    let html = '';
+    Object.keys(byCategory).sort().forEach(category => {
+        html += `<div style="margin-bottom: 30px;">
+            <h3 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; font-size: 18px;">📁 ${category} (${byCategory[category].length})</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
+                ${byCategory[category].map(p => {
+                    let imgDisplay = '🛍️';
+                    if (p.image_data) {
+                        imgDisplay = p.image_data.startsWith('data:image')
+                            ? `<img src="${p.image_data}" style="width:60px; height:60px; object-fit:cover; border-radius:8px;">`
+                            : `<div style="font-size:50px;">${p.image_data}</div>`;
+                    }
+                    return `<div style="border:2px solid #e2e8f0; padding:15px; border-radius:12px; background:white; text-align:center;">
+                        <div style="margin-bottom:10px;">${imgDisplay}</div>
+                        <div style="font-weight:bold; margin-bottom:5px; color:#2d3748;">${escHTML(p.name)}</div>
+                        <div style="color:#667eea; font-size:18px; font-weight:bold; margin:8px 0;">${p.price.toFixed(3)} د.ك</div>
+                        <div style="color:#6c757d; font-size:13px; margin-bottom:10px;">المخزون: ${p.stock}</div>
+                        ${p.barcode ? `<div style="color:#6c757d; font-size:11px; margin-bottom:10px;">📊 ${escHTML(p.barcode)}</div>` : ''}
+                        <div style="display:flex; gap:5px; justify-content:center; margin-top:10px;">
+                            <button onclick="editProduct(${p.id})" class="btn-sm" style="flex:1;">✏️ تعديل</button>
+                            <button onclick="deleteProduct(${p.id})" class="btn-sm btn-danger" style="flex:1;">🗑️</button>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function clearAdvancedSearch() {
+    document.getElementById('searchProductName').value = '';
+    document.getElementById('searchProductBarcode').value = '';
+    document.getElementById('searchProductCategory').value = '';
+    document.getElementById('searchPriceMin').value = '';
+    document.getElementById('searchPriceMax').value = '';
+    loadProductsTable();
 }
 
 function showAddProduct() {
@@ -5156,7 +5231,7 @@ async function viewCustomerInvoices(customerId) {
                                         <td>${new Date(inv.created_at).toLocaleDateString('ar')}</td>
                                         <td style="color: #28a745; font-weight: bold;">${inv.total.toFixed(3)} د.ك</td>
                                         <td>
-                                            <button onclick="viewInvoice(${inv.id})" class="btn-sm">👁️</button>
+                                            <button onclick="viewInvoiceDetails(${inv.id})" class="btn-sm">👁️</button>
                                         </td>
                                     </tr>
                                 `).join('')}
