@@ -5641,6 +5641,22 @@ function playInvoiceSound() {
 }
 
 // ===== استعادة المستخدم عند تحميل الصفحة =====
+// === جلب رقم الإصدار ===
+async function fetchVersion() {
+    try {
+        const res = await fetch(`${API_URL}/api/version`, {cache: 'no-store'});
+        const data = await res.json();
+        if (data.success) {
+            const vText = `الإصدار v${data.version}`;
+            const hv = document.getElementById('headerVersion');
+            const lv = document.getElementById('loginVersion');
+            if (hv) hv.textContent = vText;
+            if (lv) lv.textContent = vText;
+        }
+    } catch(e) { console.log('[Version] fetch failed:', e); }
+}
+fetchVersion();
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[App] DOMContentLoaded - checking for saved user...');
 
@@ -11527,7 +11543,7 @@ console.log('[Stock Transfers] Loaded ✅');
 
 let _allSubscriptions = [];
 let _allPlans = [];
-let _planItems = []; // منتجات الخطة الحالية المؤقتة
+let _planItems = []; // منتجات الفئة الحالية المؤقتة
 
 const _subStatusLabels = { 'active': '✅ فعّال', 'expired': '⏳ منتهي', 'cancelled': '🚫 ملغي' };
 const _subStatusColors = { 'active': '#28a745', 'expired': '#ffc107', 'cancelled': '#dc3545' };
@@ -11540,6 +11556,15 @@ async function loadSubscriptions() {
         if (data.success) {
             _allSubscriptions = data.subscriptions;
             renderSubscriptions(_allSubscriptions);
+            // تحديث الداشبورد
+            if (_allPlans.length > 0) renderCategoryDashboard();
+            else {
+                try {
+                    const pRes = await fetch(`${API_URL}/api/subscription-plans`);
+                    const pData = await pRes.json();
+                    if (pData.success) { _allPlans = pData.plans; renderCategoryDashboard(); }
+                } catch(e) {}
+            }
         }
     } catch (error) {
         console.error('[Subscriptions] Error:', error);
@@ -11568,7 +11593,7 @@ function renderSubscriptions(subs) {
     container.innerHTML = `
         <table class="data-table">
             <thead><tr>
-                <th>الكود</th><th>العميل</th><th>الهاتف</th><th>الخطة</th>
+                <th>الكود</th><th>العميل</th><th>الهاتف</th><th>الفئة</th>
                 <th>المنتجات</th><th>من</th><th>إلى</th><th>الحالة</th><th>إجراءات</th>
             </tr></thead>
             <tbody>
@@ -11633,7 +11658,7 @@ function showSubscriptionDetail(subId) {
             </div>
         </div>
         <h3 style="margin-bottom: 10px;">📦 منتجات الاشتراك</h3>
-        ${planItems.length === 0 ? '<p style="color:#6c757d;">لا توجد منتجات في هذه الخطة</p>' : `
+        ${planItems.length === 0 ? '<p style="color:#6c757d;">لا توجد منتجات في هذه الفئة</p>' : `
         <table class="data-table">
             <thead><tr><th>المنتج</th><th>المتغير</th><th>المسموح</th><th>المستلم</th><th>المتبقي</th></tr></thead>
             <tbody>
@@ -11685,7 +11710,7 @@ async function loadRedemptionHistory(subId) {
     } catch (error) { console.error('[Redemptions] Error:', error); }
 }
 
-// --- خطط الاشتراك ---
+// --- فئات الاشتراك ---
 
 async function showManagePlans() {
     document.getElementById('managePlansModal').classList.add('active');
@@ -11774,50 +11799,215 @@ async function loadPlansList() {
             _allPlans = data.plans;
             const container = document.getElementById('plansListContainer');
             if (_allPlans.length === 0) {
-                container.innerHTML = '<p style="text-align:center; color:#6c757d;">لا توجد خطط</p>';
+                container.innerHTML = '<p style="text-align:center; color:#6c757d;">لا توجد فئات</p>';
                 return;
             }
             container.innerHTML = _allPlans.map(p => {
                 const items = p.items || [];
+                const cardImage = p.image ? `<img src="${p.image}" style="width:100%; height:100%; object-fit:cover;">` : _getDefaultCardBg(p.name);
                 return `
-                <div style="background:#fff; border:2px solid #e0e0e0; border-radius:10px; padding:15px; margin-bottom:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <strong style="font-size:16px; color:#1e40af;">${escHTML(p.name)}</strong>
-                            ${p.description ? `<span style="color:#6c757d; margin-right:8px;">(${escHTML(p.description)})</span>` : ''}
-                        </div>
-                        <div style="display:flex; gap:5px; align-items:center;">
-                            <span style="background:#28a745; color:white; padding:3px 10px; border-radius:12px; font-size:13px; font-weight:bold;">${p.price.toFixed(3)} د.ك</span>
-                            <span style="background:#667eea; color:white; padding:3px 10px; border-radius:12px; font-size:13px;">${p.duration_days} يوم</span>
-                            ${p.is_active ? '<span style="color:#28a745;">فعّال</span>' : '<span style="color:#dc3545;">معطّل</span>'}
-                            <button onclick="togglePlan(${p.id}, ${p.is_active})" class="btn-sm">${p.is_active ? '⏸️' : '▶️'}</button>
-                            <button onclick="deletePlan(${p.id})" class="btn-sm btn-danger">🗑️</button>
-                        </div>
+                <div style="display:flex; gap:15px; align-items:start; background:#fff; border:2px solid #e0e0e0; border-radius:12px; padding:15px; margin-bottom:12px; flex-wrap:wrap;">
+                    <div style="width:160px; height:100px; border-radius:10px; overflow:hidden; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+                        ${cardImage}
                     </div>
-                    ${items.length > 0 ? `
-                    <div style="margin-top:10px; padding-top:10px; border-top:1px solid #e0e0e0;">
-                        <strong style="font-size:13px;">📦 المنتجات (${items.length}):</strong>
-                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
-                            ${items.map(it => `
-                                <span style="background:#f0f9ff; border:1px solid #bae6fd; padding:4px 10px; border-radius:6px; font-size:12px;">
-                                    ${escHTML(it.product_name)}${it.variant_name ? ' - ' + escHTML(it.variant_name) : ''} <strong style="color:#667eea;">x${it.quantity}</strong>
-                                </span>
-                            `).join('')}
+                    <div style="flex:1; min-width:200px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <strong style="font-size:16px; color:#1e40af;">${escHTML(p.name)}</strong>
+                                ${p.description ? `<span style="color:#6c757d; margin-right:8px;">(${escHTML(p.description)})</span>` : ''}
+                            </div>
+                            <div style="display:flex; gap:5px; align-items:center;">
+                                <span style="background:#28a745; color:white; padding:3px 10px; border-radius:12px; font-size:13px; font-weight:bold;">${p.price.toFixed(3)} د.ك</span>
+                                <span style="background:#667eea; color:white; padding:3px 10px; border-radius:12px; font-size:13px;">${p.duration_days} يوم</span>
+                                ${p.is_active ? '<span style="color:#28a745;">فعّال</span>' : '<span style="color:#dc3545;">معطّل</span>'}
+                                <button onclick="togglePlan(${p.id}, ${p.is_active})" class="btn-sm">${p.is_active ? '⏸️' : '▶️'}</button>
+                                <button onclick="deletePlan(${p.id})" class="btn-sm btn-danger">🗑️</button>
+                            </div>
                         </div>
-                    </div>` : '<div style="margin-top:8px; color:#ffc107; font-size:13px;">⚠️ لا توجد منتجات في هذه الخطة</div>'}
+                        ${items.length > 0 ? `
+                        <div style="margin-top:8px; padding-top:8px; border-top:1px solid #e0e0e0;">
+                            <strong style="font-size:13px;">📦 المنتجات (${items.length}):</strong>
+                            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                                ${items.map(it => `
+                                    <span style="background:#f0f9ff; border:1px solid #bae6fd; padding:4px 10px; border-radius:6px; font-size:12px;">
+                                        ${escHTML(it.product_name)}${it.variant_name ? ' - ' + escHTML(it.variant_name) : ''} <strong style="color:#667eea;">x${it.quantity}</strong>
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>` : '<div style="margin-top:8px; color:#ffc107; font-size:13px;">⚠️ لا توجد منتجات في هذه الفئة</div>'}
+                    </div>
                 </div>`;
             }).join('');
+            // تحديث الداشبورد
+            renderCategoryDashboard();
         }
     } catch (error) {
         console.error('[Plans] Error:', error);
     }
 }
 
+// === صورة الفئة ===
+
+function _getDefaultCardBg(name) {
+    const gradients = [
+        'linear-gradient(135deg, #667eea, #764ba2)',
+        'linear-gradient(135deg, #f093fb, #f5576c)',
+        'linear-gradient(135deg, #4facfe, #00f2fe)',
+        'linear-gradient(135deg, #43e97b, #38f9d7)',
+        'linear-gradient(135deg, #fa709a, #fee140)',
+        'linear-gradient(135deg, #a18cd1, #fbc2eb)',
+        'linear-gradient(135deg, #fccb90, #d57eeb)',
+        'linear-gradient(135deg, #e0c3fc, #8ec5fc)',
+    ];
+    const idx = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % gradients.length;
+    return `<div style="width:100%; height:100%; background:${gradients[idx]}; display:flex; align-items:center; justify-content:center;">
+        <span style="font-size:32px; text-shadow:0 2px 8px rgba(0,0,0,0.2);">💳</span>
+    </div>`;
+}
+
+function handlePlanImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 500 * 1024) { alert('الحد الأقصى لحجم الصورة 500 كيلوبايت'); return; }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const dataUrl = e.target.result;
+        document.getElementById('planImageData').value = dataUrl;
+        document.getElementById('planImagePreview').innerHTML = `<img src="${dataUrl}" style="width:100%; height:100%; object-fit:cover;">`;
+    };
+    reader.readAsDataURL(file);
+}
+
+const _cardTemplates = [
+    { name: 'بنفسجي', gradient: 'linear-gradient(135deg, #667eea, #764ba2)', icon: '💳' },
+    { name: 'وردي', gradient: 'linear-gradient(135deg, #f093fb, #f5576c)', icon: '🌸' },
+    { name: 'أزرق', gradient: 'linear-gradient(135deg, #4facfe, #00f2fe)', icon: '💎' },
+    { name: 'أخضر', gradient: 'linear-gradient(135deg, #43e97b, #38f9d7)', icon: '🍀' },
+    { name: 'ذهبي', gradient: 'linear-gradient(135deg, #f7971e, #ffd200)', icon: '⭐' },
+    { name: 'فضي', gradient: 'linear-gradient(135deg, #bdc3c7, #2c3e50)', icon: '🔷' },
+    { name: 'كلاسيكي', gradient: 'linear-gradient(135deg, #0f0c29, #302b63, #24243e)', icon: '👑' },
+    { name: 'برونزي', gradient: 'linear-gradient(135deg, #c9920e, #8B6914)', icon: '🏆' },
+];
+
+function showPlanTemplates() {
+    const grid = document.getElementById('planTemplatesGrid');
+    if (grid.style.display !== 'none') { grid.style.display = 'none'; return; }
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(120px, 1fr))';
+    grid.style.gap = '8px';
+    grid.innerHTML = _cardTemplates.map((t, i) => `
+        <div onclick="selectPlanTemplate(${i})" style="cursor:pointer; border-radius:10px; overflow:hidden; height:75px; box-shadow:0 2px 6px rgba(0,0,0,0.15); transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+            <div style="width:100%; height:100%; background:${t.gradient}; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+                <span style="font-size:24px;">${t.icon}</span>
+                <span style="color:white; font-size:11px; margin-top:4px; text-shadow:0 1px 3px rgba(0,0,0,0.3);">${t.name}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectPlanTemplate(index) {
+    const t = _cardTemplates[index];
+    // إنشاء صورة من التصميم باستخدام Canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 340;
+    canvas.height = 214;
+    const ctx = canvas.getContext('2d');
+
+    // رسم الخلفية المتدرجة
+    const colors = t.gradient.match(/#[a-fA-F0-9]{6}/g) || ['#667eea', '#764ba2'];
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, canvas.width, canvas.height, 16);
+    ctx.fill();
+
+    // نمط زخرفي
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.arc(280, 40, 80, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(60, 180, 60, 0, Math.PI * 2);
+    ctx.fill();
+
+    // خطوط بطاقة
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(30, 70, 50, 35);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    document.getElementById('planImageData').value = dataUrl;
+    document.getElementById('planImagePreview').innerHTML = `<img src="${dataUrl}" style="width:100%; height:100%; object-fit:cover;">`;
+    document.getElementById('planTemplatesGrid').style.display = 'none';
+}
+
+// === داشبورد الفئات ===
+
+function renderCategoryDashboard() {
+    const container = document.getElementById('subCategoryDashboard');
+    if (!container) return;
+    const activePlans = _allPlans.filter(p => p.is_active);
+    if (activePlans.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    // إحصائيات لكل فئة
+    const planStats = {};
+    _allSubscriptions.forEach(s => {
+        if (!planStats[s.plan_id]) planStats[s.plan_id] = { active: 0, total: 0 };
+        planStats[s.plan_id].total++;
+        if (s.status === 'active') planStats[s.plan_id].active++;
+    });
+
+    container.innerHTML = `
+        <div style="display:flex; gap:15px; overflow-x:auto; padding:10px 0;">
+            ${activePlans.map(p => {
+                const stats = planStats[p.id] || { active: 0, total: 0 };
+                const items = p.items || [];
+                const totalProducts = items.reduce((s, it) => s + it.quantity, 0);
+                const hasImage = p.image;
+                return `
+                <div onclick="filterByCategory(${p.id})" style="flex-shrink:0; width:270px; height:170px; border-radius:14px; overflow:hidden; cursor:pointer; position:relative; box-shadow:0 4px 15px rgba(0,0,0,0.2); transition:transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.3)'" onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 15px rgba(0,0,0,0.2)'">
+                    ${hasImage ? `<img src="${p.image}" style="width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0;">` : _getDefaultCardBg(p.name).replace('width:100%', 'width:100%; position:absolute; top:0; left:0')}
+                    <div style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.35); display:flex; flex-direction:column; justify-content:space-between; padding:18px;">
+                        <div>
+                            <div style="color:white; font-size:18px; font-weight:bold; text-shadow:0 2px 4px rgba(0,0,0,0.3);">${escHTML(p.name)}</div>
+                            <div style="color:rgba(255,255,255,0.85); font-size:12px; margin-top:4px;">${p.description ? escHTML(p.description) : `${totalProducts} منتج | ${p.duration_days} يوم`}</div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:end;">
+                            <div>
+                                <div style="color:rgba(255,255,255,0.7); font-size:11px;">المشتركين</div>
+                                <div style="color:white; font-size:20px; font-weight:bold;">${stats.active}</div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.2); backdrop-filter:blur(4px); padding:6px 14px; border-radius:20px;">
+                                <span style="color:white; font-size:16px; font-weight:bold;">${p.price.toFixed(3)}</span>
+                                <span style="color:rgba(255,255,255,0.8); font-size:11px;"> د.ك</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
+    `;
+}
+
+function filterByCategory(planId) {
+    const filtered = _allSubscriptions.filter(s => s.plan_id === planId);
+    renderSubscriptions(filtered);
+    // تمييز البطاقة المحددة
+    const search = document.getElementById('subSearchInput');
+    if (search) {
+        const plan = _allPlans.find(p => p.id === planId);
+        search.value = plan ? plan.name : '';
+    }
+}
+
 async function savePlan() {
     const name = document.getElementById('planName').value.trim();
     const price = parseFloat(document.getElementById('planPrice').value);
-    if (!name || isNaN(price)) { alert('يجب إدخال اسم الخطة والسعر'); return; }
-    if (_planItems.length === 0) { alert('يجب إضافة منتج واحد على الأقل للخطة'); return; }
+    if (!name || isNaN(price)) { alert('يجب إدخال اسم الفئة والسعر'); return; }
+    if (_planItems.length === 0) { alert('يجب إضافة منتج واحد على الأقل للفئة'); return; }
 
     try {
         const response = await fetch(`${API_URL}/api/subscription-plans`, {
@@ -11830,16 +12020,20 @@ async function savePlan() {
                 discount_percent: 0,
                 loyalty_multiplier: 1,
                 description: document.getElementById('planDesc').value.trim(),
+                image: document.getElementById('planImageData').value || '',
                 items: _planItems
             })
         });
         const data = await response.json();
         if (data.success) {
-            alert('✅ تم حفظ الخطة');
+            alert('✅ تم حفظ الفئة');
             document.getElementById('planName').value = '';
             document.getElementById('planPrice').value = '';
             document.getElementById('planDesc').value = '';
             document.getElementById('planDuration').value = '30';
+            document.getElementById('planImageData').value = '';
+            document.getElementById('planImagePreview').innerHTML = '<span style="color:#aaa; font-size:12px;">معاينة الصورة</span>';
+            document.getElementById('planTemplatesGrid').style.display = 'none';
             _planItems = [];
             renderPlanItems();
             await loadPlansList();
@@ -11862,7 +12056,7 @@ async function togglePlan(planId, currentActive) {
 }
 
 async function deletePlan(planId) {
-    if (!confirm('حذف هذه الخطة ومنتجاتها؟')) return;
+    if (!confirm('حذف هذه الفئة ومنتجاتها؟')) return;
     try {
         const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, { method: 'DELETE' });
         const data = await response.json();
@@ -11889,7 +12083,7 @@ async function showAddSubscription() {
 
         const planSelect = document.getElementById('subPlanId');
         _allPlans = planData.success ? planData.plans.filter(p => p.is_active) : [];
-        planSelect.innerHTML = '<option value="">-- اختر الخطة --</option>' +
+        planSelect.innerHTML = '<option value="">-- اختر الفئة --</option>' +
             _allPlans.map(p => {
                 const itemCount = (p.items || []).reduce((s, it) => s + it.quantity, 0);
                 return `<option value="${p.id}">${escHTML(p.name)} (${p.price.toFixed(3)} د.ك / ${p.duration_days} يوم / ${itemCount} منتج)</option>`;
@@ -11944,7 +12138,7 @@ async function submitSubscription() {
     const customerId = document.getElementById('subCustomerId').value;
     const planId = document.getElementById('subPlanId').value;
     const code = document.getElementById('subCode').value.trim();
-    if (!customerId || !planId || !code) { alert('يجب تعبئة العميل والخطة والكود'); return; }
+    if (!customerId || !planId || !code) { alert('يجب تعبئة العميل والفئة والكود'); return; }
 
     try {
         const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
@@ -12004,7 +12198,7 @@ async function renewSubscription(subId, customerId, planId) {
             const planData = await planRes.json();
             if (planData.success) { _allPlans = planData.plans; }
             plan = _allPlans.find(p => p.id === planId);
-            if (!plan) { alert('الخطة غير موجودة'); return; }
+            if (!plan) { alert('الفئة غير موجودة'); return; }
         }
         const startDate = new Date().toISOString().split('T')[0];
         const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
@@ -12061,7 +12255,7 @@ function _openRedeemModal(sub) {
     `;
 
     if (planItems.length === 0) {
-        document.getElementById('redeemItemsList').innerHTML = '<p style="text-align:center; color:#dc3545;">لا توجد منتجات في هذه الخطة</p>';
+        document.getElementById('redeemItemsList').innerHTML = '<p style="text-align:center; color:#dc3545;">لا توجد منتجات في هذه الفئة</p>';
     } else {
         document.getElementById('redeemItemsList').innerHTML = `
             <table class="data-table">

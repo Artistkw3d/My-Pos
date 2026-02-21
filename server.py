@@ -14,6 +14,7 @@ import os
 import shutil
 import threading
 import time
+import subprocess
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
@@ -243,6 +244,8 @@ def migrate_database(db_path=None):
         add_column('branch_stock', 'variant_id', 'INTEGER')
         add_column('branch_stock', 'notes', 'TEXT')
 
+        add_column('subscription_plans', 'image', 'TEXT')
+
         # === نظام الشفتات ===
         safe_exec('''CREATE TABLE IF NOT EXISTS shifts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,6 +337,7 @@ def migrate_database(db_path=None):
             discount_percent REAL DEFAULT 0,
             loyalty_multiplier REAL DEFAULT 1,
             description TEXT,
+            image TEXT,
             is_active INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''', 'subscription_plans')
@@ -904,6 +908,7 @@ def create_tenant_database(slug):
             discount_percent REAL DEFAULT 0,
             loyalty_multiplier REAL DEFAULT 1,
             description TEXT,
+            image TEXT,
             is_active INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -6994,10 +6999,10 @@ def add_subscription_plan():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO subscription_plans (name, duration_days, price, discount_percent, loyalty_multiplier, description)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO subscription_plans (name, duration_days, price, discount_percent, loyalty_multiplier, description, image)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (data.get('name'), data.get('duration_days', 30), data.get('price', 0),
-              data.get('discount_percent', 0), data.get('loyalty_multiplier', 1), data.get('description', '')))
+              data.get('discount_percent', 0), data.get('loyalty_multiplier', 1), data.get('description', ''), data.get('image', '')))
         plan_id = cursor.lastrowid
 
         # إضافة منتجات الخطة
@@ -7024,10 +7029,10 @@ def update_subscription_plan(plan_id):
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE subscription_plans SET name=?, duration_days=?, price=?, discount_percent=?,
-            loyalty_multiplier=?, description=?, is_active=? WHERE id=?
+            loyalty_multiplier=?, description=?, image=?, is_active=? WHERE id=?
         ''', (data.get('name'), data.get('duration_days'), data.get('price'),
               data.get('discount_percent'), data.get('loyalty_multiplier'),
-              data.get('description', ''), data.get('is_active', 1), plan_id))
+              data.get('description', ''), data.get('image', ''), data.get('is_active', 1), plan_id))
 
         # تحديث المنتجات إذا تم إرسالها
         if 'items' in data:
@@ -7436,6 +7441,27 @@ def get_subscription_redemptions(subscription_id):
         return jsonify({'success': True, 'redemptions': redemptions})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/version', methods=['GET'])
+def get_version():
+    """جلب رقم الإصدار من Git"""
+    try:
+        result = subprocess.run(['git', 'rev-list', '--count', 'HEAD'],
+                                capture_output=True, text=True, timeout=5,
+                                cwd=os.path.dirname(os.path.abspath(__file__)))
+        commit_count = result.stdout.strip() if result.returncode == 0 else '0'
+        short_hash = ''
+        try:
+            h = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'],
+                               capture_output=True, text=True, timeout=5,
+                               cwd=os.path.dirname(os.path.abspath(__file__)))
+            short_hash = h.stdout.strip() if h.returncode == 0 else ''
+        except:
+            pass
+        return jsonify({'success': True, 'version': commit_count, 'hash': short_hash})
+    except:
+        return jsonify({'success': True, 'version': '0', 'hash': ''})
 
 
 if __name__ == '__main__':
