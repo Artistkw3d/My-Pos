@@ -11034,14 +11034,14 @@ async function loadStockTransfers() {
                 <td style="font-size:11px;">${date}</td>
                 <td>
                     <button onclick="viewTransferDetails(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#667eea;">تفاصيل</button>
-                    ${t.status === 'pending' && window.userPermissions?.canApproveTransfer ?
+                    ${t.status === 'pending' && window.userPermissions?.canApproveTransfer && (currentUser.branch_id == t.from_branch_id) ?
                         `<button onclick="approveTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#27ae60;">موافقة</button>
                          <button onclick="rejectTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#e74c3c;">رفض</button>` : ''}
-                    ${t.status === 'approved' && window.userPermissions?.canDeliverTransfer ?
+                    ${t.status === 'approved' && window.userPermissions?.canDeliverTransfer && (currentUser.branch_id == t.from_branch_id) ?
                         `<button onclick="pickupTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#f39c12;">استلام سائق</button>` : ''}
-                    ${t.status === 'in_transit' && window.userPermissions?.canCreateTransfer ?
+                    ${t.status === 'in_transit' && window.userPermissions?.canCreateTransfer && (currentUser.branch_id == t.to_branch_id) ?
                         `<button onclick="receiveTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#2ecc71;">تأكيد استلام</button>` : ''}
-                    ${(t.status === 'pending' || t.status === 'rejected') && window.userPermissions?.canCreateTransfer ?
+                    ${(t.status === 'pending' || t.status === 'rejected') && window.userPermissions?.canCreateTransfer && (currentUser.branch_id == t.to_branch_id) ?
                         `<button onclick="deleteTransferPrompt(${t.id})" class="btn" style="font-size:11px; padding:4px 10px; background:#dc3545;">حذف</button>` : ''}
                 </td>
             </tr>`;
@@ -11340,14 +11340,17 @@ async function viewTransferDetails(transferId) {
 
         // أزرار الإجراءات
         html += '<div style="margin-top:20px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">';
-        if (t.status === 'pending' && window.userPermissions?.canApproveTransfer) {
+        // الفرع المرسل: موافقة + تسليم سائق | الفرع الطالب: تأكيد استلام
+        const isFromBranch = currentUser.branch_id == t.from_branch_id;
+        const isToBranch = currentUser.branch_id == t.to_branch_id;
+        if (t.status === 'pending' && window.userPermissions?.canApproveTransfer && isFromBranch) {
             html += `<button onclick="approveTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#27ae60; font-size:14px;">✅ موافقة وتجهيز</button>`;
             html += `<button onclick="rejectTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#e74c3c; font-size:14px;">❌ رفض</button>`;
         }
-        if (t.status === 'approved' && window.userPermissions?.canDeliverTransfer) {
+        if (t.status === 'approved' && window.userPermissions?.canDeliverTransfer && isFromBranch) {
             html += `<button onclick="pickupTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#f39c12; font-size:14px;">🚗 استلام السائق</button>`;
         }
-        if (t.status === 'in_transit' && window.userPermissions?.canCreateTransfer) {
+        if (t.status === 'in_transit' && window.userPermissions?.canCreateTransfer && isToBranch) {
             html += `<button onclick="receiveTransferPrompt(${t.id})" class="btn" style="padding:10px 25px; background:#2ecc71; font-size:14px;">📦 تأكيد الاستلام</button>`;
         }
         html += '</div>';
@@ -11385,6 +11388,7 @@ async function approveTransferPrompt(transferId) {
             body: JSON.stringify({
                 approved_by: currentUser.id,
                 approved_by_name: currentUser.full_name,
+                user_branch_id: currentUser.branch_id,
                 items: approvedItems
             })
         });
@@ -11413,6 +11417,7 @@ async function rejectTransferPrompt(transferId) {
             body: JSON.stringify({
                 approved_by: currentUser.id,
                 approved_by_name: currentUser.full_name,
+                user_branch_id: currentUser.branch_id,
                 reject_reason: reason
             })
         });
@@ -11441,7 +11446,8 @@ async function pickupTransferPrompt(transferId) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 driver_id: currentUser.id,
-                driver_name: driverName.trim()
+                driver_name: driverName.trim(),
+                user_branch_id: currentUser.branch_id
             })
         });
         const data = await response.json();
@@ -11478,6 +11484,7 @@ async function receiveTransferPrompt(transferId) {
             body: JSON.stringify({
                 received_by: currentUser.id,
                 received_by_name: currentUser.full_name,
+                user_branch_id: currentUser.branch_id,
                 items: receivedItems
             })
         });
@@ -11499,7 +11506,7 @@ async function deleteTransferPrompt(transferId) {
     if (!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}`, { method: 'DELETE' });
+        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}?user_branch_id=${currentUser.branch_id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             logAction('delete_transfer', `حذف طلب نقل #${transferId}`, transferId);

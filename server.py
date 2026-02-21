@@ -6746,6 +6746,12 @@ def approve_stock_transfer(transfer_id):
             conn.close()
             return jsonify({'success': False, 'error': 'لا يمكن الموافقة - الحالة الحالية: ' + transfer['status']}), 400
 
+        # التحقق من أن المستخدم من الفرع المرسل
+        user_branch = data.get('user_branch_id')
+        if user_branch and int(user_branch) != transfer['from_branch_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'فقط الفرع المرسل يمكنه الموافقة على الطلب'}), 403
+
         # تحديث الكميات المعتمدة
         approved_items = data.get('items', [])
         for ai in approved_items:
@@ -6789,7 +6795,7 @@ def reject_stock_transfer(transfer_id):
         conn = get_db()
         cursor = conn.cursor()
 
-        cursor.execute('SELECT status FROM stock_transfers WHERE id = ?', (transfer_id,))
+        cursor.execute('SELECT * FROM stock_transfers WHERE id = ?', (transfer_id,))
         transfer = cursor.fetchone()
         if not transfer:
             conn.close()
@@ -6797,6 +6803,12 @@ def reject_stock_transfer(transfer_id):
         if transfer['status'] != 'pending':
             conn.close()
             return jsonify({'success': False, 'error': 'لا يمكن الرفض - الحالة: ' + transfer['status']}), 400
+
+        # التحقق من أن المستخدم من الفرع المرسل
+        user_branch = data.get('user_branch_id')
+        if user_branch and int(user_branch) != transfer['from_branch_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'فقط الفرع المرسل يمكنه رفض الطلب'}), 403
 
         cursor.execute('''
             UPDATE stock_transfers
@@ -6819,7 +6831,7 @@ def pickup_stock_transfer(transfer_id):
         conn = get_db()
         cursor = conn.cursor()
 
-        cursor.execute('SELECT status FROM stock_transfers WHERE id = ?', (transfer_id,))
+        cursor.execute('SELECT * FROM stock_transfers WHERE id = ?', (transfer_id,))
         transfer = cursor.fetchone()
         if not transfer:
             conn.close()
@@ -6827,6 +6839,12 @@ def pickup_stock_transfer(transfer_id):
         if transfer['status'] != 'approved':
             conn.close()
             return jsonify({'success': False, 'error': 'لا يمكن الاستلام - الحالة: ' + transfer['status']}), 400
+
+        # التحقق من أن المستخدم من الفرع المرسل
+        user_branch = data.get('user_branch_id')
+        if user_branch and int(user_branch) != transfer['from_branch_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'فقط الفرع المرسل يمكنه تسليم البضاعة للسائق'}), 403
 
         cursor.execute('''
             UPDATE stock_transfers
@@ -6857,6 +6875,12 @@ def receive_stock_transfer(transfer_id):
         if transfer['status'] != 'in_transit':
             conn.close()
             return jsonify({'success': False, 'error': 'لا يمكن تأكيد الاستلام - الحالة: ' + transfer['status']}), 400
+
+        # التحقق من أن المستخدم من الفرع الطالب
+        user_branch = data.get('user_branch_id')
+        if user_branch and int(user_branch) != transfer['to_branch_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'فقط الفرع الطالب يمكنه تأكيد الاستلام وإتمام العملية'}), 403
 
         transfer = dict_from_row(transfer)
 
@@ -6919,7 +6943,7 @@ def delete_stock_transfer(transfer_id):
         conn = get_db()
         cursor = conn.cursor()
 
-        cursor.execute('SELECT status, from_branch_id FROM stock_transfers WHERE id = ?', (transfer_id,))
+        cursor.execute('SELECT status, from_branch_id, to_branch_id FROM stock_transfers WHERE id = ?', (transfer_id,))
         transfer = cursor.fetchone()
         if not transfer:
             conn.close()
@@ -6927,6 +6951,12 @@ def delete_stock_transfer(transfer_id):
         if transfer['status'] not in ('pending', 'rejected'):
             conn.close()
             return jsonify({'success': False, 'error': 'لا يمكن حذف طلب في حالة: ' + transfer['status']}), 400
+
+        # التحقق من أن المستخدم من الفرع الطالب
+        user_branch = request.args.get('user_branch_id')
+        if user_branch and int(user_branch) != transfer['to_branch_id']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'فقط الفرع الطالب يمكنه حذف الطلب'}), 403
 
         cursor.execute('DELETE FROM stock_transfer_items WHERE transfer_id = ?', (transfer_id,))
         cursor.execute('DELETE FROM stock_transfers WHERE id = ?', (transfer_id,))
