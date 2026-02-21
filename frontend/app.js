@@ -11431,7 +11431,9 @@ async function rejectTransferPrompt(transferId) {
 }
 
 async function pickupTransferPrompt(transferId) {
-    if (!confirm('هل تم استلام البضاعة من المستودع؟\n\nسيتم تحويل الحالة إلى "جاري التوصيل"')) return;
+    const driverName = prompt('أدخل اسم السائق:', '');
+    if (driverName === null) return;
+    if (!driverName.trim()) { alert('يجب إدخال اسم السائق'); return; }
 
     try {
         const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/pickup`, {
@@ -11439,13 +11441,13 @@ async function pickupTransferPrompt(transferId) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 driver_id: currentUser.id,
-                driver_name: currentUser.full_name
+                driver_name: driverName.trim()
             })
         });
         const data = await response.json();
         if (data.success) {
-            logAction('pickup_transfer', `استلام سائق لطلب نقل #${transferId}`, transferId);
-            alert('تم تسجيل الاستلام - جاري التوصيل');
+            logAction('pickup_transfer', `استلام سائق "${driverName.trim()}" لطلب نقل #${transferId}`, transferId);
+            alert(`✅ تم تسجيل الاستلام - السائق: ${driverName.trim()}\nجاري التوصيل`);
             closeTransferDetails();
             loadStockTransfers();
         } else {
