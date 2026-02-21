@@ -1204,22 +1204,17 @@ function updateTotals() {
         discount = discountValue;
     }
     const couponDiscount = appliedCouponDiscount || 0;
-    // خصم الاشتراك
-    const activeSub = window._activeSubscription || null;
-    const subDiscountPct = activeSub ? (activeSub.discount_percent || 0) : 0;
-    const subscriptionDiscount = subtotal * (subDiscountPct / 100);
     // حساب خصم الولاء
     const pointsToRedeem = parseInt(document.getElementById('pointsToRedeem')?.value) || 0;
     const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
     const loyaltyDiscount = pointsToRedeem * pointValue;
     const deliveryFee = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const total = subtotal - discount - couponDiscount - subscriptionDiscount - loyaltyDiscount + deliveryFee;
+    const total = subtotal - discount - couponDiscount - loyaltyDiscount + deliveryFee;
     document.getElementById('subtotal').textContent = `${subtotal.toFixed(3)} د.ك`;
-    // عرض خصم الاشتراك
-    const subRow = document.getElementById('subscriptionDiscountRow');
-    if (subRow) {
-        subRow.style.display = subscriptionDiscount > 0 ? 'flex' : 'none';
-        document.getElementById('subscriptionDiscountAmount').textContent = `-${subscriptionDiscount.toFixed(3)} د.ك`;
+    // عرض زر استلام الاشتراك
+    const subRedeemRow = document.getElementById('subscriptionRedeemRow');
+    if (subRedeemRow) {
+        subRedeemRow.style.display = window._activeSubscription ? 'flex' : 'none';
     }
     document.getElementById('total').textContent = `${Math.max(0, total).toFixed(3)} د.ك`;
     saveUserCart(); // حفظ السلة
@@ -1292,15 +1287,12 @@ async function completeSale() {
         discount = discountValue;
     }
     const couponDiscount = appliedCouponDiscount || 0;
-    // خصم الاشتراك
     const activeSub = window._activeSubscription || null;
-    const subDiscountPercent = activeSub ? (activeSub.discount_percent || 0) : 0;
-    const subscriptionDiscount = subtotal * (subDiscountPercent / 100);
     const loyaltyPointsInput = parseInt(document.getElementById('pointsToRedeem')?.value) || 0;
     const loyaltyPV = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
     const loyaltyDiscountPre = loyaltyPointsInput * loyaltyPV;
     const deliveryFee = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const total = subtotal - discount - couponDiscount - subscriptionDiscount - loyaltyDiscountPre + deliveryFee;
+    const total = subtotal - discount - couponDiscount - loyaltyDiscountPre + deliveryFee;
 
     if (total <= 0) {
         alert('الإجمالي يجب أن يكون أكبر من صفر');
@@ -1382,9 +1374,8 @@ async function completeSale() {
         table_id: document.getElementById('selectedTableId')?.value || null,
         table_name: document.getElementById('selectedTableId')?.selectedOptions[0]?.textContent || '',
         shift_id: currentUser.shift_id || null,
-        notes: (document.getElementById('orderNotes')?.value?.trim() || '') + (activeSub ? ` | اشتراك: ${activeSub.subscription_code} (خصم ${subDiscountPercent}%)` : ''),
+        notes: (document.getElementById('orderNotes')?.value?.trim() || '') + (activeSub ? ` | مشترك: ${activeSub.subscription_code}` : ''),
         subscription_code: activeSub ? activeSub.subscription_code : null,
-        subscription_discount: subscriptionDiscount,
         items: cart.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -1639,7 +1630,7 @@ function displayInvoiceView(inv) {
                 <div style="display:flex; justify-content:space-between; margin:5px 0;"><span>المجموع:</span><span>${inv.subtotal.toFixed(3)} د.ك</span></div>
                 <div style="display:flex; justify-content:space-between; margin:5px 0; color:#dc3545;"><span>الخصم:</span><span>-${inv.discount.toFixed(3)} د.ك</span></div>
                 ${(inv.coupon_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#eab308;"><span>🎟️ خصم الكوبون:</span><span>-${inv.coupon_discount.toFixed(3)} د.ك</span></div>` : ''}
-                ${(inv.subscription_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#764ba2;"><span>💳 خصم الاشتراك:</span><span>-${inv.subscription_discount.toFixed(3)} د.ك</span></div>` : ''}
+                ${inv.subscription_code ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#764ba2;"><span>💳 اشتراك:</span><span>${escHTML(inv.subscription_code)}</span></div>` : ''}
                 ${(inv.loyalty_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#0ea5e9;"><span>💎 خصم الولاء:</span><span>-${inv.loyalty_discount.toFixed(3)} د.ك</span></div>` : ''}
                 ${inv.delivery_fee > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0;"><span>رسوم التوصيل:</span><span>${inv.delivery_fee.toFixed(3)} د.ك</span></div>` : ''}
                 <div style="display:flex; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:2px solid #667eea; font-size:16px; font-weight:bold; color:#667eea;"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
@@ -4399,7 +4390,8 @@ async function loadSystemLogs(page) {
                 'add_subscription': '💳 اشتراك جديد',
                 'cancel_subscription': '🚫 إلغاء اشتراك',
                 'delete_subscription': '🗑️ حذف اشتراك',
-                'renew_subscription': '🔄 تجديد اشتراك'
+                'renew_subscription': '🔄 تجديد اشتراك',
+                'subscription_redeem': '📦 استلام منتجات اشتراك'
             };
 
             // تطبيق فلتر التاريخ على العميل (الـ API يدعمها أيضاً)
@@ -5427,8 +5419,8 @@ function clearCustomerSelection() {
     document.getElementById('pointsToRedeem').value = '';
     currentCustomerData = null;
     if (typeof hideSubscriptionBadge === 'function') hideSubscriptionBadge();
-    const subDiscRow = document.getElementById('subscriptionDiscountRow');
-    if (subDiscRow) subDiscRow.style.display = 'none';
+    const subRedeemRow = document.getElementById('subscriptionRedeemRow');
+    if (subRedeemRow) subRedeemRow.style.display = 'none';
 }
 
 
@@ -11503,10 +11495,11 @@ async function deleteTransferPrompt(transferId) {
 
 console.log('[Stock Transfers] Loaded ✅');
 
-// ===== نظام الاشتراكات =====
+// ===== نظام الاشتراكات (مربوط بالمنتجات) =====
 
 let _allSubscriptions = [];
 let _allPlans = [];
+let _planItems = []; // منتجات الخطة الحالية المؤقتة
 
 const _subStatusLabels = { 'active': '✅ فعّال', 'expired': '⏳ منتهي', 'cancelled': '🚫 ملغي' };
 const _subStatusColors = { 'active': '#28a745', 'expired': '#ffc107', 'cancelled': '#dc3545' };
@@ -11548,22 +11541,35 @@ function renderSubscriptions(subs) {
         <table class="data-table">
             <thead><tr>
                 <th>الكود</th><th>العميل</th><th>الهاتف</th><th>الخطة</th>
-                <th>من</th><th>إلى</th><th>الحالة</th><th>خصم %</th><th>إجراءات</th>
+                <th>المنتجات</th><th>من</th><th>إلى</th><th>الحالة</th><th>إجراءات</th>
             </tr></thead>
             <tbody>
                 ${subs.map(s => {
                     const isExpired = s.status === 'active' && s.end_date < today;
                     const displayStatus = isExpired ? 'expired' : s.status;
+                    const planItems = s.plan_items || [];
+                    const redeemedMap = s.redeemed_map || {};
+                    const totalItems = planItems.reduce((sum, it) => sum + it.quantity, 0);
+                    const totalRedeemed = planItems.reduce((sum, it) => {
+                        const key = `${it.product_id}_${it.variant_id || 0}`;
+                        return sum + (redeemedMap[key] || 0);
+                    }, 0);
                     return `<tr style="${displayStatus !== 'active' ? 'opacity:0.7;' : ''}">
                         <td><strong style="color:#667eea; font-family:monospace; font-size:14px;">${escHTML(s.subscription_code)}</strong></td>
                         <td>${escHTML(s.customer_name)}</td>
                         <td dir="ltr">${escHTML(s.customer_phone || '-')}</td>
                         <td>${escHTML(s.plan_name)}</td>
+                        <td>
+                            <span style="font-weight:bold; color:${totalRedeemed >= totalItems ? '#dc3545' : '#28a745'};">
+                                ${totalRedeemed}/${totalItems}
+                            </span>
+                            <button onclick="showSubscriptionDetail(${s.id})" class="btn-sm" title="تفاصيل" style="margin-right:5px;">📋</button>
+                        </td>
                         <td>${s.start_date}</td>
                         <td>${s.end_date}</td>
                         <td><span style="background:${_subStatusColors[displayStatus] || '#6c757d'}; color:white; padding:3px 10px; border-radius:12px; font-size:12px;">${_subStatusLabels[displayStatus] || displayStatus}</span></td>
-                        <td>${s.discount_percent}%</td>
                         <td>
+                            ${displayStatus === 'active' ? `<button onclick="showRedeemForSub(${s.id})" class="btn-sm" title="استلام" style="background:#764ba2; color:white;">📦</button>` : ''}
                             ${displayStatus === 'active' ? `<button onclick="cancelSubscription(${s.id})" class="btn-sm btn-danger" title="إلغاء">🚫</button>` : ''}
                             ${window.userPermissions.canManageSubscriptions ? `<button onclick="deleteSubscription(${s.id})" class="btn-sm btn-danger" title="حذف">🗑️</button>` : ''}
                             <button onclick="renewSubscription(${s.id}, ${s.customer_id}, ${s.plan_id})" class="btn-sm" title="تجديد">🔄</button>
@@ -11575,15 +11581,161 @@ function renderSubscriptions(subs) {
     `;
 }
 
+// --- عرض تفاصيل اشتراك ---
+
+function showSubscriptionDetail(subId) {
+    const sub = _allSubscriptions.find(s => s.id === subId);
+    if (!sub) return;
+    const planItems = sub.plan_items || [];
+    const redeemedMap = sub.redeemed_map || {};
+    const body = document.getElementById('subscriptionDetailBody');
+    body.innerHTML = `
+        <div style="background: linear-gradient(135deg, #667eea15, #764ba215); padding: 15px; border-radius: 10px; border: 2px solid #764ba2; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <div style="font-weight:bold; font-size:18px; color:#764ba2;">${escHTML(sub.plan_name)}</div>
+                    <div>العميل: <strong>${escHTML(sub.customer_name)}</strong> | الهاتف: <strong dir="ltr">${escHTML(sub.customer_phone || '-')}</strong></div>
+                    <div>الكود: <strong style="font-family:monospace; color:#667eea;">${escHTML(sub.subscription_code)}</strong></div>
+                </div>
+                <div style="text-align: left;">
+                    <div>من: <strong>${sub.start_date}</strong></div>
+                    <div>إلى: <strong>${sub.end_date}</strong></div>
+                    <div>المدفوع: <strong style="color:#28a745;">${(sub.price_paid || 0).toFixed(3)} د.ك</strong></div>
+                </div>
+            </div>
+        </div>
+        <h3 style="margin-bottom: 10px;">📦 منتجات الاشتراك</h3>
+        ${planItems.length === 0 ? '<p style="color:#6c757d;">لا توجد منتجات في هذه الخطة</p>' : `
+        <table class="data-table">
+            <thead><tr><th>المنتج</th><th>المتغير</th><th>المسموح</th><th>المستلم</th><th>المتبقي</th></tr></thead>
+            <tbody>
+                ${planItems.map(it => {
+                    const key = `${it.product_id}_${it.variant_id || 0}`;
+                    const redeemed = redeemedMap[key] || 0;
+                    const remaining = it.quantity - redeemed;
+                    return `<tr>
+                        <td>${escHTML(it.product_name)}</td>
+                        <td>${it.variant_name ? escHTML(it.variant_name) : '-'}</td>
+                        <td style="font-weight:bold;">${it.quantity}</td>
+                        <td style="color:#667eea; font-weight:bold;">${redeemed}</td>
+                        <td style="font-weight:bold; color:${remaining > 0 ? '#28a745' : '#dc3545'};">${remaining}</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>`}
+        <div style="margin-top: 15px;">
+            <button onclick="loadRedemptionHistory(${sub.id})" class="add-btn">📜 سجل الاستلامات</button>
+        </div>
+        <div id="redemptionHistoryContainer" style="margin-top: 10px;"></div>
+    `;
+    document.getElementById('subscriptionDetailModal').classList.add('active');
+}
+
+async function loadRedemptionHistory(subId) {
+    try {
+        const response = await fetch(`${API_URL}/api/subscription-redemptions/${subId}`);
+        const data = await response.json();
+        const container = document.getElementById('redemptionHistoryContainer');
+        if (!data.success || !data.redemptions || data.redemptions.length === 0) {
+            container.innerHTML = '<p style="color:#6c757d; text-align:center;">لا توجد استلامات بعد</p>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="data-table">
+                <thead><tr><th>المنتج</th><th>المتغير</th><th>الكمية</th><th>التاريخ</th><th>بواسطة</th></tr></thead>
+                <tbody>
+                    ${data.redemptions.map(r => `<tr>
+                        <td>${escHTML(r.product_name)}</td>
+                        <td>${r.variant_name ? escHTML(r.variant_name) : '-'}</td>
+                        <td style="font-weight:bold;">${r.quantity}</td>
+                        <td>${r.redeemed_at ? r.redeemed_at.replace('T', ' ').substring(0, 16) : '-'}</td>
+                        <td>${escHTML(r.redeemed_by_name || '-')}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (error) { console.error('[Redemptions] Error:', error); }
+}
+
 // --- خطط الاشتراك ---
 
 async function showManagePlans() {
     document.getElementById('managePlansModal').classList.add('active');
+    _planItems = [];
+    renderPlanItems();
+    await loadProductsForPlanPicker();
     await loadPlansList();
 }
 
 function closePlansModal() {
     document.getElementById('managePlansModal').classList.remove('active');
+}
+
+async function loadProductsForPlanPicker() {
+    try {
+        const branchId = (currentUser && currentUser.branch_id) ? currentUser.branch_id : 1;
+        const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
+        const data = await response.json();
+        if (data.success && data.products) {
+            const select = document.getElementById('planProductSelect');
+            let options = '<option value="">-- اختر منتج --</option>';
+            data.products.forEach(p => {
+                if (p.variants && p.variants.length > 0) {
+                    p.variants.forEach(v => {
+                        options += `<option value="${p.id}|${v.id}|${escHTML(p.name + ' - ' + v.name)}">${escHTML(p.name)} - ${escHTML(v.name)} (مخزون: ${v.stock || 0})</option>`;
+                    });
+                } else {
+                    options += `<option value="${p.id}|0|${escHTML(p.name)}">${escHTML(p.name)} (مخزون: ${p.stock || 0})</option>`;
+                }
+            });
+            select.innerHTML = options;
+        }
+    } catch (error) { console.error('[Plans] Products load error:', error); }
+}
+
+function addProductToPlan() {
+    const select = document.getElementById('planProductSelect');
+    const val = select.value;
+    if (!val) { alert('اختر منتج'); return; }
+    const qty = parseInt(document.getElementById('planProductQty').value) || 1;
+    const [productId, variantId, productName] = val.split('|');
+
+    // التحقق من عدم التكرار
+    const exists = _planItems.find(it => it.product_id == productId && (it.variant_id || 0) == (variantId || 0));
+    if (exists) {
+        exists.quantity += qty;
+    } else {
+        _planItems.push({
+            product_id: parseInt(productId),
+            variant_id: parseInt(variantId) || null,
+            product_name: productName.split(' - ')[0],
+            variant_name: parseInt(variantId) ? productName.split(' - ').slice(1).join(' - ') : null,
+            quantity: qty
+        });
+    }
+    renderPlanItems();
+    select.value = '';
+    document.getElementById('planProductQty').value = '1';
+}
+
+function removePlanItem(index) {
+    _planItems.splice(index, 1);
+    renderPlanItems();
+}
+
+function renderPlanItems() {
+    const container = document.getElementById('planItemsList');
+    if (!container) return;
+    if (_planItems.length === 0) {
+        container.innerHTML = '<p style="color:#6c757d; font-size:13px; margin:5px 0;">لم يتم إضافة منتجات بعد</p>';
+        return;
+    }
+    container.innerHTML = _planItems.map((it, i) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; margin:3px 0; background:#f8f9fa; border-radius:6px; border:1px solid #e0e0e0;">
+            <span>📦 ${escHTML(it.product_name)}${it.variant_name ? ' - ' + escHTML(it.variant_name) : ''} <strong style="color:#667eea;">x${it.quantity}</strong></span>
+            <button onclick="removePlanItem(${i})" style="background:none; border:none; color:#dc3545; cursor:pointer; font-size:16px;">✖</button>
+        </div>
+    `).join('');
 }
 
 async function loadPlansList() {
@@ -11597,22 +11749,36 @@ async function loadPlansList() {
                 container.innerHTML = '<p style="text-align:center; color:#6c757d;">لا توجد خطط</p>';
                 return;
             }
-            container.innerHTML = `<table class="data-table"><thead><tr>
-                <th>الاسم</th><th>المدة</th><th>السعر</th><th>خصم %</th><th>مضاعف النقاط</th><th>الحالة</th><th>إجراءات</th>
-            </tr></thead><tbody>
-                ${_allPlans.map(p => `<tr>
-                    <td><strong>${escHTML(p.name)}</strong>${p.description ? `<br><small style="color:#6c757d;">${escHTML(p.description)}</small>` : ''}</td>
-                    <td>${p.duration_days} يوم</td>
-                    <td style="font-weight:bold; color:#28a745;">${p.price.toFixed(3)} د.ك</td>
-                    <td>${p.discount_percent}%</td>
-                    <td>${p.loyalty_multiplier}x</td>
-                    <td>${p.is_active ? '<span style="color:#28a745;">فعّال</span>' : '<span style="color:#dc3545;">معطّل</span>'}</td>
-                    <td>
-                        <button onclick="togglePlan(${p.id}, ${p.is_active})" class="btn-sm">${p.is_active ? '⏸️' : '▶️'}</button>
-                        <button onclick="deletePlan(${p.id})" class="btn-sm btn-danger">🗑️</button>
-                    </td>
-                </tr>`).join('')}
-            </tbody></table>`;
+            container.innerHTML = _allPlans.map(p => {
+                const items = p.items || [];
+                return `
+                <div style="background:#fff; border:2px solid #e0e0e0; border-radius:10px; padding:15px; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <strong style="font-size:16px; color:#1e40af;">${escHTML(p.name)}</strong>
+                            ${p.description ? `<span style="color:#6c757d; margin-right:8px;">(${escHTML(p.description)})</span>` : ''}
+                        </div>
+                        <div style="display:flex; gap:5px; align-items:center;">
+                            <span style="background:#28a745; color:white; padding:3px 10px; border-radius:12px; font-size:13px; font-weight:bold;">${p.price.toFixed(3)} د.ك</span>
+                            <span style="background:#667eea; color:white; padding:3px 10px; border-radius:12px; font-size:13px;">${p.duration_days} يوم</span>
+                            ${p.is_active ? '<span style="color:#28a745;">فعّال</span>' : '<span style="color:#dc3545;">معطّل</span>'}
+                            <button onclick="togglePlan(${p.id}, ${p.is_active})" class="btn-sm">${p.is_active ? '⏸️' : '▶️'}</button>
+                            <button onclick="deletePlan(${p.id})" class="btn-sm btn-danger">🗑️</button>
+                        </div>
+                    </div>
+                    ${items.length > 0 ? `
+                    <div style="margin-top:10px; padding-top:10px; border-top:1px solid #e0e0e0;">
+                        <strong style="font-size:13px;">📦 المنتجات (${items.length}):</strong>
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                            ${items.map(it => `
+                                <span style="background:#f0f9ff; border:1px solid #bae6fd; padding:4px 10px; border-radius:6px; font-size:12px;">
+                                    ${escHTML(it.product_name)}${it.variant_name ? ' - ' + escHTML(it.variant_name) : ''} <strong style="color:#667eea;">x${it.quantity}</strong>
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>` : '<div style="margin-top:8px; color:#ffc107; font-size:13px;">⚠️ لا توجد منتجات في هذه الخطة</div>'}
+                </div>`;
+            }).join('');
         }
     } catch (error) {
         console.error('[Plans] Error:', error);
@@ -11623,6 +11789,7 @@ async function savePlan() {
     const name = document.getElementById('planName').value.trim();
     const price = parseFloat(document.getElementById('planPrice').value);
     if (!name || isNaN(price)) { alert('يجب إدخال اسم الخطة والسعر'); return; }
+    if (_planItems.length === 0) { alert('يجب إضافة منتج واحد على الأقل للخطة'); return; }
 
     try {
         const response = await fetch(`${API_URL}/api/subscription-plans`, {
@@ -11632,9 +11799,10 @@ async function savePlan() {
                 name,
                 duration_days: parseInt(document.getElementById('planDuration').value) || 30,
                 price,
-                discount_percent: parseFloat(document.getElementById('planDiscount').value) || 0,
-                loyalty_multiplier: parseFloat(document.getElementById('planLoyaltyMult').value) || 1,
-                description: document.getElementById('planDesc').value.trim()
+                discount_percent: 0,
+                loyalty_multiplier: 1,
+                description: document.getElementById('planDesc').value.trim(),
+                items: _planItems
             })
         });
         const data = await response.json();
@@ -11643,6 +11811,9 @@ async function savePlan() {
             document.getElementById('planName').value = '';
             document.getElementById('planPrice').value = '';
             document.getElementById('planDesc').value = '';
+            document.getElementById('planDuration').value = '30';
+            _planItems = [];
+            renderPlanItems();
             await loadPlansList();
         } else { alert('خطأ: ' + data.error); }
     } catch (error) { alert('خطأ: ' + error.message); }
@@ -11663,7 +11834,7 @@ async function togglePlan(planId, currentActive) {
 }
 
 async function deletePlan(planId) {
-    if (!confirm('حذف هذه الخطة؟')) return;
+    if (!confirm('حذف هذه الخطة ومنتجاتها؟')) return;
     try {
         const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, { method: 'DELETE' });
         const data = await response.json();
@@ -11676,7 +11847,6 @@ async function deletePlan(planId) {
 
 async function showAddSubscription() {
     if (!window.userPermissions.canManageSubscriptions) { alert('ليس لديك صلاحية'); return; }
-    // تحميل العملاء والخطط
     try {
         const [custRes, planRes] = await Promise.all([
             fetch(`${API_URL}/api/customers`),
@@ -11692,7 +11862,10 @@ async function showAddSubscription() {
         const planSelect = document.getElementById('subPlanId');
         _allPlans = planData.success ? planData.plans.filter(p => p.is_active) : [];
         planSelect.innerHTML = '<option value="">-- اختر الخطة --</option>' +
-            _allPlans.map(p => `<option value="${p.id}">${escHTML(p.name)} (${p.price.toFixed(3)} د.ك / ${p.duration_days} يوم)</option>`).join('');
+            _allPlans.map(p => {
+                const itemCount = (p.items || []).reduce((s, it) => s + it.quantity, 0);
+                return `<option value="${p.id}">${escHTML(p.name)} (${p.price.toFixed(3)} د.ك / ${p.duration_days} يوم / ${itemCount} منتج)</option>`;
+            }).join('');
 
         document.getElementById('subStartDate').value = new Date().toISOString().split('T')[0];
         document.getElementById('subCode').value = '';
@@ -11713,13 +11886,18 @@ function onPlanSelect() {
     const infoDiv = document.getElementById('subPlanInfo');
     if (plan) {
         infoDiv.style.display = 'block';
+        const items = plan.items || [];
         document.getElementById('subPlanDetails').innerHTML = `
             <div style="font-weight:bold; margin-bottom:5px; color:#0369a1;">${escHTML(plan.name)}</div>
-            <div>المدة: <strong>${plan.duration_days} يوم</strong></div>
-            <div>السعر: <strong>${plan.price.toFixed(3)} د.ك</strong></div>
-            <div>نسبة الخصم: <strong style="color:#28a745;">${plan.discount_percent}%</strong></div>
-            <div>مضاعف نقاط الولاء: <strong>${plan.loyalty_multiplier}x</strong></div>
-            ${plan.description ? `<div style="margin-top:5px; color:#6c757d;">${escHTML(plan.description)}</div>` : ''}
+            <div>المدة: <strong>${plan.duration_days} يوم</strong> | السعر: <strong>${plan.price.toFixed(3)} د.ك</strong></div>
+            ${plan.description ? `<div style="color:#6c757d;">${escHTML(plan.description)}</div>` : ''}
+            ${items.length > 0 ? `
+            <div style="margin-top:8px; border-top:1px solid #bae6fd; padding-top:8px;">
+                <strong>📦 المنتجات المشمولة:</strong>
+                <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:5px;">
+                    ${items.map(it => `<span style="background:#e0f2fe; padding:3px 8px; border-radius:4px; font-size:12px;">${escHTML(it.product_name)}${it.variant_name ? ' - ' + escHTML(it.variant_name) : ''} <strong>x${it.quantity}</strong></span>`).join('')}
+                </div>
+            </div>` : ''}
         `;
         document.getElementById('subPricePaid').value = plan.price.toFixed(3);
     } else {
@@ -11792,15 +11970,13 @@ async function renewSubscription(subId, customerId, planId) {
     if (!confirm('تجديد هذا الاشتراك؟')) return;
     try {
         const sub = _allSubscriptions.find(s => s.id === subId);
-        const plan = _allPlans.find(p => p.id === planId) || {};
-        // تحميل الخطط إذا لم تكن محملة
-        if (!plan.id) {
+        let plan = _allPlans.find(p => p.id === planId);
+        if (!plan) {
             const planRes = await fetch(`${API_URL}/api/subscription-plans`);
             const planData = await planRes.json();
             if (planData.success) { _allPlans = planData.plans; }
-            const p = _allPlans.find(p => p.id === planId);
-            if (!p) { alert('الخطة غير موجودة'); return; }
-            Object.assign(plan, p);
+            plan = _allPlans.find(p => p.id === planId);
+            if (!plan) { alert('الخطة غير موجودة'); return; }
         }
         const startDate = new Date().toISOString().split('T')[0];
         const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
@@ -11819,7 +11995,6 @@ async function renewSubscription(subId, customerId, planId) {
         });
         const data = await response.json();
         if (data.success) {
-            // إلغاء القديم
             await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
@@ -11828,6 +12003,123 @@ async function renewSubscription(subId, customerId, planId) {
             alert('✅ تم التجديد بنجاح');
             loadSubscriptions();
             logAction('renew_subscription', `تجديد اشتراك #${subId}`, data.id);
+        } else { alert('خطأ: ' + data.error); }
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+// --- استلام منتجات الاشتراك (POS + من صفحة الاشتراكات) ---
+
+function showRedeemForSub(subId) {
+    const sub = _allSubscriptions.find(s => s.id === subId);
+    if (!sub) return;
+    window._redeemSubscription = sub;
+    _openRedeemModal(sub);
+}
+
+function showRedeemSubscription() {
+    const sub = window._activeSubscription;
+    if (!sub) { alert('لا يوجد اشتراك فعّال'); return; }
+    window._redeemSubscription = sub;
+    _openRedeemModal(sub);
+}
+
+function _openRedeemModal(sub) {
+    const planItems = sub.plan_items || [];
+    const redeemedMap = sub.redeemed_map || {};
+
+    document.getElementById('redeemSubInfo').innerHTML = `
+        <div style="font-weight:bold; font-size:16px; color:#764ba2; margin-bottom:5px;">💳 ${escHTML(sub.plan_name)} - ${escHTML(sub.customer_name)}</div>
+        <div>الكود: <strong style="font-family:monospace;">${escHTML(sub.subscription_code)}</strong> | ينتهي: ${sub.end_date}</div>
+    `;
+
+    if (planItems.length === 0) {
+        document.getElementById('redeemItemsList').innerHTML = '<p style="text-align:center; color:#dc3545;">لا توجد منتجات في هذه الخطة</p>';
+    } else {
+        document.getElementById('redeemItemsList').innerHTML = `
+            <table class="data-table">
+                <thead><tr><th>المنتج</th><th>المتغير</th><th>المسموح</th><th>المستلم</th><th>المتبقي</th><th>الكمية للاستلام</th></tr></thead>
+                <tbody>
+                    ${planItems.map((it, i) => {
+                        const key = `${it.product_id}_${it.variant_id || 0}`;
+                        const redeemed = redeemedMap[key] || 0;
+                        const remaining = it.quantity - redeemed;
+                        return `<tr>
+                            <td>${escHTML(it.product_name)}</td>
+                            <td>${it.variant_name ? escHTML(it.variant_name) : '-'}</td>
+                            <td style="font-weight:bold;">${it.quantity}</td>
+                            <td style="color:#667eea;">${redeemed}</td>
+                            <td style="font-weight:bold; color:${remaining > 0 ? '#28a745' : '#dc3545'};">${remaining}</td>
+                            <td>
+                                ${remaining > 0 ? `<input type="number" id="redeemQty_${i}" min="0" max="${remaining}" value="0" style="width:70px; padding:5px; border:2px solid #e0e0e0; border-radius:6px; text-align:center;"
+                                    data-product-id="${it.product_id}" data-variant-id="${it.variant_id || ''}" data-product-name="${escHTML(it.product_name)}" data-variant-name="${it.variant_name ? escHTML(it.variant_name) : ''}" data-max="${remaining}">` :
+                                    '<span style="color:#dc3545;">اكتمل</span>'}
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    document.getElementById('redeemSubscriptionModal').classList.add('active');
+}
+
+function closeRedeemModal() {
+    document.getElementById('redeemSubscriptionModal').classList.remove('active');
+    window._redeemSubscription = null;
+}
+
+async function submitRedemption() {
+    const sub = window._redeemSubscription;
+    if (!sub) return;
+
+    const items = [];
+    const inputs = document.querySelectorAll('[id^="redeemQty_"]');
+    inputs.forEach(input => {
+        const qty = parseInt(input.value) || 0;
+        if (qty > 0) {
+            const max = parseInt(input.dataset.max) || 0;
+            if (qty > max) {
+                alert(`الكمية لـ ${input.dataset.productName} تتجاوز المتبقي (${max})`);
+                return;
+            }
+            items.push({
+                product_id: parseInt(input.dataset.productId),
+                variant_id: input.dataset.variantId ? parseInt(input.dataset.variantId) : null,
+                product_name: input.dataset.productName,
+                variant_name: input.dataset.variantName || null,
+                quantity: qty
+            });
+        }
+    });
+
+    if (items.length === 0) { alert('اختر كمية واحدة على الأقل للاستلام'); return; }
+    if (!confirm(`تأكيد استلام ${items.length} منتج؟`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/api/subscription-redemptions`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                subscription_id: sub.id,
+                items: items,
+                redeemed_by: currentUser.id,
+                redeemed_by_name: currentUser.full_name
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم استلام المنتجات بنجاح');
+            closeRedeemModal();
+            logAction('subscription_redeem', `استلام منتجات اشتراك ${sub.subscription_code}`, sub.id);
+            // تحديث البيانات
+            if (typeof loadSubscriptions === 'function' && document.getElementById('subscriptionsTab')?.style.display !== 'none') {
+                loadSubscriptions();
+            }
+            // تحديث الاشتراك في POS
+            if (window._activeSubscription && window._activeSubscription.id === sub.id) {
+                checkCustomerSubscription(sub.customer_id);
+            }
         } else { alert('خطأ: ' + data.error); }
     } catch (error) { alert('خطأ: ' + error.message); }
 }
@@ -11863,20 +12155,37 @@ function showSubscriptionBadge(sub) {
         const customerDetails = document.getElementById('customerDetails');
         if (customerDetails) customerDetails.parentNode.insertBefore(badge, customerDetails.nextSibling);
     }
+
+    const planItems = sub.plan_items || [];
+    const redeemedMap = sub.redeemed_map || {};
+    const totalItems = planItems.reduce((s, it) => s + it.quantity, 0);
+    const totalRedeemed = planItems.reduce((s, it) => {
+        const key = `${it.product_id}_${it.variant_id || 0}`;
+        return s + (redeemedMap[key] || 0);
+    }, 0);
+    const remaining = totalItems - totalRedeemed;
+
     badge.style.cssText = 'background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 10px 15px; border-radius: 8px; margin-top: 8px; font-size: 13px;';
     badge.innerHTML = `
         <div style="font-weight:bold; margin-bottom:4px;">💳 مشترك - ${escHTML(sub.plan_name)}</div>
         <div>الكود: <strong style="font-family:monospace;">${escHTML(sub.subscription_code)}</strong></div>
-        <div>خصم: <strong>${sub.discount_percent}%</strong> | نقاط: <strong>${sub.loyalty_multiplier}x</strong></div>
+        <div>المنتجات: <strong>${totalRedeemed}/${totalItems}</strong> مستلم | المتبقي: <strong style="color:${remaining > 0 ? '#90EE90' : '#ffcccb'};">${remaining}</strong></div>
         <div>ينتهي: ${sub.end_date}</div>
+        ${remaining > 0 ? `<button onclick="showRedeemSubscription()" style="margin-top:6px; padding:5px 15px; background:rgba(255,255,255,0.2); color:white; border:1px solid rgba(255,255,255,0.4); border-radius:6px; cursor:pointer; font-weight:bold;">📦 استلام منتجات</button>` : ''}
     `;
     badge.style.display = 'block';
+
+    // عرض زر الاستلام في ملخص الفاتورة
+    const subRedeemRow = document.getElementById('subscriptionRedeemRow');
+    if (subRedeemRow) subRedeemRow.style.display = 'flex';
 }
 
 function hideSubscriptionBadge() {
     const badge = document.getElementById('subscriptionBadge');
     if (badge) badge.style.display = 'none';
     window._activeSubscription = null;
+    const subRedeemRow = document.getElementById('subscriptionRedeemRow');
+    if (subRedeemRow) subRedeemRow.style.display = 'none';
 }
 
 console.log('[Subscriptions] Loaded ✅');

@@ -360,6 +360,36 @@ def migrate_database(db_path=None):
             FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
         )''', 'customer_subscriptions')
 
+        # جدول منتجات خطط الاشتراك
+        safe_exec('''CREATE TABLE IF NOT EXISTS subscription_plan_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            product_name TEXT,
+            variant_id INTEGER,
+            variant_name TEXT,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (plan_id) REFERENCES subscription_plans(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )''', 'subscription_plan_items')
+
+        # جدول استلامات الاشتراك
+        safe_exec('''CREATE TABLE IF NOT EXISTS subscription_redemptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            customer_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            product_name TEXT,
+            variant_id INTEGER,
+            variant_name TEXT,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            redeemed_by INTEGER,
+            redeemed_by_name TEXT,
+            FOREIGN KEY (subscription_id) REFERENCES customer_subscriptions(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )''', 'subscription_redemptions')
+
         # إعدادات الولاء الافتراضية
         try:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
@@ -896,6 +926,34 @@ def create_tenant_database(slug):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (customer_id) REFERENCES customers(id),
             FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS subscription_plan_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            product_name TEXT,
+            variant_id INTEGER,
+            variant_name TEXT,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (plan_id) REFERENCES subscription_plans(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS subscription_redemptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            customer_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            product_name TEXT,
+            variant_id INTEGER,
+            variant_name TEXT,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            redeemed_by INTEGER,
+            redeemed_by_name TEXT,
+            FOREIGN KEY (subscription_id) REFERENCES customer_subscriptions(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         );
     ''')
 
@@ -6865,12 +6923,16 @@ def delete_stock_transfer(transfer_id):
 
 @app.route('/api/subscription-plans', methods=['GET'])
 def get_subscription_plans():
-    """جلب خطط الاشتراك"""
+    """جلب خطط الاشتراك مع منتجاتها"""
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM subscription_plans ORDER BY price ASC')
         plans = [dict_from_row(row) for row in cursor.fetchall()]
+        # جلب منتجات كل خطة
+        for plan in plans:
+            cursor.execute('SELECT * FROM subscription_plan_items WHERE plan_id = ?', (plan['id'],))
+            plan['items'] = [dict_from_row(r) for r in cursor.fetchall()]
         conn.close()
         return jsonify({'success': True, 'plans': plans})
     except Exception as e:
@@ -6878,7 +6940,7 @@ def get_subscription_plans():
 
 @app.route('/api/subscription-plans', methods=['POST'])
 def add_subscription_plan():
-    """إضافة خطة اشتراك"""
+    """إضافة خطة اشتراك مع منتجات"""
     try:
         data = request.json
         conn = get_db()
@@ -6888,8 +6950,18 @@ def add_subscription_plan():
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (data.get('name'), data.get('duration_days', 30), data.get('price', 0),
               data.get('discount_percent', 0), data.get('loyalty_multiplier', 1), data.get('description', '')))
-        conn.commit()
         plan_id = cursor.lastrowid
+
+        # إضافة منتجات الخطة
+        items = data.get('items', [])
+        for item in items:
+            cursor.execute('''
+                INSERT INTO subscription_plan_items (plan_id, product_id, product_name, variant_id, variant_name, quantity)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (plan_id, item.get('product_id'), item.get('product_name'),
+                  item.get('variant_id'), item.get('variant_name'), item.get('quantity', 1)))
+
+        conn.commit()
         conn.close()
         return jsonify({'success': True, 'id': plan_id})
     except Exception as e:
@@ -6908,6 +6980,17 @@ def update_subscription_plan(plan_id):
         ''', (data.get('name'), data.get('duration_days'), data.get('price'),
               data.get('discount_percent'), data.get('loyalty_multiplier'),
               data.get('description', ''), data.get('is_active', 1), plan_id))
+
+        # تحديث المنتجات إذا تم إرسالها
+        if 'items' in data:
+            cursor.execute('DELETE FROM subscription_plan_items WHERE plan_id = ?', (plan_id,))
+            for item in data['items']:
+                cursor.execute('''
+                    INSERT INTO subscription_plan_items (plan_id, product_id, product_name, variant_id, variant_name, quantity)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (plan_id, item.get('product_id'), item.get('product_name'),
+                      item.get('variant_id'), item.get('variant_name'), item.get('quantity', 1)))
+
         conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -6916,11 +6999,57 @@ def update_subscription_plan(plan_id):
 
 @app.route('/api/subscription-plans/<int:plan_id>', methods=['DELETE'])
 def delete_subscription_plan(plan_id):
-    """حذف خطة اشتراك"""
+    """حذف خطة اشتراك ومنتجاتها"""
     try:
         conn = get_db()
         cursor = conn.cursor()
+        cursor.execute('DELETE FROM subscription_plan_items WHERE plan_id = ?', (plan_id,))
         cursor.execute('DELETE FROM subscription_plans WHERE id = ?', (plan_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-plans/<int:plan_id>/items', methods=['GET'])
+def get_plan_items(plan_id):
+    """جلب منتجات خطة اشتراك"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM subscription_plan_items WHERE plan_id = ?', (plan_id,))
+        items = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-plans/<int:plan_id>/items', methods=['POST'])
+def add_plan_item(plan_id):
+    """إضافة منتج لخطة اشتراك"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO subscription_plan_items (plan_id, product_id, product_name, variant_id, variant_name, quantity)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (plan_id, data.get('product_id'), data.get('product_name'),
+              data.get('variant_id'), data.get('variant_name'), data.get('quantity', 1)))
+        conn.commit()
+        item_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': item_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-plan-items/<int:item_id>', methods=['DELETE'])
+def delete_plan_item(item_id):
+    """حذف منتج من خطة اشتراك"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM subscription_plan_items WHERE id = ?', (item_id,))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -6929,7 +7058,7 @@ def delete_subscription_plan(plan_id):
 
 @app.route('/api/customer-subscriptions', methods=['GET'])
 def get_customer_subscriptions():
-    """جلب اشتراكات العملاء"""
+    """جلب اشتراكات العملاء مع منتجاتها والاستلامات"""
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -6942,6 +7071,27 @@ def get_customer_subscriptions():
         query += ' ORDER BY created_at DESC'
         cursor.execute(query, params)
         subs = [dict_from_row(row) for row in cursor.fetchall()]
+
+        # جلب منتجات الخطة والاستلامات لكل اشتراك
+        for sub in subs:
+            if sub.get('plan_id'):
+                cursor.execute('SELECT * FROM subscription_plan_items WHERE plan_id = ?', (sub['plan_id'],))
+                sub['plan_items'] = [dict_from_row(r) for r in cursor.fetchall()]
+            else:
+                sub['plan_items'] = []
+            # مجموع الاستلامات لكل منتج
+            cursor.execute('''
+                SELECT product_id, variant_id, SUM(quantity) as total_redeemed
+                FROM subscription_redemptions WHERE subscription_id = ?
+                GROUP BY product_id, variant_id
+            ''', (sub['id'],))
+            redeemed_map = {}
+            for r in cursor.fetchall():
+                rd = dict_from_row(r)
+                key = f"{rd['product_id']}_{rd['variant_id'] or 0}"
+                redeemed_map[key] = rd['total_redeemed']
+            sub['redeemed_map'] = redeemed_map
+
         conn.close()
         return jsonify({'success': True, 'subscriptions': subs})
     except Exception as e:
@@ -7044,7 +7194,7 @@ def delete_customer_subscription(sub_id):
 
 @app.route('/api/customer-subscriptions/check', methods=['GET'])
 def check_customer_subscription():
-    """التحقق من اشتراك عميل بالكود أو رقم الهاتف"""
+    """التحقق من اشتراك عميل مع المنتجات والكميات المتبقية"""
     try:
         code = request.args.get('code', '').strip()
         phone = request.args.get('phone', '').strip()
@@ -7072,23 +7222,145 @@ def check_customer_subscription():
         query += ' ORDER BY end_date DESC LIMIT 1'
         cursor.execute(query, params)
         row = cursor.fetchone()
-        conn.close()
 
-        if row:
-            sub = dict_from_row(row)
-            from datetime import datetime
-            today = datetime.now().strftime('%Y-%m-%d')
-            if sub['end_date'] < today:
-                # اشتراك منتهي - تحديث الحالة
-                conn2 = get_db()
-                c2 = conn2.cursor()
-                c2.execute('UPDATE customer_subscriptions SET status = \'expired\' WHERE id = ?', (sub['id'],))
-                conn2.commit()
-                conn2.close()
-                sub['status'] = 'expired'
-                return jsonify({'success': True, 'subscription': sub, 'active': False})
-            return jsonify({'success': True, 'subscription': sub, 'active': True})
-        return jsonify({'success': True, 'subscription': None, 'active': False})
+        if not row:
+            conn.close()
+            return jsonify({'success': True, 'subscription': None, 'active': False})
+
+        sub = dict_from_row(row)
+        from datetime import datetime
+        today = datetime.now().strftime('%Y-%m-%d')
+        if sub['end_date'] < today:
+            cursor.execute('UPDATE customer_subscriptions SET status = \'expired\' WHERE id = ?', (sub['id'],))
+            conn.commit()
+            sub['status'] = 'expired'
+            conn.close()
+            return jsonify({'success': True, 'subscription': sub, 'active': False})
+
+        # جلب منتجات الخطة
+        if sub.get('plan_id'):
+            cursor.execute('SELECT * FROM subscription_plan_items WHERE plan_id = ?', (sub['plan_id'],))
+            sub['plan_items'] = [dict_from_row(r) for r in cursor.fetchall()]
+        else:
+            sub['plan_items'] = []
+
+        # جلب مجموع الاستلامات
+        cursor.execute('''
+            SELECT product_id, variant_id, SUM(quantity) as total_redeemed
+            FROM subscription_redemptions WHERE subscription_id = ?
+            GROUP BY product_id, variant_id
+        ''', (sub['id'],))
+        redeemed_map = {}
+        for r in cursor.fetchall():
+            rd = dict_from_row(r)
+            key = f"{rd['product_id']}_{rd['variant_id'] or 0}"
+            redeemed_map[key] = rd['total_redeemed']
+        sub['redeemed_map'] = redeemed_map
+
+        conn.close()
+        return jsonify({'success': True, 'subscription': sub, 'active': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-redemptions', methods=['POST'])
+def create_subscription_redemption():
+    """استلام منتجات من الاشتراك مع خصم المخزون"""
+    try:
+        data = request.json
+        subscription_id = data.get('subscription_id')
+        items = data.get('items', [])
+
+        if not subscription_id or not items:
+            return jsonify({'success': False, 'error': 'بيانات الاستلام غير مكتملة'}), 400
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # التحقق من الاشتراك
+        cursor.execute('SELECT * FROM customer_subscriptions WHERE id = ? AND status = ?', (subscription_id, 'active'))
+        sub_row = cursor.fetchone()
+        if not sub_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الاشتراك غير موجود أو غير فعّال'}), 404
+        sub = dict_from_row(sub_row)
+
+        from datetime import datetime
+        today = datetime.now().strftime('%Y-%m-%d')
+        if sub['end_date'] < today:
+            cursor.execute('UPDATE customer_subscriptions SET status = ? WHERE id = ?', ('expired', subscription_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': False, 'error': 'الاشتراك منتهي الصلاحية'}), 400
+
+        # جلب منتجات الخطة
+        cursor.execute('SELECT * FROM subscription_plan_items WHERE plan_id = ?', (sub['plan_id'],))
+        plan_items = {f"{dict_from_row(r)['product_id']}_{dict_from_row(r)['variant_id'] or 0}": dict_from_row(r) for r in cursor.fetchall()}
+
+        # جلب الاستلامات السابقة
+        cursor.execute('''
+            SELECT product_id, variant_id, SUM(quantity) as total_redeemed
+            FROM subscription_redemptions WHERE subscription_id = ?
+            GROUP BY product_id, variant_id
+        ''', (subscription_id,))
+        redeemed = {}
+        for r in cursor.fetchall():
+            rd = dict_from_row(r)
+            key = f"{rd['product_id']}_{rd['variant_id'] or 0}"
+            redeemed[key] = rd['total_redeemed']
+
+        redeemed_items = []
+        for item in items:
+            product_id = item.get('product_id')
+            variant_id = item.get('variant_id')
+            qty = int(item.get('quantity', 1))
+            key = f"{product_id}_{variant_id or 0}"
+
+            # التحقق من أن المنتج ضمن الخطة
+            if key not in plan_items:
+                conn.close()
+                return jsonify({'success': False, 'error': f"المنتج {item.get('product_name', '')} غير مشمول في الخطة"}), 400
+
+            # التحقق من الكمية المتبقية
+            allowed = plan_items[key]['quantity']
+            already_redeemed = redeemed.get(key, 0)
+            remaining = allowed - already_redeemed
+            if qty > remaining:
+                conn.close()
+                return jsonify({'success': False, 'error': f"الكمية المتبقية لـ {item.get('product_name', '')} هي {remaining} فقط"}), 400
+
+            # تسجيل الاستلام
+            cursor.execute('''
+                INSERT INTO subscription_redemptions (subscription_id, customer_id, product_id, product_name, variant_id, variant_name, quantity, redeemed_by, redeemed_by_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (subscription_id, sub['customer_id'], product_id, item.get('product_name'),
+                  variant_id, item.get('variant_name'), qty,
+                  data.get('redeemed_by'), data.get('redeemed_by_name')))
+
+            # خصم من المخزون
+            if variant_id:
+                cursor.execute('UPDATE product_variants SET stock = stock - ? WHERE id = ? AND product_id = ?',
+                               (qty, variant_id, product_id))
+            else:
+                cursor.execute('UPDATE products SET stock = stock - ? WHERE id = ?', (qty, product_id))
+
+            redeemed_items.append({'product_name': item.get('product_name'), 'quantity': qty})
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'redeemed': redeemed_items})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-redemptions/<int:subscription_id>', methods=['GET'])
+def get_subscription_redemptions(subscription_id):
+    """جلب سجل استلامات اشتراك"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM subscription_redemptions WHERE subscription_id = ? ORDER BY redeemed_at DESC', (subscription_id,))
+        redemptions = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'redemptions': redemptions})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
