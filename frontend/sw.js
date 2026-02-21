@@ -2,7 +2,7 @@
 // 📱 Service Worker - PWA
 // ========================================
 
-const CACHE_NAME = 'pos-cache-v40';
+const CACHE_NAME = 'pos-cache-v41';
 const STATIC_CACHE = 'pos-static-v37';
 
 // الملفات الأساسية (بدون manifest - لا يسبب فشل التثبيت)

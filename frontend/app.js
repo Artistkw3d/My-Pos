@@ -3299,10 +3299,19 @@ async function displayInventory() {
     
     // جلب كل التوزيعات والمبيعات والتالف
     let allDistributions = {};
+    let branchDistributions = {}; // توزيعات حسب الفرع لكل منتج
+    let branchNames = {};
     let allSold = {};
     let allDamaged = {};
-    
+
     try {
+        // جلب الفروع
+        const branchesRes = await fetch(`${API_URL}/api/branches`);
+        const branchesData = await branchesRes.json();
+        if (branchesData.success) {
+            branchesData.branches.forEach(b => { branchNames[b.id] = b.name; });
+        }
+
         // جلب التوزيعات الحالية
         const stockResponse = await fetch(`${API_URL}/api/branch-stock`);
         const stockData = await stockResponse.json();
@@ -3312,6 +3321,14 @@ async function displayInventory() {
                     allDistributions[s.inventory_id] = 0;
                 }
                 allDistributions[s.inventory_id] += s.stock;
+                // تجميع حسب الفرع
+                if (!branchDistributions[s.inventory_id]) {
+                    branchDistributions[s.inventory_id] = {};
+                }
+                if (!branchDistributions[s.inventory_id][s.branch_id]) {
+                    branchDistributions[s.inventory_id][s.branch_id] = 0;
+                }
+                branchDistributions[s.inventory_id][s.branch_id] += s.stock;
             });
         }
         
@@ -3361,6 +3378,7 @@ async function displayInventory() {
                     <th>الفئة</th>
                     <th>السعر</th>
                     <th>التكلفة</th>
+                    <th>الفروع</th>
                     <th>الموزع</th>
                     <th>المباع</th>
                     <th>التالف</th>
@@ -3379,15 +3397,26 @@ async function displayInventory() {
         const distributed = allDistributions[item.id] || 0;
         const sold = allSold[item.id] || 0;
         const damaged = allDamaged[item.id] || 0;
-        
-        const distributedDisplay = distributed > 0 
-            ? `<span style="background: #d4edda; padding: 5px 10px; border-radius: 5px; font-weight: bold;">${distributed}</span>` 
+        const itemBranches = branchDistributions[item.id] || {};
+
+        // عرض الفروع
+        const branchEntries = Object.entries(itemBranches);
+        let branchesDisplay = '<span style="color:#999;">-</span>';
+        if (branchEntries.length > 0) {
+            branchesDisplay = branchEntries.map(([bId, bStock]) => {
+                const bName = branchNames[bId] || `فرع ${bId}`;
+                return `<div style="font-size:11px; white-space:nowrap;"><span style="color:#3182ce;">${escHTML(bName)}</span>: <strong>${bStock}</strong></div>`;
+            }).join('');
+        }
+
+        const distributedDisplay = distributed > 0
+            ? `<span style="background: #d4edda; padding: 5px 10px; border-radius: 5px; font-weight: bold;">${distributed}</span>`
             : `<span style="color: #999;">0</span>`;
-        
+
         const soldDisplay = sold > 0
             ? `<span style="background: #fff3cd; padding: 5px 10px; border-radius: 5px; font-weight: bold;">${sold}</span>`
             : `<span style="color: #999;">0</span>`;
-        
+
         const damagedDisplay = damaged > 0
             ? `<span style="background: #f8d7da; padding: 5px 10px; border-radius: 5px; font-weight: bold;">${damaged}</span>`
             : `<span style="color: #999;">0</span>`;
@@ -3405,6 +3434,7 @@ async function displayInventory() {
                 <td>${escHTML(item.category) || '-'}</td>
                 <td>${item.price.toFixed(3)} د.ك</td>
                 <td>${(item.cost || 0).toFixed(3)} د.ك</td>
+                <td>${branchesDisplay}</td>
                 <td style="text-align: center;">${distributedDisplay}</td>
                 <td style="text-align: center;">${soldDisplay}</td>
                 <td style="text-align: center;">${damagedDisplay}</td>
@@ -3420,7 +3450,7 @@ async function displayInventory() {
         if (hasVariants) {
             html += `
             <tr id="invVariants_${item.id}" style="display: none;">
-                <td colspan="10" style="padding: 0;">
+                <td colspan="11" style="padding: 0;">
                     <div style="background: #f0fff4; padding: 12px; border-radius: 8px; margin: 5px;">
                         <table style="width: 100%; border-collapse: collapse;">
                             <thead>
