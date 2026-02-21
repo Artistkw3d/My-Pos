@@ -199,7 +199,9 @@ async function initializeUI() {
         canViewTransfers: hasPerm('can_view_transfers'),
         canCreateTransfer: hasPerm('can_create_transfer'),
         canApproveTransfer: hasPerm('can_approve_transfer'),
-        canDeliverTransfer: hasPerm('can_deliver_transfer')
+        canDeliverTransfer: hasPerm('can_deliver_transfer'),
+        canViewSubscriptions: hasPerm('can_view_subscriptions'),
+        canManageSubscriptions: hasPerm('can_manage_subscriptions')
     };
 
     // إخفاء/إظهار الأزرار والتبويبات
@@ -220,6 +222,7 @@ async function initializeUI() {
     document.getElementById('xbrlBtn').style.display = window.userPermissions.canViewXbrl ? 'inline-block' : 'none';
     document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
     document.getElementById('transfersBtn').style.display = window.userPermissions.canViewTransfers ? 'inline-block' : 'none';
+    document.getElementById('subscriptionsBtn').style.display = window.userPermissions.canViewSubscriptions ? 'inline-block' : 'none';
     // عرض خانة اختيار الطاولة في نقطة البيع
     loadTablesDropdown();
 
@@ -388,7 +391,9 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 canViewTransfers: hasPerm('can_view_transfers'),
                 canCreateTransfer: hasPerm('can_create_transfer'),
                 canApproveTransfer: hasPerm('can_approve_transfer'),
-                canDeliverTransfer: hasPerm('can_deliver_transfer')
+                canDeliverTransfer: hasPerm('can_deliver_transfer'),
+                canViewSubscriptions: hasPerm('can_view_subscriptions'),
+                canManageSubscriptions: hasPerm('can_manage_subscriptions')
             };
 
             // إخفاء/إظهار الأزرار والتبويبات
@@ -409,6 +414,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('xbrlBtn').style.display = window.userPermissions.canViewXbrl ? 'inline-block' : 'none';
             document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
             document.getElementById('transfersBtn').style.display = window.userPermissions.canViewTransfers ? 'inline-block' : 'none';
+            document.getElementById('subscriptionsBtn').style.display = window.userPermissions.canViewSubscriptions ? 'inline-block' : 'none';
             // عرض خانة اختيار الطاولة في نقطة البيع
             loadTablesDropdown();
 
@@ -608,7 +614,8 @@ function showTab(tabName) {
         'backup': 'backupTab',
         'admindashboard': 'admindashboardTab',
         'xbrl': 'xbrlTab',
-        'transfers': 'transfersTab'
+        'transfers': 'transfersTab',
+        'subscriptions': 'subscriptionsTab'
     };
     
     const tabId = tabMap[tabName];
@@ -679,6 +686,7 @@ function showTab(tabName) {
         if (tabName === 'xbrl') loadXBRLTab();
         if (tabName === 'admindashboard') loadAdminDashboard();
         if (tabName === 'transfers') loadStockTransfers();
+        if (tabName === 'subscriptions') loadSubscriptions();
     }
 }
 
@@ -1196,13 +1204,23 @@ function updateTotals() {
         discount = discountValue;
     }
     const couponDiscount = appliedCouponDiscount || 0;
+    // خصم الاشتراك
+    const activeSub = window._activeSubscription || null;
+    const subDiscountPct = activeSub ? (activeSub.discount_percent || 0) : 0;
+    const subscriptionDiscount = subtotal * (subDiscountPct / 100);
     // حساب خصم الولاء
     const pointsToRedeem = parseInt(document.getElementById('pointsToRedeem')?.value) || 0;
     const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
     const loyaltyDiscount = pointsToRedeem * pointValue;
     const deliveryFee = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const total = subtotal - discount - couponDiscount - loyaltyDiscount + deliveryFee;
+    const total = subtotal - discount - couponDiscount - subscriptionDiscount - loyaltyDiscount + deliveryFee;
     document.getElementById('subtotal').textContent = `${subtotal.toFixed(3)} د.ك`;
+    // عرض خصم الاشتراك
+    const subRow = document.getElementById('subscriptionDiscountRow');
+    if (subRow) {
+        subRow.style.display = subscriptionDiscount > 0 ? 'flex' : 'none';
+        document.getElementById('subscriptionDiscountAmount').textContent = `-${subscriptionDiscount.toFixed(3)} د.ك`;
+    }
     document.getElementById('total').textContent = `${Math.max(0, total).toFixed(3)} د.ك`;
     saveUserCart(); // حفظ السلة
 }
@@ -1274,11 +1292,15 @@ async function completeSale() {
         discount = discountValue;
     }
     const couponDiscount = appliedCouponDiscount || 0;
+    // خصم الاشتراك
+    const activeSub = window._activeSubscription || null;
+    const subDiscountPercent = activeSub ? (activeSub.discount_percent || 0) : 0;
+    const subscriptionDiscount = subtotal * (subDiscountPercent / 100);
     const loyaltyPointsInput = parseInt(document.getElementById('pointsToRedeem')?.value) || 0;
     const loyaltyPV = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
     const loyaltyDiscountPre = loyaltyPointsInput * loyaltyPV;
     const deliveryFee = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const total = subtotal - discount - couponDiscount - loyaltyDiscountPre + deliveryFee;
+    const total = subtotal - discount - couponDiscount - subscriptionDiscount - loyaltyDiscountPre + deliveryFee;
 
     if (total <= 0) {
         alert('الإجمالي يجب أن يكون أكبر من صفر');
@@ -1334,7 +1356,8 @@ async function completeSale() {
     const pointValue = (window.loyaltyConfig && window.loyaltyConfig.pointValue) || 0.1;
     const pointsPerInvoice = (window.loyaltyConfig && window.loyaltyConfig.pointsPerInvoice) || 10;
     const loyaltyDiscount = pointsToRedeem * pointValue;
-    const pointsEarned = customerId ? pointsPerInvoice : 0;
+    const loyaltyMultiplier = activeSub ? (activeSub.loyalty_multiplier || 1) : 1;
+    const pointsEarned = customerId ? Math.round(pointsPerInvoice * loyaltyMultiplier) : 0;
     
     const invoiceData = {
         invoice_number: invoiceNumber,
@@ -1359,7 +1382,9 @@ async function completeSale() {
         table_id: document.getElementById('selectedTableId')?.value || null,
         table_name: document.getElementById('selectedTableId')?.selectedOptions[0]?.textContent || '',
         shift_id: currentUser.shift_id || null,
-        notes: document.getElementById('orderNotes')?.value?.trim() || '',
+        notes: (document.getElementById('orderNotes')?.value?.trim() || '') + (activeSub ? ` | اشتراك: ${activeSub.subscription_code} (خصم ${subDiscountPercent}%)` : ''),
+        subscription_code: activeSub ? activeSub.subscription_code : null,
+        subscription_discount: subscriptionDiscount,
         items: cart.map(item => ({
             product_id: item.id,
             product_name: item.name,
@@ -1614,6 +1639,7 @@ function displayInvoiceView(inv) {
                 <div style="display:flex; justify-content:space-between; margin:5px 0;"><span>المجموع:</span><span>${inv.subtotal.toFixed(3)} د.ك</span></div>
                 <div style="display:flex; justify-content:space-between; margin:5px 0; color:#dc3545;"><span>الخصم:</span><span>-${inv.discount.toFixed(3)} د.ك</span></div>
                 ${(inv.coupon_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#eab308;"><span>🎟️ خصم الكوبون:</span><span>-${inv.coupon_discount.toFixed(3)} د.ك</span></div>` : ''}
+                ${(inv.subscription_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#764ba2;"><span>💳 خصم الاشتراك:</span><span>-${inv.subscription_discount.toFixed(3)} د.ك</span></div>` : ''}
                 ${(inv.loyalty_discount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; color:#0ea5e9;"><span>💎 خصم الولاء:</span><span>-${inv.loyalty_discount.toFixed(3)} د.ك</span></div>` : ''}
                 ${inv.delivery_fee > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0;"><span>رسوم التوصيل:</span><span>${inv.delivery_fee.toFixed(3)} د.ك</span></div>` : ''}
                 <div style="display:flex; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:2px solid #667eea; font-size:16px; font-weight:bold; color:#667eea;"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
@@ -2648,6 +2674,8 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
         userData.can_create_transfer = 1;
         userData.can_approve_transfer = 1;
         userData.can_deliver_transfer = 1;
+        userData.can_view_subscriptions = 1;
+        userData.can_manage_subscriptions = 1;
     }
     
     if (userId && !userData.password) delete userData.password;
@@ -4367,7 +4395,11 @@ async function loadSystemLogs(page) {
                 'reject_transfer': '❌ رفض نقل',
                 'pickup_transfer': '🚗 استلام سائق',
                 'receive_transfer': '📦 تأكيد استلام نقل',
-                'delete_transfer': '🗑️ حذف طلب نقل'
+                'delete_transfer': '🗑️ حذف طلب نقل',
+                'add_subscription': '💳 اشتراك جديد',
+                'cancel_subscription': '🚫 إلغاء اشتراك',
+                'delete_subscription': '🗑️ حذف اشتراك',
+                'renew_subscription': '🔄 تجديد اشتراك'
             };
 
             // تطبيق فلتر التاريخ على العميل (الـ API يدعمها أيضاً)
@@ -5360,6 +5392,13 @@ function pickCustomerFromSearch(id) {
     document.getElementById('loyaltySection').style.display = 'block';
     document.getElementById('customerLoyaltyPoints').textContent = customer.loyalty_points || customer.points || 0;
     updatePointsToEarn();
+
+    // التحقق من الاشتراك
+    if (typeof checkCustomerSubscription === 'function') {
+        checkCustomerSubscription(customer.id).then(sub => {
+            if (sub) updateTotals();
+        });
+    }
 }
 
 // إغلاق نتائج البحث عند الضغط خارجها
@@ -5387,6 +5426,9 @@ function clearCustomerSelection() {
     document.getElementById('loyaltyDiscountRow').style.display = 'none';
     document.getElementById('pointsToRedeem').value = '';
     currentCustomerData = null;
+    if (typeof hideSubscriptionBadge === 'function') hideSubscriptionBadge();
+    const subDiscRow = document.getElementById('subscriptionDiscountRow');
+    if (subDiscRow) subDiscRow.style.display = 'none';
 }
 
 
@@ -11460,6 +11502,384 @@ async function deleteTransferPrompt(transferId) {
 }
 
 console.log('[Stock Transfers] Loaded ✅');
+
+// ===== نظام الاشتراكات =====
+
+let _allSubscriptions = [];
+let _allPlans = [];
+
+const _subStatusLabels = { 'active': '✅ فعّال', 'expired': '⏳ منتهي', 'cancelled': '🚫 ملغي' };
+const _subStatusColors = { 'active': '#28a745', 'expired': '#ffc107', 'cancelled': '#dc3545' };
+
+async function loadSubscriptions() {
+    try {
+        const statusFilter = document.getElementById('subStatusFilter')?.value || '';
+        const response = await fetch(`${API_URL}/api/customer-subscriptions?status=${statusFilter}`);
+        const data = await response.json();
+        if (data.success) {
+            _allSubscriptions = data.subscriptions;
+            renderSubscriptions(_allSubscriptions);
+        }
+    } catch (error) {
+        console.error('[Subscriptions] Error:', error);
+        document.getElementById('subscriptionsTableContainer').innerHTML = '<p style="text-align:center; padding:40px; color:#dc3545;">خطأ في تحميل الاشتراكات</p>';
+    }
+}
+
+function filterSubscriptions() {
+    const search = (document.getElementById('subSearchInput')?.value || '').toLowerCase();
+    if (!search) { renderSubscriptions(_allSubscriptions); return; }
+    const filtered = _allSubscriptions.filter(s =>
+        (s.customer_name || '').toLowerCase().includes(search) ||
+        (s.customer_phone || '').includes(search) ||
+        (s.subscription_code || '').toLowerCase().includes(search)
+    );
+    renderSubscriptions(filtered);
+}
+
+function renderSubscriptions(subs) {
+    const container = document.getElementById('subscriptionsTableContainer');
+    if (subs.length === 0) {
+        container.innerHTML = '<p style="text-align:center; padding:40px; color:#6c757d;">لا توجد اشتراكات</p>';
+        return;
+    }
+    const today = new Date().toISOString().split('T')[0];
+    container.innerHTML = `
+        <table class="data-table">
+            <thead><tr>
+                <th>الكود</th><th>العميل</th><th>الهاتف</th><th>الخطة</th>
+                <th>من</th><th>إلى</th><th>الحالة</th><th>خصم %</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+                ${subs.map(s => {
+                    const isExpired = s.status === 'active' && s.end_date < today;
+                    const displayStatus = isExpired ? 'expired' : s.status;
+                    return `<tr style="${displayStatus !== 'active' ? 'opacity:0.7;' : ''}">
+                        <td><strong style="color:#667eea; font-family:monospace; font-size:14px;">${escHTML(s.subscription_code)}</strong></td>
+                        <td>${escHTML(s.customer_name)}</td>
+                        <td dir="ltr">${escHTML(s.customer_phone || '-')}</td>
+                        <td>${escHTML(s.plan_name)}</td>
+                        <td>${s.start_date}</td>
+                        <td>${s.end_date}</td>
+                        <td><span style="background:${_subStatusColors[displayStatus] || '#6c757d'}; color:white; padding:3px 10px; border-radius:12px; font-size:12px;">${_subStatusLabels[displayStatus] || displayStatus}</span></td>
+                        <td>${s.discount_percent}%</td>
+                        <td>
+                            ${displayStatus === 'active' ? `<button onclick="cancelSubscription(${s.id})" class="btn-sm btn-danger" title="إلغاء">🚫</button>` : ''}
+                            ${window.userPermissions.canManageSubscriptions ? `<button onclick="deleteSubscription(${s.id})" class="btn-sm btn-danger" title="حذف">🗑️</button>` : ''}
+                            <button onclick="renewSubscription(${s.id}, ${s.customer_id}, ${s.plan_id})" class="btn-sm" title="تجديد">🔄</button>
+                        </td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+// --- خطط الاشتراك ---
+
+async function showManagePlans() {
+    document.getElementById('managePlansModal').classList.add('active');
+    await loadPlansList();
+}
+
+function closePlansModal() {
+    document.getElementById('managePlansModal').classList.remove('active');
+}
+
+async function loadPlansList() {
+    try {
+        const response = await fetch(`${API_URL}/api/subscription-plans`);
+        const data = await response.json();
+        if (data.success) {
+            _allPlans = data.plans;
+            const container = document.getElementById('plansListContainer');
+            if (_allPlans.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:#6c757d;">لا توجد خطط</p>';
+                return;
+            }
+            container.innerHTML = `<table class="data-table"><thead><tr>
+                <th>الاسم</th><th>المدة</th><th>السعر</th><th>خصم %</th><th>مضاعف النقاط</th><th>الحالة</th><th>إجراءات</th>
+            </tr></thead><tbody>
+                ${_allPlans.map(p => `<tr>
+                    <td><strong>${escHTML(p.name)}</strong>${p.description ? `<br><small style="color:#6c757d;">${escHTML(p.description)}</small>` : ''}</td>
+                    <td>${p.duration_days} يوم</td>
+                    <td style="font-weight:bold; color:#28a745;">${p.price.toFixed(3)} د.ك</td>
+                    <td>${p.discount_percent}%</td>
+                    <td>${p.loyalty_multiplier}x</td>
+                    <td>${p.is_active ? '<span style="color:#28a745;">فعّال</span>' : '<span style="color:#dc3545;">معطّل</span>'}</td>
+                    <td>
+                        <button onclick="togglePlan(${p.id}, ${p.is_active})" class="btn-sm">${p.is_active ? '⏸️' : '▶️'}</button>
+                        <button onclick="deletePlan(${p.id})" class="btn-sm btn-danger">🗑️</button>
+                    </td>
+                </tr>`).join('')}
+            </tbody></table>`;
+        }
+    } catch (error) {
+        console.error('[Plans] Error:', error);
+    }
+}
+
+async function savePlan() {
+    const name = document.getElementById('planName').value.trim();
+    const price = parseFloat(document.getElementById('planPrice').value);
+    if (!name || isNaN(price)) { alert('يجب إدخال اسم الخطة والسعر'); return; }
+
+    try {
+        const response = await fetch(`${API_URL}/api/subscription-plans`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name,
+                duration_days: parseInt(document.getElementById('planDuration').value) || 30,
+                price,
+                discount_percent: parseFloat(document.getElementById('planDiscount').value) || 0,
+                loyalty_multiplier: parseFloat(document.getElementById('planLoyaltyMult').value) || 1,
+                description: document.getElementById('planDesc').value.trim()
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم حفظ الخطة');
+            document.getElementById('planName').value = '';
+            document.getElementById('planPrice').value = '';
+            document.getElementById('planDesc').value = '';
+            await loadPlansList();
+        } else { alert('خطأ: ' + data.error); }
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+async function togglePlan(planId, currentActive) {
+    try {
+        const plan = _allPlans.find(p => p.id === planId);
+        if (!plan) return;
+        const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({...plan, is_active: currentActive ? 0 : 1})
+        });
+        const data = await response.json();
+        if (data.success) await loadPlansList();
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+async function deletePlan(planId) {
+    if (!confirm('حذف هذه الخطة؟')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) await loadPlansList();
+        else alert('خطأ: ' + data.error);
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+// --- إضافة اشتراك ---
+
+async function showAddSubscription() {
+    if (!window.userPermissions.canManageSubscriptions) { alert('ليس لديك صلاحية'); return; }
+    // تحميل العملاء والخطط
+    try {
+        const [custRes, planRes] = await Promise.all([
+            fetch(`${API_URL}/api/customers`),
+            fetch(`${API_URL}/api/subscription-plans`)
+        ]);
+        const custData = await custRes.json();
+        const planData = await planRes.json();
+
+        const custSelect = document.getElementById('subCustomerId');
+        custSelect.innerHTML = '<option value="">-- اختر العميل --</option>' +
+            (custData.success ? custData.customers.map(c => `<option value="${c.id}">${escHTML(c.name)} - ${escHTML(c.phone || '')}</option>`).join('') : '');
+
+        const planSelect = document.getElementById('subPlanId');
+        _allPlans = planData.success ? planData.plans.filter(p => p.is_active) : [];
+        planSelect.innerHTML = '<option value="">-- اختر الخطة --</option>' +
+            _allPlans.map(p => `<option value="${p.id}">${escHTML(p.name)} (${p.price.toFixed(3)} د.ك / ${p.duration_days} يوم)</option>`).join('');
+
+        document.getElementById('subStartDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('subCode').value = '';
+        document.getElementById('subPricePaid').value = '';
+        document.getElementById('subNotes').value = '';
+        document.getElementById('subPlanInfo').style.display = 'none';
+        document.getElementById('addSubscriptionModal').classList.add('active');
+    } catch (error) { alert('خطأ في تحميل البيانات: ' + error.message); }
+}
+
+function closeAddSubscription() {
+    document.getElementById('addSubscriptionModal').classList.remove('active');
+}
+
+function onPlanSelect() {
+    const planId = parseInt(document.getElementById('subPlanId').value);
+    const plan = _allPlans.find(p => p.id === planId);
+    const infoDiv = document.getElementById('subPlanInfo');
+    if (plan) {
+        infoDiv.style.display = 'block';
+        document.getElementById('subPlanDetails').innerHTML = `
+            <div style="font-weight:bold; margin-bottom:5px; color:#0369a1;">${escHTML(plan.name)}</div>
+            <div>المدة: <strong>${plan.duration_days} يوم</strong></div>
+            <div>السعر: <strong>${plan.price.toFixed(3)} د.ك</strong></div>
+            <div>نسبة الخصم: <strong style="color:#28a745;">${plan.discount_percent}%</strong></div>
+            <div>مضاعف نقاط الولاء: <strong>${plan.loyalty_multiplier}x</strong></div>
+            ${plan.description ? `<div style="margin-top:5px; color:#6c757d;">${escHTML(plan.description)}</div>` : ''}
+        `;
+        document.getElementById('subPricePaid').value = plan.price.toFixed(3);
+    } else {
+        infoDiv.style.display = 'none';
+    }
+}
+
+function generateSubCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'SUB-';
+    for (let i = 0; i < 8; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+    document.getElementById('subCode').value = code;
+}
+
+async function submitSubscription() {
+    const customerId = document.getElementById('subCustomerId').value;
+    const planId = document.getElementById('subPlanId').value;
+    const code = document.getElementById('subCode').value.trim();
+    if (!customerId || !planId || !code) { alert('يجب تعبئة العميل والخطة والكود'); return; }
+
+    try {
+        const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                customer_id: parseInt(customerId),
+                plan_id: parseInt(planId),
+                subscription_code: code.toUpperCase(),
+                start_date: document.getElementById('subStartDate').value,
+                price_paid: parseFloat(document.getElementById('subPricePaid').value) || 0,
+                notes: document.getElementById('subNotes').value.trim(),
+                created_by: currentUser.id,
+                created_by_name: currentUser.full_name
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('✅ تم تسجيل الاشتراك بنجاح');
+            closeAddSubscription();
+            loadSubscriptions();
+            logAction('add_subscription', `اشتراك جديد: ${code}`, data.id);
+        } else { alert('خطأ: ' + data.error); }
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+async function cancelSubscription(subId) {
+    if (!confirm('إلغاء هذا الاشتراك؟')) return;
+    try {
+        const sub = _allSubscriptions.find(s => s.id === subId);
+        const response = await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ status: 'cancelled', notes: sub?.notes || '', end_date: sub?.end_date })
+        });
+        const data = await response.json();
+        if (data.success) { loadSubscriptions(); logAction('cancel_subscription', `إلغاء اشتراك #${subId}`, subId); }
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+async function deleteSubscription(subId) {
+    if (!confirm('حذف هذا الاشتراك نهائياً؟')) return;
+    try {
+        const response = await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) { loadSubscriptions(); logAction('delete_subscription', `حذف اشتراك #${subId}`, subId); }
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+async function renewSubscription(subId, customerId, planId) {
+    if (!confirm('تجديد هذا الاشتراك؟')) return;
+    try {
+        const sub = _allSubscriptions.find(s => s.id === subId);
+        const plan = _allPlans.find(p => p.id === planId) || {};
+        // تحميل الخطط إذا لم تكن محملة
+        if (!plan.id) {
+            const planRes = await fetch(`${API_URL}/api/subscription-plans`);
+            const planData = await planRes.json();
+            if (planData.success) { _allPlans = planData.plans; }
+            const p = _allPlans.find(p => p.id === planId);
+            if (!p) { alert('الخطة غير موجودة'); return; }
+            Object.assign(plan, p);
+        }
+        const startDate = new Date().toISOString().split('T')[0];
+        const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                customer_id: customerId,
+                plan_id: planId,
+                subscription_code: sub.subscription_code + '-R' + Date.now().toString(36).slice(-4).toUpperCase(),
+                start_date: startDate,
+                price_paid: plan.price || 0,
+                notes: 'تجديد اشتراك',
+                created_by: currentUser.id,
+                created_by_name: currentUser.full_name
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            // إلغاء القديم
+            await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ status: 'expired', notes: sub?.notes || '', end_date: sub?.end_date })
+            });
+            alert('✅ تم التجديد بنجاح');
+            loadSubscriptions();
+            logAction('renew_subscription', `تجديد اشتراك #${subId}`, data.id);
+        } else { alert('خطأ: ' + data.error); }
+    } catch (error) { alert('خطأ: ' + error.message); }
+}
+
+// --- دمج الاشتراك بنقطة البيع ---
+
+async function checkCustomerSubscription(customerId) {
+    try {
+        const response = await fetch(`${API_URL}/api/customer-subscriptions/check?customer_id=${customerId}`);
+        const data = await response.json();
+        if (data.success && data.active && data.subscription) {
+            window._activeSubscription = data.subscription;
+            showSubscriptionBadge(data.subscription);
+            return data.subscription;
+        } else {
+            window._activeSubscription = null;
+            hideSubscriptionBadge();
+            return null;
+        }
+    } catch (error) {
+        console.log('[Subscription] Check failed:', error);
+        window._activeSubscription = null;
+        hideSubscriptionBadge();
+        return null;
+    }
+}
+
+function showSubscriptionBadge(sub) {
+    let badge = document.getElementById('subscriptionBadge');
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'subscriptionBadge';
+        const customerDetails = document.getElementById('customerDetails');
+        if (customerDetails) customerDetails.parentNode.insertBefore(badge, customerDetails.nextSibling);
+    }
+    badge.style.cssText = 'background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 10px 15px; border-radius: 8px; margin-top: 8px; font-size: 13px;';
+    badge.innerHTML = `
+        <div style="font-weight:bold; margin-bottom:4px;">💳 مشترك - ${escHTML(sub.plan_name)}</div>
+        <div>الكود: <strong style="font-family:monospace;">${escHTML(sub.subscription_code)}</strong></div>
+        <div>خصم: <strong>${sub.discount_percent}%</strong> | نقاط: <strong>${sub.loyalty_multiplier}x</strong></div>
+        <div>ينتهي: ${sub.end_date}</div>
+    `;
+    badge.style.display = 'block';
+}
+
+function hideSubscriptionBadge() {
+    const badge = document.getElementById('subscriptionBadge');
+    if (badge) badge.style.display = 'none';
+    window._activeSubscription = null;
+}
+
+console.log('[Subscriptions] Loaded ✅');
 
 console.log('🎉 All Systems Loaded!');
 

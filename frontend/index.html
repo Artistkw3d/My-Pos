@@ -257,6 +257,7 @@
                 <button class="header-btn" onclick="showTab('xbrl')" data-tab="xbrl" id="xbrlBtn" style="display: none;">📄 XBRL</button>
                 <button class="header-btn" onclick="showTab('admindashboard')" data-tab="admindashboard" id="adminDashboardBtn" style="display: none;">📊 شاشة الأدمن</button>
                 <button class="header-btn" onclick="showTab('transfers')" data-tab="transfers" id="transfersBtn" style="display: none;">🚚 طلبات النقل</button>
+                <button class="header-btn" onclick="showTab('subscriptions')" data-tab="subscriptions" id="subscriptionsBtn" style="display: none;">💳 الاشتراكات</button>
             </div>
             <div class="header-center">
                 <h1>🛍️ نظام نقاط البيع</h1>
@@ -400,6 +401,10 @@
                         <div class="summary-row" id="loyaltyDiscountRow" style="display: none;">
                             <span>💎 خصم الولاء:</span>
                             <span id="loyaltyDiscountAmount" style="color: #38a169; font-weight: bold;">0.000 د.ك</span>
+                        </div>
+                        <div class="summary-row" id="subscriptionDiscountRow" style="display: none;">
+                            <span>💳 خصم الاشتراك:</span>
+                            <span id="subscriptionDiscountAmount" style="color: #764ba2; font-weight: bold;">0.000 د.ك</span>
                         </div>
                         <div class="summary-row" id="couponDiscountRow" style="display: none;">
                             <span>🎟️ خصم الكوبون:</span>
@@ -2222,6 +2227,20 @@
                             </div>
 
                             <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #cbd5e0;">
+                                <strong style="color: #667eea; font-size: 14px;">💳 الاشتراكات</strong>
+                                <div style="margin-top: 8px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_view_subscriptions" style="width: 18px; height: 18px;">
+                                        <span>👁️ عرض الاشتراكات</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
+                                        <input type="checkbox" name="can_manage_subscriptions" style="width: 18px; height: 18px;">
+                                        <span>⚙️ إدارة الاشتراكات والخطط</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #cbd5e0;">
                                 <strong style="color: #667eea; font-size: 14px;">🍽️ الطاولات</strong>
                                 <div style="margin: 10px 0 5px 20px;">
                                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
@@ -2387,6 +2406,103 @@
                 <button class="close-btn" onclick="closeTransferDetails()">✖️</button>
             </div>
             <div class="modal-body" id="transferDetailsContent"></div>
+        </div>
+    </div>
+
+    <!-- Subscriptions Tab -->
+        <div class="tab-content" id="subscriptionsTab" style="display: none;">
+            <div style="padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                    <h2>💳 نظام الاشتراكات</h2>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="add-btn" onclick="showManagePlans()" id="managePlansBtn">📋 إدارة الخطط</button>
+                        <button class="add-btn" onclick="showAddSubscription()">➕ اشتراك جديد</button>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <select id="subStatusFilter" onchange="loadSubscriptions()" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <option value="">كل الحالات</option>
+                        <option value="active">فعّال</option>
+                        <option value="expired">منتهي</option>
+                        <option value="cancelled">ملغي</option>
+                    </select>
+                    <input type="text" id="subSearchInput" placeholder="بحث بالاسم أو الهاتف أو الكود..." oninput="filterSubscriptions()" style="flex: 1; min-width: 200px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                </div>
+                <div id="subscriptionsTableContainer"></div>
+            </div>
+        </div>
+
+    <!-- Subscription Plans Modal -->
+    <div class="modal" id="managePlansModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>📋 إدارة خطط الاشتراك</h2>
+                <button class="close-btn" onclick="closePlansModal()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h3 style="margin-bottom: 10px;">➕ إضافة خطة جديدة</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                        <input type="text" id="planName" placeholder="اسم الخطة *" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <input type="number" id="planDuration" placeholder="المدة (أيام)" value="30" min="1" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <input type="number" id="planPrice" placeholder="السعر *" step="0.001" min="0" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <input type="number" id="planDiscount" placeholder="نسبة الخصم %" value="0" min="0" max="100" step="0.1" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <input type="number" id="planLoyaltyMult" placeholder="مضاعف النقاط" value="1" min="1" step="0.5" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <input type="text" id="planDesc" placeholder="الوصف (اختياري)" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    </div>
+                    <button onclick="savePlan()" class="add-btn" style="margin-top: 10px;">💾 حفظ الخطة</button>
+                </div>
+                <div id="plansListContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Subscription Modal -->
+    <div class="modal" id="addSubscriptionModal">
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <h2>➕ اشتراك جديد</h2>
+                <button class="close-btn" onclick="closeAddSubscription()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; gap: 12px;">
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">العميل *</label>
+                        <select id="subCustomerId" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;" required>
+                            <option value="">-- اختر العميل --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">خطة الاشتراك *</label>
+                        <select id="subPlanId" onchange="onPlanSelect()" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;" required>
+                            <option value="">-- اختر الخطة --</option>
+                        </select>
+                    </div>
+                    <div id="subPlanInfo" style="display: none; background: #f0f9ff; padding: 12px; border-radius: 8px; border: 2px solid #bae6fd;">
+                        <div id="subPlanDetails"></div>
+                    </div>
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">كود الاشتراك *</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="subCode" placeholder="كود فريد للمشترك" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; text-transform: uppercase;">
+                            <button onclick="generateSubCode()" type="button" style="padding: 10px 15px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap;">🎲 توليد</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">تاريخ البدء</label>
+                        <input type="date" id="subStartDate" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    </div>
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">المبلغ المدفوع</label>
+                        <input type="number" id="subPricePaid" step="0.001" min="0" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    </div>
+                    <div>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">ملاحظات</label>
+                        <textarea id="subNotes" rows="2" placeholder="ملاحظات (اختياري)" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-family: inherit;"></textarea>
+                    </div>
+                    <button onclick="submitSubscription()" class="complete-btn" style="padding: 12px;">💳 تسجيل الاشتراك</button>
+                </div>
+            </div>
         </div>
     </div>
 

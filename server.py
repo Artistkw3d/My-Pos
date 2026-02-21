@@ -320,6 +320,46 @@ def migrate_database(db_path=None):
         add_column('users', 'can_deliver_transfer', 'INTEGER', 0)
         add_column('users', 'can_view_transfers', 'INTEGER', 0)
 
+        # صلاحيات الاشتراكات
+        add_column('users', 'can_view_subscriptions', 'INTEGER', 0)
+        add_column('users', 'can_manage_subscriptions', 'INTEGER', 0)
+
+        # جدول خطط الاشتراك
+        safe_exec('''CREATE TABLE IF NOT EXISTS subscription_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            duration_days INTEGER NOT NULL DEFAULT 30,
+            price REAL NOT NULL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            loyalty_multiplier REAL DEFAULT 1,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''', 'subscription_plans')
+
+        # جدول اشتراكات العملاء
+        safe_exec('''CREATE TABLE IF NOT EXISTS customer_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id INTEGER NOT NULL,
+            customer_name TEXT,
+            customer_phone TEXT,
+            plan_id INTEGER,
+            plan_name TEXT,
+            subscription_code TEXT UNIQUE,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            price_paid REAL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            loyalty_multiplier REAL DEFAULT 1,
+            status TEXT DEFAULT 'active',
+            notes TEXT,
+            created_by INTEGER,
+            created_by_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES customers(id),
+            FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+        )''', 'customer_subscriptions')
+
         # إعدادات الولاء الافتراضية
         try:
             cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'loyalty_points_per_invoice'")
@@ -458,7 +498,9 @@ def create_tenant_database(slug):
             can_create_transfer INTEGER DEFAULT 0,
             can_approve_transfer INTEGER DEFAULT 0,
             can_deliver_transfer INTEGER DEFAULT 0,
-            can_view_transfers INTEGER DEFAULT 0
+            can_view_transfers INTEGER DEFAULT 0,
+            can_view_subscriptions INTEGER DEFAULT 0,
+            can_manage_subscriptions INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS branches (
@@ -823,6 +865,41 @@ def create_tenant_database(slug):
         );
     ''')
 
+        CREATE TABLE IF NOT EXISTS subscription_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            duration_days INTEGER NOT NULL DEFAULT 30,
+            price REAL NOT NULL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            loyalty_multiplier REAL DEFAULT 1,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS customer_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id INTEGER NOT NULL,
+            customer_name TEXT,
+            customer_phone TEXT,
+            plan_id INTEGER,
+            plan_name TEXT,
+            subscription_code TEXT UNIQUE,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            price_paid REAL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            loyalty_multiplier REAL DEFAULT 1,
+            status TEXT DEFAULT 'active',
+            notes TEXT,
+            created_by INTEGER,
+            created_by_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES customers(id),
+            FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+        );
+    ''')
+
     # إضافة إعدادات افتراضية
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_points_per_invoice', '10')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '0.1')")
@@ -929,7 +1006,8 @@ def ensure_user_permission_columns(cursor):
         'can_view_system_logs', 'can_view_dcf', 'can_cancel_invoices', 'can_view_branches',
         'can_view_cross_branch_stock', 'can_view_xbrl', 'can_edit_completed_invoices',
         'shift_id',
-        'can_create_transfer', 'can_approve_transfer', 'can_deliver_transfer', 'can_view_transfers'
+        'can_create_transfer', 'can_approve_transfer', 'can_deliver_transfer', 'can_view_transfers',
+        'can_view_subscriptions', 'can_manage_subscriptions'
     ]
     for col in new_cols:
         try:
@@ -960,8 +1038,9 @@ def add_user():
                              can_view_tables, can_view_attendance, can_view_advanced_reports,
                              can_view_system_logs, can_view_dcf, can_cancel_invoices, can_view_branches,
                              can_view_cross_branch_stock, can_view_xbrl, shift_id, can_edit_completed_invoices,
-                             can_create_transfer, can_approve_transfer, can_deliver_transfer, can_view_transfers)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             can_create_transfer, can_approve_transfer, can_deliver_transfer, can_view_transfers,
+                             can_view_subscriptions, can_manage_subscriptions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('username'),
             hash_password(data.get('password')),
@@ -1005,7 +1084,9 @@ def add_user():
             data.get('can_create_transfer', 0),
             data.get('can_approve_transfer', 0),
             data.get('can_deliver_transfer', 0),
-            data.get('can_view_transfers', 0)
+            data.get('can_view_transfers', 0),
+            data.get('can_view_subscriptions', 0),
+            data.get('can_manage_subscriptions', 0)
         ))
 
         user_id = cursor.lastrowid
@@ -1160,6 +1241,12 @@ def update_user(user_id):
         if 'can_view_transfers' in data:
             updates.append('can_view_transfers = ?')
             params.append(data['can_view_transfers'])
+        if 'can_view_subscriptions' in data:
+            updates.append('can_view_subscriptions = ?')
+            params.append(data['can_view_subscriptions'])
+        if 'can_manage_subscriptions' in data:
+            updates.append('can_manage_subscriptions = ?')
+            params.append(data['can_manage_subscriptions'])
         if 'is_active' in data:
             updates.append('is_active = ?')
             params.append(data['is_active'])
@@ -6771,6 +6858,238 @@ def delete_stock_transfer(transfer_id):
         conn.commit()
         conn.close()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ===== API الاشتراكات =====
+
+@app.route('/api/subscription-plans', methods=['GET'])
+def get_subscription_plans():
+    """جلب خطط الاشتراك"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM subscription_plans ORDER BY price ASC')
+        plans = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'plans': plans})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-plans', methods=['POST'])
+def add_subscription_plan():
+    """إضافة خطة اشتراك"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO subscription_plans (name, duration_days, price, discount_percent, loyalty_multiplier, description)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (data.get('name'), data.get('duration_days', 30), data.get('price', 0),
+              data.get('discount_percent', 0), data.get('loyalty_multiplier', 1), data.get('description', '')))
+        conn.commit()
+        plan_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': plan_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-plans/<int:plan_id>', methods=['PUT'])
+def update_subscription_plan(plan_id):
+    """تحديث خطة اشتراك"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE subscription_plans SET name=?, duration_days=?, price=?, discount_percent=?,
+            loyalty_multiplier=?, description=?, is_active=? WHERE id=?
+        ''', (data.get('name'), data.get('duration_days'), data.get('price'),
+              data.get('discount_percent'), data.get('loyalty_multiplier'),
+              data.get('description', ''), data.get('is_active', 1), plan_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription-plans/<int:plan_id>', methods=['DELETE'])
+def delete_subscription_plan(plan_id):
+    """حذف خطة اشتراك"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM subscription_plans WHERE id = ?', (plan_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customer-subscriptions', methods=['GET'])
+def get_customer_subscriptions():
+    """جلب اشتراكات العملاء"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        status_filter = request.args.get('status', '')
+        query = 'SELECT * FROM customer_subscriptions WHERE 1=1'
+        params = []
+        if status_filter:
+            query += ' AND status = ?'
+            params.append(status_filter)
+        query += ' ORDER BY created_at DESC'
+        cursor.execute(query, params)
+        subs = [dict_from_row(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'success': True, 'subscriptions': subs})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customer-subscriptions', methods=['POST'])
+def add_customer_subscription():
+    """إضافة اشتراك لعميل"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+
+        customer_id = data.get('customer_id')
+        plan_id = data.get('plan_id')
+        subscription_code = data.get('subscription_code', '').strip()
+
+        if not customer_id or not plan_id:
+            conn.close()
+            return jsonify({'success': False, 'error': 'يجب تحديد العميل والخطة'}), 400
+
+        if not subscription_code:
+            conn.close()
+            return jsonify({'success': False, 'error': 'يجب إدخال كود الاشتراك'}), 400
+
+        # التحقق من عدم تكرار الكود
+        cursor.execute('SELECT id FROM customer_subscriptions WHERE subscription_code = ?', (subscription_code,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'كود الاشتراك مستخدم مسبقاً'}), 400
+
+        # جلب بيانات الخطة
+        cursor.execute('SELECT * FROM subscription_plans WHERE id = ?', (plan_id,))
+        plan_row = cursor.fetchone()
+        if not plan_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'الخطة غير موجودة'}), 404
+        plan = dict_from_row(plan_row)
+
+        # جلب بيانات العميل
+        cursor.execute('SELECT name, phone FROM customers WHERE id = ?', (customer_id,))
+        cust_row = cursor.fetchone()
+        if not cust_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'العميل غير موجود'}), 404
+        cust = dict_from_row(cust_row)
+
+        from datetime import datetime, timedelta
+        start_date = data.get('start_date', datetime.now().strftime('%Y-%m-%d'))
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = start_dt + timedelta(days=plan['duration_days'])
+        end_date = end_dt.strftime('%Y-%m-%d')
+
+        cursor.execute('''
+            INSERT INTO customer_subscriptions
+            (customer_id, customer_name, customer_phone, plan_id, plan_name, subscription_code,
+             start_date, end_date, price_paid, discount_percent, loyalty_multiplier, notes,
+             created_by, created_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (customer_id, cust['name'], cust['phone'], plan_id, plan['name'],
+              subscription_code, start_date, end_date, data.get('price_paid', plan['price']),
+              plan['discount_percent'], plan['loyalty_multiplier'],
+              data.get('notes', ''), data.get('created_by'), data.get('created_by_name')))
+
+        conn.commit()
+        sub_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': sub_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customer-subscriptions/<int:sub_id>', methods=['PUT'])
+def update_customer_subscription(sub_id):
+    """تحديث اشتراك"""
+    try:
+        data = request.json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE customer_subscriptions SET status=?, notes=?, end_date=? WHERE id=?
+        ''', (data.get('status'), data.get('notes', ''), data.get('end_date'), sub_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customer-subscriptions/<int:sub_id>', methods=['DELETE'])
+def delete_customer_subscription(sub_id):
+    """حذف اشتراك"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM customer_subscriptions WHERE id = ?', (sub_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/customer-subscriptions/check', methods=['GET'])
+def check_customer_subscription():
+    """التحقق من اشتراك عميل بالكود أو رقم الهاتف"""
+    try:
+        code = request.args.get('code', '').strip()
+        phone = request.args.get('phone', '').strip()
+        customer_id = request.args.get('customer_id', '')
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        query = 'SELECT * FROM customer_subscriptions WHERE status = \'active\''
+        params = []
+
+        if code:
+            query += ' AND subscription_code = ?'
+            params.append(code)
+        elif customer_id:
+            query += ' AND customer_id = ?'
+            params.append(int(customer_id))
+        elif phone:
+            query += ' AND customer_phone = ?'
+            params.append(phone)
+        else:
+            conn.close()
+            return jsonify({'success': True, 'subscription': None})
+
+        query += ' ORDER BY end_date DESC LIMIT 1'
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            sub = dict_from_row(row)
+            from datetime import datetime
+            today = datetime.now().strftime('%Y-%m-%d')
+            if sub['end_date'] < today:
+                # اشتراك منتهي - تحديث الحالة
+                conn2 = get_db()
+                c2 = conn2.cursor()
+                c2.execute('UPDATE customer_subscriptions SET status = \'expired\' WHERE id = ?', (sub['id'],))
+                conn2.commit()
+                conn2.close()
+                sub['status'] = 'expired'
+                return jsonify({'success': True, 'subscription': sub, 'active': False})
+            return jsonify({'success': True, 'subscription': sub, 'active': True})
+        return jsonify({'success': True, 'subscription': None, 'active': False})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
