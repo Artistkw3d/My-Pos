@@ -402,9 +402,9 @@
                             <span>💎 خصم الولاء:</span>
                             <span id="loyaltyDiscountAmount" style="color: #38a169; font-weight: bold;">0.000 د.ك</span>
                         </div>
-                        <div class="summary-row" id="subscriptionDiscountRow" style="display: none;">
-                            <span>💳 خصم الاشتراك:</span>
-                            <span id="subscriptionDiscountAmount" style="color: #764ba2; font-weight: bold;">0.000 د.ك</span>
+                        <div class="summary-row" id="subscriptionRedeemRow" style="display: none;">
+                            <span>💳 اشتراك فعّال:</span>
+                            <button onclick="showRedeemSubscription()" style="padding: 5px 12px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold;">📦 استلام منتجات</button>
                         </div>
                         <div class="summary-row" id="couponDiscountRow" style="display: none;">
                             <span>🎟️ خصم الكوبون:</span>
@@ -2434,7 +2434,7 @@
 
     <!-- Subscription Plans Modal -->
     <div class="modal" id="managePlansModal">
-        <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
                 <h2>📋 إدارة خطط الاشتراك</h2>
                 <button class="close-btn" onclick="closePlansModal()">✖️</button>
@@ -2446,9 +2446,19 @@
                         <input type="text" id="planName" placeholder="اسم الخطة *" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <input type="number" id="planDuration" placeholder="المدة (أيام)" value="30" min="1" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <input type="number" id="planPrice" placeholder="السعر *" step="0.001" min="0" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                        <input type="number" id="planDiscount" placeholder="نسبة الخصم %" value="0" min="0" max="100" step="0.1" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                        <input type="number" id="planLoyaltyMult" placeholder="مضاعف النقاط" value="1" min="1" step="0.5" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <input type="text" id="planDesc" placeholder="الوصف (اختياري)" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    </div>
+                    <!-- منتجات الخطة -->
+                    <div style="margin-top: 12px; padding: 12px; background: #fff; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <h4 style="margin: 0 0 8px 0;">📦 منتجات الخطة</h4>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: end;">
+                            <select id="planProductSelect" style="flex: 2; min-width: 200px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                                <option value="">-- اختر منتج --</option>
+                            </select>
+                            <input type="number" id="planProductQty" placeholder="الكمية" value="1" min="1" style="width: 80px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                            <button type="button" onclick="addProductToPlan()" class="add-btn" style="white-space: nowrap;">➕ أضف</button>
+                        </div>
+                        <div id="planItemsList" style="margin-top: 10px;"></div>
                     </div>
                     <button onclick="savePlan()" class="add-btn" style="margin-top: 10px;">💾 حفظ الخطة</button>
                 </div>
@@ -2503,6 +2513,32 @@
                     <button onclick="submitSubscription()" class="complete-btn" style="padding: 12px;">💳 تسجيل الاشتراك</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Subscription Redemption Modal -->
+    <div class="modal" id="redeemSubscriptionModal">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <h2>📦 استلام منتجات الاشتراك</h2>
+                <button class="close-btn" onclick="closeRedeemModal()">✖️</button>
+            </div>
+            <div class="modal-body">
+                <div id="redeemSubInfo" style="background: linear-gradient(135deg, #667eea15, #764ba215); padding: 12px; border-radius: 8px; border: 2px solid #764ba2; margin-bottom: 15px;"></div>
+                <div id="redeemItemsList"></div>
+                <button onclick="submitRedemption()" class="complete-btn" style="margin-top: 15px; padding: 12px; width: 100%;">✅ تأكيد الاستلام</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscription Detail Modal -->
+    <div class="modal" id="subscriptionDetailModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>📋 تفاصيل الاشتراك</h2>
+                <button class="close-btn" onclick="document.getElementById('subscriptionDetailModal').classList.remove('active')">✖️</button>
+            </div>
+            <div class="modal-body" id="subscriptionDetailBody"></div>
         </div>
     </div>
 
