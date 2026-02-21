@@ -11105,16 +11105,20 @@ async function showCreateTransfer() {
     if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     _transferItems = [];
     document.getElementById('transferNotes').value = '';
-    document.getElementById('transferProductSearch').value = '';
-    document.getElementById('transferProductResults').style.display = 'none';
     document.getElementById('transferItemsBody').innerHTML = '';
+    document.getElementById('transferProductQty').value = '1';
 
-    // تحميل الفروع
+    // تحميل الفروع + المنتجات بالتوازي
     try {
-        const res = await fetch(`${API_URL}/api/branches`);
-        const data = await res.json();
-        if (data.success) {
-            _transferBranches = data.branches || [];
+        const [branchRes, invRes] = await Promise.all([
+            fetch(`${API_URL}/api/branches`),
+            fetch(`${API_URL}/api/inventory`)
+        ]);
+        const branchData = await branchRes.json();
+        const invData = await invRes.json();
+
+        if (branchData.success) {
+            _transferBranches = branchData.branches || [];
             const fromSelect = document.getElementById('transferFromBranch');
             const toSelect = document.getElementById('transferToBranch');
             const options = '<option value="">اختر الفرع</option>' +
@@ -11122,75 +11126,56 @@ async function showCreateTransfer() {
             fromSelect.innerHTML = options;
             toSelect.innerHTML = options;
 
-            // تحديد الفرع الحالي للمستخدم كفرع الطالب
             if (currentUser?.branch_id) {
                 toSelect.value = currentUser.branch_id;
             }
         }
-    } catch (e) {}
+
+        // تحميل المنتجات في القائمة المنسدلة
+        const productSelect = document.getElementById('transferProductSelect');
+        let pOptions = '<option value="">-- اختر الصنف --</option>';
+        if (invData.success && invData.inventory) {
+            invData.inventory.forEach(p => {
+                if (p.variants && p.variants.length > 0) {
+                    p.variants.forEach(v => {
+                        pOptions += `<option value="${p.id}|${v.id}|${escHTML(p.name)} - ${escHTML(v.name)}">${escHTML(p.name)} - ${escHTML(v.name)}</option>`;
+                    });
+                } else {
+                    pOptions += `<option value="${p.id}|0|${escHTML(p.name)}">${escHTML(p.name)}</option>`;
+                }
+            });
+        }
+        productSelect.innerHTML = pOptions;
+    } catch (e) {
+        console.error('[Transfer] Load error:', e);
+    }
 
     document.getElementById('createTransferModal').classList.add('active');
+    renderTransferItems();
 }
 
 function closeCreateTransfer() {
     document.getElementById('createTransferModal').classList.remove('active');
 }
 
-async function searchTransferProducts() {
-    if (!_realOnlineStatus) return;
-    const query = document.getElementById('transferProductSearch').value.trim();
-    const resultsDiv = document.getElementById('transferProductResults');
+function addTransferItemFromSelect() {
+    const select = document.getElementById('transferProductSelect');
+    const val = select.value;
+    if (!val) { alert('اختر صنف من القائمة'); return; }
 
-    if (query.length < 2) {
-        resultsDiv.style.display = 'none';
-        return;
-    }
+    const parts = val.split('|');
+    const inventoryId = parseInt(parts[0]);
+    const variantId = parseInt(parts[1]) || null;
+    const productName = parts.slice(2).join('|');
+    const qty = parseInt(document.getElementById('transferProductQty').value) || 1;
 
-    try {
-        const res = await fetch(`${API_URL}/api/inventory`);
-        const data = await res.json();
-        if (!data.success) return;
-
-        const filtered = data.inventory.filter(p =>
-            (p.name && p.name.includes(query)) ||
-            (p.sku && p.sku.includes(query)) ||
-            (p.barcode && p.barcode.includes(query))
-        ).slice(0, 20);
-
-        if (filtered.length === 0) {
-            resultsDiv.innerHTML = '<div style="padding:10px; color:#999; text-align:center;">لا توجد نتائج</div>';
-            resultsDiv.style.display = 'block';
-            return;
-        }
-
-        let html = '';
-        filtered.forEach(p => {
-            // إذا كان له متغيرات
-            if (p.variants && p.variants.length > 0) {
-                p.variants.forEach(v => {
-                    html += `<div onclick="addTransferItem(${p.id}, '${escHTML(p.name)} - ${escHTML(v.name)}', ${v.id}, '${escHTML(v.name)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''">
-                        ${escHTML(p.name)} - <span style="color:#667eea;">${escHTML(v.name)}</span>
-                    </div>`;
-                });
-            } else {
-                html += `<div onclick="addTransferItem(${p.id}, '${escHTML(p.name)}', null, '')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''">
-                    ${escHTML(p.name)}
-                </div>`;
-            }
-        });
-
-        resultsDiv.innerHTML = html;
-        resultsDiv.style.display = 'block';
-    } catch (e) {
-        console.error('[Transfers] Search error:', e);
-    }
-}
-
-function addTransferItem(inventoryId, productName, variantId, variantName) {
     // تحقق من التكرار
     const exists = _transferItems.find(i => i.inventory_id === inventoryId && i.variant_id === variantId);
     if (exists) {
-        alert('هذا الصنف موجود بالفعل في القائمة');
+        exists.quantity += qty;
+        renderTransferItems();
+        select.value = '';
+        document.getElementById('transferProductQty').value = '1';
         return;
     }
 
@@ -11198,12 +11183,12 @@ function addTransferItem(inventoryId, productName, variantId, variantName) {
         inventory_id: inventoryId,
         product_name: productName,
         variant_id: variantId,
-        variant_name: variantName,
-        quantity: 1
+        variant_name: variantId ? productName.split(' - ').slice(1).join(' - ') : '',
+        quantity: qty
     });
 
-    document.getElementById('transferProductSearch').value = '';
-    document.getElementById('transferProductResults').style.display = 'none';
+    select.value = '';
+    document.getElementById('transferProductQty').value = '1';
     renderTransferItems();
 }
 
