@@ -241,6 +241,7 @@ def migrate_database(db_path=None):
         add_column('invoice_items', 'variant_name', 'TEXT')
 
         add_column('branch_stock', 'variant_id', 'INTEGER')
+        add_column('branch_stock', 'notes', 'TEXT')
 
         # === نظام الشفتات ===
         safe_exec('''CREATE TABLE IF NOT EXISTS shifts (
@@ -590,6 +591,7 @@ def create_tenant_database(slug):
             branch_id INTEGER,
             variant_id INTEGER,
             stock INTEGER DEFAULT 0,
+            notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             sales_count INTEGER DEFAULT 0
@@ -1762,6 +1764,7 @@ def add_branch_stock():
         cursor = conn.cursor()
 
         variant_id = data.get('variant_id')
+        notes = data.get('notes', '')
 
         # التحقق من وجود التوزيع (مع variant_id)
         if variant_id:
@@ -1780,19 +1783,20 @@ def add_branch_stock():
         if existing:
             new_stock = existing['stock'] + data.get('stock', 0)
             cursor.execute('''
-                UPDATE branch_stock SET stock = ?, updated_at = CURRENT_TIMESTAMP
+                UPDATE branch_stock SET stock = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            ''', (new_stock, existing['id']))
+            ''', (new_stock, notes, existing['id']))
             stock_id = existing['id']
         else:
             cursor.execute('''
-                INSERT INTO branch_stock (inventory_id, branch_id, variant_id, stock)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO branch_stock (inventory_id, branch_id, variant_id, stock, notes)
+                VALUES (?, ?, ?, ?, ?)
             ''', (
                 data.get('inventory_id'),
                 data.get('branch_id'),
                 variant_id,
-                data.get('stock', 0)
+                data.get('stock', 0),
+                notes
             ))
             stock_id = cursor.lastrowid
 
@@ -7264,14 +7268,18 @@ def check_customer_subscription():
 
 @app.route('/api/subscription-redemptions', methods=['POST'])
 def create_subscription_redemption():
-    """استلام منتجات من الاشتراك مع خصم المخزون"""
+    """استلام منتجات من الاشتراك مع خصم من مخزون الفرع"""
     try:
         data = request.json
         subscription_id = data.get('subscription_id')
         items = data.get('items', [])
+        branch_id = data.get('branch_id')
 
         if not subscription_id or not items:
             return jsonify({'success': False, 'error': 'بيانات الاستلام غير مكتملة'}), 400
+
+        if not branch_id:
+            return jsonify({'success': False, 'error': 'يجب تحديد الفرع'}), 400
 
         conn = get_db()
         cursor = conn.cursor()
@@ -7328,6 +7336,28 @@ def create_subscription_redemption():
                 conn.close()
                 return jsonify({'success': False, 'error': f"الكمية المتبقية لـ {item.get('product_name', '')} هي {remaining} فقط"}), 400
 
+            # التحقق من مخزون الفرع
+            if variant_id:
+                cursor.execute('''
+                    SELECT id, stock FROM branch_stock
+                    WHERE inventory_id = ? AND branch_id = ? AND variant_id = ?
+                ''', (product_id, branch_id, variant_id))
+            else:
+                cursor.execute('''
+                    SELECT id, stock FROM branch_stock
+                    WHERE inventory_id = ? AND branch_id = ? AND (variant_id IS NULL OR variant_id = 0)
+                ''', (product_id, branch_id))
+            bs_row = cursor.fetchone()
+
+            if not bs_row:
+                conn.close()
+                return jsonify({'success': False, 'error': f"المنتج {item.get('product_name', '')} غير موجود في مخزون هذا الفرع"}), 400
+
+            bs = dict_from_row(bs_row)
+            if bs['stock'] < qty:
+                conn.close()
+                return jsonify({'success': False, 'error': f"مخزون الفرع لا يكفي لـ {item.get('product_name', '')} (المتوفر: {bs['stock']})"}), 400
+
             # تسجيل الاستلام
             cursor.execute('''
                 INSERT INTO subscription_redemptions (subscription_id, customer_id, product_id, product_name, variant_id, variant_name, quantity, redeemed_by, redeemed_by_name)
@@ -7336,12 +7366,11 @@ def create_subscription_redemption():
                   variant_id, item.get('variant_name'), qty,
                   data.get('redeemed_by'), data.get('redeemed_by_name')))
 
-            # خصم من المخزون
-            if variant_id:
-                cursor.execute('UPDATE product_variants SET stock = stock - ? WHERE id = ? AND product_id = ?',
-                               (qty, variant_id, product_id))
-            else:
-                cursor.execute('UPDATE products SET stock = stock - ? WHERE id = ?', (qty, product_id))
+            # خصم من مخزون الفرع
+            cursor.execute('''
+                UPDATE branch_stock SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (qty, bs['id']))
 
             redeemed_items.append({'product_name': item.get('product_name'), 'quantity': qty})
 

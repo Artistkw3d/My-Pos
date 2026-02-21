@@ -3789,7 +3789,7 @@ async function loadCurrentDistributions(inventoryId) {
                 branchesData.branches.forEach(b => branches[b.id] = b.name);
             }
             
-            let html = '<table class="data-table"><thead><tr><th>الفرع</th><th>الخاصية</th><th>الكمية</th><th>إجراءات</th></tr></thead><tbody>';
+            let html = '<table class="data-table"><thead><tr><th>الفرع</th><th>الخاصية</th><th>الكمية</th><th>ملاحظات</th><th>إجراءات</th></tr></thead><tbody>';
 
             data.stock.forEach(s => {
                 const branchName = branches[s.branch_id] || 'غير محدد';
@@ -3801,6 +3801,7 @@ async function loadCurrentDistributions(inventoryId) {
                         <td>🏢 ${branchName}</td>
                         <td>${variantLabel}</td>
                         <td><strong>${s.stock}</strong></td>
+                        <td>${s.notes ? escHTML(s.notes) : '<span style="color:#999;">-</span>'}</td>
                         <td>
                             <button onclick="editDistribution(${s.id}, ${s.stock})" class="btn-sm">✏️ تعديل</button>
                             <button onclick="deleteDistribution(${s.id})" class="btn-sm btn-danger">🗑️ حذف</button>
@@ -3835,7 +3836,8 @@ document.getElementById('distributionForm').addEventListener('submit', async (e)
         inventory_id: currentDistributionProduct.id,
         branch_id: parseInt(document.getElementById('distributionBranch').value),
         stock: parseInt(document.getElementById('distributionStock').value),
-        variant_id: variantVal ? parseInt(variantVal) : null
+        variant_id: variantVal ? parseInt(variantVal) : null,
+        notes: document.getElementById('distributionNotes')?.value?.trim() || ''
     };
     
     try {
@@ -12102,6 +12104,7 @@ async function submitRedemption() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 subscription_id: sub.id,
+                branch_id: currentUser.branch_id || 1,
                 items: items,
                 redeemed_by: currentUser.id,
                 redeemed_by_name: currentUser.full_name
