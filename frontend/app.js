@@ -5651,7 +5651,7 @@ async function fetchVersion() {
         const res = await fetch(`${API_URL}/api/version`, {cache: 'no-store'});
         const data = await res.json();
         if (data.success) {
-            const vText = `الإصدار v${data.version}`;
+            const vText = `آخر تحديث: ${data.version}`;
             const hv = document.getElementById('headerVersion');
             const lv = document.getElementById('loginVersion');
             if (hv) hv.textContent = vText;

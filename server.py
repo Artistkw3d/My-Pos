@@ -14,7 +14,6 @@ import os
 import shutil
 import threading
 import time
-import subprocess
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
@@ -7445,33 +7444,15 @@ def get_subscription_redemptions(subscription_id):
 
 @app.route('/api/version', methods=['GET'])
 def get_version():
-    """جلب رقم الإصدار"""
+    """جلب تاريخ آخر تحديث"""
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    version = '0'
-    # أولاً: قراءة ملف VERSION
-    version_file = os.path.join(base_dir, 'VERSION')
-    if os.path.exists(version_file):
-        try:
-            with open(version_file, 'r') as f:
-                version = f.read().strip()
-        except:
-            pass
-    # ثانياً: محاولة Git إذا لم يوجد ملف أو كان صفر
-    if version == '0':
-        try:
-            result = subprocess.run(['git', 'rev-list', '--count', 'HEAD'],
-                                    capture_output=True, text=True, timeout=5, cwd=base_dir)
-            if result.returncode == 0 and result.stdout.strip():
-                version = result.stdout.strip()
-                # تحديث ملف VERSION
-                try:
-                    with open(version_file, 'w') as f:
-                        f.write(version)
-                except:
-                    pass
-        except:
-            pass
-    return jsonify({'success': True, 'version': version})
+    try:
+        # تاريخ آخر تعديل لملف server.py
+        mtime = os.path.getmtime(os.path.join(base_dir, 'server.py'))
+        last_update = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+        return jsonify({'success': True, 'version': last_update})
+    except:
+        return jsonify({'success': True, 'version': datetime.now().strftime('%Y-%m-%d')})
 
 
 if __name__ == '__main__':
