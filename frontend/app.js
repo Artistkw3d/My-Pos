@@ -3299,36 +3299,24 @@ async function displayInventory() {
     
     // جلب كل التوزيعات والمبيعات والتالف
     let allDistributions = {};
-    let branchDistributions = {}; // توزيعات حسب الفرع لكل منتج
-    let branchNames = {};
+    let branchDistributions = {}; // {inventory_id: {branch_name: stock}}
     let allSold = {};
     let allDamaged = {};
 
     try {
-        // جلب الفروع
-        const branchesRes = await fetch(`${API_URL}/api/branches`);
-        const branchesData = await branchesRes.json();
-        if (branchesData.success) {
-            branchesData.branches.forEach(b => { branchNames[b.id] = b.name; });
-        }
-
-        // جلب التوزيعات الحالية
+        // جلب التوزيعات الحالية (تشمل branch_name من الجوين)
         const stockResponse = await fetch(`${API_URL}/api/branch-stock`);
         const stockData = await stockResponse.json();
         if (stockData.success) {
             stockData.stock.forEach(s => {
-                if (!allDistributions[s.inventory_id]) {
-                    allDistributions[s.inventory_id] = 0;
-                }
-                allDistributions[s.inventory_id] += s.stock;
-                // تجميع حسب الفرع
-                if (!branchDistributions[s.inventory_id]) {
-                    branchDistributions[s.inventory_id] = {};
-                }
-                if (!branchDistributions[s.inventory_id][s.branch_id]) {
-                    branchDistributions[s.inventory_id][s.branch_id] = 0;
-                }
-                branchDistributions[s.inventory_id][s.branch_id] += s.stock;
+                const invId = s.inventory_id;
+                if (!allDistributions[invId]) allDistributions[invId] = 0;
+                allDistributions[invId] += s.stock;
+                // تجميع حسب اسم الفرع مباشرة
+                if (!branchDistributions[invId]) branchDistributions[invId] = {};
+                const bName = s.branch_name || `فرع ${s.branch_id}`;
+                if (!branchDistributions[invId][bName]) branchDistributions[invId][bName] = 0;
+                branchDistributions[invId][bName] += s.stock;
             });
         }
         
@@ -3399,13 +3387,12 @@ async function displayInventory() {
         const damaged = allDamaged[item.id] || 0;
         const itemBranches = branchDistributions[item.id] || {};
 
-        // عرض الفروع
+        // عرض الفروع (الاسم: الكمية)
         const branchEntries = Object.entries(itemBranches);
         let branchesDisplay = '<span style="color:#999;">-</span>';
         if (branchEntries.length > 0) {
-            branchesDisplay = branchEntries.map(([bId, bStock]) => {
-                const bName = branchNames[bId] || `فرع ${bId}`;
-                return `<div style="font-size:11px; white-space:nowrap;"><span style="color:#3182ce;">${escHTML(bName)}</span>: <strong>${bStock}</strong></div>`;
+            branchesDisplay = branchEntries.map(([bName, bStock]) => {
+                return `<div style="font-size:11px; white-space:nowrap;"><span style="color:#3182ce;">🏢 ${escHTML(bName)}</span>: <strong>${bStock}</strong></div>`;
             }).join('');
         }
 
