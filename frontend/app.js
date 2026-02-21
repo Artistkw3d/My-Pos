@@ -223,6 +223,8 @@ async function initializeUI() {
     document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
     document.getElementById('transfersBtn').style.display = window.userPermissions.canViewTransfers ? 'inline-block' : 'none';
     document.getElementById('subscriptionsBtn').style.display = window.userPermissions.canViewSubscriptions ? 'inline-block' : 'none';
+    const _mpBtn = document.getElementById('managePlansBtn');
+    if (_mpBtn) _mpBtn.style.display = window.userPermissions.canManageSubscriptions ? 'inline-block' : 'none';
     // عرض خانة اختيار الطاولة في نقطة البيع
     loadTablesDropdown();
 
@@ -415,6 +417,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             document.getElementById('adminDashboardBtn').style.display = window.userPermissions.isAdmin ? 'inline-block' : 'none';
             document.getElementById('transfersBtn').style.display = window.userPermissions.canViewTransfers ? 'inline-block' : 'none';
             document.getElementById('subscriptionsBtn').style.display = window.userPermissions.canViewSubscriptions ? 'inline-block' : 'none';
+            const _mpBtn2 = document.getElementById('managePlansBtn');
+            if (_mpBtn2) _mpBtn2.style.display = window.userPermissions.canManageSubscriptions ? 'inline-block' : 'none';
             // عرض خانة اختيار الطاولة في نقطة البيع
             loadTablesDropdown();
 
@@ -10988,6 +10992,11 @@ const _transferStatusColors = {
 };
 
 async function loadStockTransfers() {
+    if (!_realOnlineStatus) {
+        const c = document.getElementById('transfersTableContainer');
+        if (c) c.innerHTML = '<div style="text-align:center; padding:40px; color:#92400e;"><div style="font-size:48px; margin-bottom:10px;">📴</div><p>غير متصل - لا يمكن تحميل طلبات النقل</p></div>';
+        return;
+    }
     try {
         const statusFilter = document.getElementById('transferStatusFilter')?.value || '';
         const branchFilter = document.getElementById('transferBranchFilter')?.value || '';
@@ -11093,6 +11102,7 @@ async function _loadTransferBranchesFilter() {
 // === إنشاء طلب نقل ===
 
 async function showCreateTransfer() {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     _transferItems = [];
     document.getElementById('transferNotes').value = '';
     document.getElementById('transferProductSearch').value = '';
@@ -11127,6 +11137,7 @@ function closeCreateTransfer() {
 }
 
 async function searchTransferProducts() {
+    if (!_realOnlineStatus) return;
     const query = document.getElementById('transferProductSearch').value.trim();
     const resultsDiv = document.getElementById('transferProductResults');
 
@@ -11227,6 +11238,7 @@ function removeTransferItem(idx) {
 }
 
 async function submitTransferRequest() {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     const fromBranch = document.getElementById('transferFromBranch').value;
     const toBranch = document.getElementById('transferToBranch').value;
     const notes = document.getElementById('transferNotes').value.trim();
@@ -11272,6 +11284,7 @@ async function submitTransferRequest() {
 // === تفاصيل طلب النقل ===
 
 async function viewTransferDetails(transferId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
         const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
         const data = await response.json();
@@ -11385,6 +11398,7 @@ function closeTransferDetails() {
 // === إجراءات Workflow ===
 
 async function approveTransferPrompt(transferId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('هل أنت متأكد من الموافقة على هذا الطلب؟\n\nسيتم خصم الكميات من مخزون الفرع المصدر.')) return;
 
     try {
@@ -11423,6 +11437,7 @@ async function approveTransferPrompt(transferId) {
 }
 
 async function rejectTransferPrompt(transferId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     const reason = prompt('أدخل سبب الرفض:');
     if (reason === null) return;
 
@@ -11452,6 +11467,7 @@ async function rejectTransferPrompt(transferId) {
 }
 
 async function pickupTransferPrompt(transferId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     const driverName = prompt('أدخل اسم السائق:', '');
     if (driverName === null) return;
     if (!driverName.trim()) { alert('يجب إدخال اسم السائق'); return; }
@@ -11481,6 +11497,7 @@ async function pickupTransferPrompt(transferId) {
 }
 
 async function receiveTransferPrompt(transferId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('هل تم استلام البضاعة بالكامل؟\n\nسيتم إضافة الكميات لمخزون فرعك وإكمال الطلب.')) return;
 
     try {
@@ -11519,6 +11536,7 @@ async function receiveTransferPrompt(transferId) {
 }
 
 async function deleteTransferPrompt(transferId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
 
     try {
@@ -11549,6 +11567,11 @@ const _subStatusLabels = { 'active': '✅ فعّال', 'expired': '⏳ منته�
 const _subStatusColors = { 'active': '#28a745', 'expired': '#ffc107', 'cancelled': '#dc3545' };
 
 async function loadSubscriptions() {
+    if (!_realOnlineStatus) {
+        const c = document.getElementById('subscriptionsTableContainer');
+        if (c) c.innerHTML = '<div style="text-align:center; padding:40px; color:#92400e;"><div style="font-size:48px; margin-bottom:10px;">📴</div><p>غير متصل - لا يمكن تحميل الاشتراكات</p></div>';
+        return;
+    }
     try {
         const statusFilter = document.getElementById('subStatusFilter')?.value || '';
         const response = await fetch(`${API_URL}/api/customer-subscriptions?status=${statusFilter}`);
@@ -11685,6 +11708,7 @@ function showSubscriptionDetail(subId) {
 }
 
 async function loadRedemptionHistory(subId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
         const response = await fetch(`${API_URL}/api/subscription-redemptions/${subId}`);
         const data = await response.json();
@@ -11713,6 +11737,8 @@ async function loadRedemptionHistory(subId) {
 // --- فئات الاشتراك ---
 
 async function showManagePlans() {
+    if (!window.userPermissions?.canManageSubscriptions) { alert('ليس لديك صلاحية'); return; }
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     document.getElementById('managePlansModal').classList.add('active');
     _planItems = [];
     renderPlanItems();
@@ -12004,6 +12030,7 @@ function filterByCategory(planId) {
 }
 
 async function savePlan() {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     const name = document.getElementById('planName').value.trim();
     const price = parseFloat(document.getElementById('planPrice').value);
     if (!name || isNaN(price)) { alert('يجب إدخال اسم الفئة والسعر'); return; }
@@ -12042,6 +12069,7 @@ async function savePlan() {
 }
 
 async function togglePlan(planId, currentActive) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
         const plan = _allPlans.find(p => p.id === planId);
         if (!plan) return;
@@ -12056,6 +12084,7 @@ async function togglePlan(planId, currentActive) {
 }
 
 async function deletePlan(planId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('حذف هذه الفئة ومنتجاتها؟')) return;
     try {
         const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, { method: 'DELETE' });
@@ -12068,7 +12097,8 @@ async function deletePlan(planId) {
 // --- إضافة اشتراك ---
 
 async function showAddSubscription() {
-    if (!window.userPermissions.canManageSubscriptions) { alert('ليس لديك صلاحية'); return; }
+    if (!window.userPermissions?.canManageSubscriptions) { alert('ليس لديك صلاحية'); return; }
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
         const [custRes, planRes] = await Promise.all([
             fetch(`${API_URL}/api/customers`),
@@ -12135,6 +12165,7 @@ function generateSubCode() {
 }
 
 async function submitSubscription() {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     const customerId = document.getElementById('subCustomerId').value;
     const planId = document.getElementById('subPlanId').value;
     const code = document.getElementById('subCode').value.trim();
@@ -12166,6 +12197,7 @@ async function submitSubscription() {
 }
 
 async function cancelSubscription(subId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('إلغاء هذا الاشتراك؟')) return;
     try {
         const sub = _allSubscriptions.find(s => s.id === subId);
@@ -12180,6 +12212,7 @@ async function cancelSubscription(subId) {
 }
 
 async function deleteSubscription(subId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('حذف هذا الاشتراك نهائياً؟')) return;
     try {
         const response = await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, { method: 'DELETE' });
@@ -12189,6 +12222,7 @@ async function deleteSubscription(subId) {
 }
 
 async function renewSubscription(subId, customerId, planId) {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('تجديد هذا الاشتراك؟')) return;
     try {
         const sub = _allSubscriptions.find(s => s.id === subId);
@@ -12292,6 +12326,7 @@ function closeRedeemModal() {
 }
 
 async function submitRedemption() {
+    if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     const sub = window._redeemSubscription;
     if (!sub) return;
 
