@@ -30,6 +30,7 @@
         <div class="login-box">
             <div class="login-logo">🛍️</div>
             <h1 class="login-title">نظام نقاط البيع</h1>
+            <div id="loginVersion" style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: -5px; margin-bottom: 8px;"></div>
             <!-- اختيار وضع العرض -->
             <div class="view-mode-selector" id="viewModeSelector">
                 <div class="view-mode-label">اختر وضع العرض</div>
@@ -261,7 +262,7 @@
             </div>
             <div class="header-center">
                 <h1>🛍️ نظام نقاط البيع</h1>
-                <div style="font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 2px;">الإصدار v70</div>
+                <div id="headerVersion" style="font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 2px;"></div>
                 <div id="datetime" style="font-size: 14px; color: #ffffff; margin-top: 5px;"></div>
             </div>
             <div class="header-right">
@@ -2240,7 +2241,7 @@
                                     </label>
                                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 5px 0;">
                                         <input type="checkbox" name="can_manage_subscriptions" style="width: 18px; height: 18px;">
-                                        <span>⚙️ إدارة الاشتراكات والخطط</span>
+                                        <span>⚙️ إدارة الاشتراكات والفئات</span>
                                     </label>
                                 </div>
                             </div>
@@ -2420,10 +2421,13 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
                     <h2>💳 نظام الاشتراكات</h2>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="add-btn" onclick="showManagePlans()" id="managePlansBtn">📋 إدارة الخطط</button>
+                        <button class="add-btn" onclick="showManagePlans()" id="managePlansBtn">📋 إدارة الفئات</button>
                         <button class="add-btn" onclick="showAddSubscription()">➕ اشتراك جديد</button>
                     </div>
                 </div>
+                <!-- داشبورد الفئات -->
+                <div id="subCategoryDashboard" style="margin-bottom: 20px;"></div>
+
                 <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                     <select id="subStatusFilter" onchange="loadSubscriptions()" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <option value="">كل الحالات</option>
@@ -2441,21 +2445,37 @@
     <div class="modal" id="managePlansModal">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
-                <h2>📋 إدارة خطط الاشتراك</h2>
+                <h2>📋 إدارة فئات الاشتراك</h2>
                 <button class="close-btn" onclick="closePlansModal()">✖️</button>
             </div>
             <div class="modal-body">
                 <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-                    <h3 style="margin-bottom: 10px;">➕ إضافة خطة جديدة</h3>
+                    <h3 style="margin-bottom: 10px;">➕ إضافة فئة جديدة</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
-                        <input type="text" id="planName" placeholder="اسم الخطة *" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                        <input type="text" id="planName" placeholder="اسم الفئة *" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <input type="number" id="planDuration" placeholder="المدة (أيام)" value="30" min="1" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <input type="number" id="planPrice" placeholder="السعر *" step="0.001" min="0" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                         <input type="text" id="planDesc" placeholder="الوصف (اختياري)" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                     </div>
-                    <!-- منتجات الخطة -->
+                    <!-- صورة الفئة -->
                     <div style="margin-top: 12px; padding: 12px; background: #fff; border: 2px solid #e0e0e0; border-radius: 8px;">
-                        <h4 style="margin: 0 0 8px 0;">📦 منتجات الخطة</h4>
+                        <h4 style="margin: 0 0 8px 0;">🖼️ صورة الفئة</h4>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: start;">
+                            <div>
+                                <button type="button" onclick="document.getElementById('planImageUpload').click()" class="btn" style="padding:6px 14px; background:#667eea; color:white; border:none; border-radius:6px; cursor:pointer;">📤 رفع صورة</button>
+                                <input type="file" id="planImageUpload" accept="image/*" onchange="handlePlanImageUpload(event)" style="display:none;">
+                                <button type="button" onclick="showPlanTemplates()" class="btn" style="padding:6px 14px; background:#764ba2; color:white; border:none; border-radius:6px; cursor:pointer; margin-right:5px;">🎨 تصميم جاهز</button>
+                            </div>
+                            <div id="planImagePreview" style="width:160px; height:100px; border:2px dashed #ccc; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#fafafa;">
+                                <span style="color:#aaa; font-size:12px;">معاينة الصورة</span>
+                            </div>
+                        </div>
+                        <div id="planTemplatesGrid" style="display:none; margin-top:10px;"></div>
+                        <input type="hidden" id="planImageData" value="">
+                    </div>
+                    <!-- منتجات الفئة -->
+                    <div style="margin-top: 12px; padding: 12px; background: #fff; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <h4 style="margin: 0 0 8px 0;">📦 منتجات الفئة</h4>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: end;">
                             <select id="planProductSelect" style="flex: 2; min-width: 200px; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px;">
                                 <option value="">-- اختر منتج --</option>
@@ -2465,7 +2485,7 @@
                         </div>
                         <div id="planItemsList" style="margin-top: 10px;"></div>
                     </div>
-                    <button onclick="savePlan()" class="add-btn" style="margin-top: 10px;">💾 حفظ الخطة</button>
+                    <button onclick="savePlan()" class="add-btn" style="margin-top: 10px;">💾 حفظ الفئة</button>
                 </div>
                 <div id="plansListContainer"></div>
             </div>
@@ -2488,9 +2508,9 @@
                         </select>
                     </div>
                     <div>
-                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">خطة الاشتراك *</label>
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">فئة الاشتراك *</label>
                         <select id="subPlanId" onchange="onPlanSelect()" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;" required>
-                            <option value="">-- اختر الخطة --</option>
+                            <option value="">-- اختر الفئة --</option>
                         </select>
                     </div>
                     <div id="subPlanInfo" style="display: none; background: #f0f9ff; padding: 12px; border-radius: 8px; border: 2px solid #bae6fd;">
