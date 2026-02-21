@@ -1764,28 +1764,42 @@ def add_branch_stock():
         cursor = conn.cursor()
 
         variant_id = data.get('variant_id')
-        notes = data.get('notes', '')
+        notes = data.get('notes', '').strip()
+        added_stock = data.get('stock', 0)
+
+        # بناء سطر الملاحظة مع التاريخ والكمية
+        from datetime import datetime
+        note_entry = ''
+        if notes:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M')
+            note_entry = f"[{now}] +{added_stock}: {notes}"
 
         # التحقق من وجود التوزيع (مع variant_id)
         if variant_id:
             cursor.execute('''
-                SELECT id, stock FROM branch_stock
+                SELECT id, stock, notes FROM branch_stock
                 WHERE inventory_id = ? AND branch_id = ? AND variant_id = ?
             ''', (data.get('inventory_id'), data.get('branch_id'), variant_id))
         else:
             cursor.execute('''
-                SELECT id, stock FROM branch_stock
+                SELECT id, stock, notes FROM branch_stock
                 WHERE inventory_id = ? AND branch_id = ? AND (variant_id IS NULL OR variant_id = 0)
             ''', (data.get('inventory_id'), data.get('branch_id')))
 
         existing = cursor.fetchone()
 
         if existing:
-            new_stock = existing['stock'] + data.get('stock', 0)
+            new_stock = existing['stock'] + added_stock
+            # إلحاق الملاحظة الجديدة بالقديمة
+            old_notes = existing['notes'] or ''
+            if note_entry:
+                combined_notes = (old_notes + '\n' + note_entry).strip() if old_notes else note_entry
+            else:
+                combined_notes = old_notes
             cursor.execute('''
                 UPDATE branch_stock SET stock = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            ''', (new_stock, notes, existing['id']))
+            ''', (new_stock, combined_notes, existing['id']))
             stock_id = existing['id']
         else:
             cursor.execute('''
@@ -1795,8 +1809,8 @@ def add_branch_stock():
                 data.get('inventory_id'),
                 data.get('branch_id'),
                 variant_id,
-                data.get('stock', 0),
-                notes
+                added_stock,
+                note_entry
             ))
             stock_id = cursor.lastrowid
 

@@ -3801,7 +3801,7 @@ async function loadCurrentDistributions(inventoryId) {
                         <td>🏢 ${branchName}</td>
                         <td>${variantLabel}</td>
                         <td><strong>${s.stock}</strong></td>
-                        <td>${s.notes ? escHTML(s.notes) : '<span style="color:#999;">-</span>'}</td>
+                        <td style="max-width:250px;">${s.notes ? `<div style="font-size:11px; line-height:1.6; max-height:80px; overflow-y:auto; white-space:pre-line; background:#f8f9fa; padding:5px 8px; border-radius:6px; border:1px solid #e0e0e0;">${escHTML(s.notes)}</div>` : '<span style="color:#999;">-</span>'}</td>
                         <td>
                             <button onclick="editDistribution(${s.id}, ${s.stock})" class="btn-sm">✏️ تعديل</button>
                             <button onclick="deleteDistribution(${s.id})" class="btn-sm btn-danger">🗑️ حذف</button>
