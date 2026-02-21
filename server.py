@@ -863,7 +863,6 @@ def create_tenant_database(slug):
             quantity_received INTEGER DEFAULT 0,
             FOREIGN KEY (transfer_id) REFERENCES stock_transfers(id) ON DELETE CASCADE
         );
-    ''')
 
         CREATE TABLE IF NOT EXISTS subscription_plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
