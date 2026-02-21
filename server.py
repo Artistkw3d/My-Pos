@@ -7445,23 +7445,33 @@ def get_subscription_redemptions(subscription_id):
 
 @app.route('/api/version', methods=['GET'])
 def get_version():
-    """جلب رقم الإصدار من Git"""
-    try:
-        result = subprocess.run(['git', 'rev-list', '--count', 'HEAD'],
-                                capture_output=True, text=True, timeout=5,
-                                cwd=os.path.dirname(os.path.abspath(__file__)))
-        commit_count = result.stdout.strip() if result.returncode == 0 else '0'
-        short_hash = ''
+    """جلب رقم الإصدار"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    version = '0'
+    # أولاً: قراءة ملف VERSION
+    version_file = os.path.join(base_dir, 'VERSION')
+    if os.path.exists(version_file):
         try:
-            h = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'],
-                               capture_output=True, text=True, timeout=5,
-                               cwd=os.path.dirname(os.path.abspath(__file__)))
-            short_hash = h.stdout.strip() if h.returncode == 0 else ''
+            with open(version_file, 'r') as f:
+                version = f.read().strip()
         except:
             pass
-        return jsonify({'success': True, 'version': commit_count, 'hash': short_hash})
-    except:
-        return jsonify({'success': True, 'version': '0', 'hash': ''})
+    # ثانياً: محاولة Git إذا لم يوجد ملف أو كان صفر
+    if version == '0':
+        try:
+            result = subprocess.run(['git', 'rev-list', '--count', 'HEAD'],
+                                    capture_output=True, text=True, timeout=5, cwd=base_dir)
+            if result.returncode == 0 and result.stdout.strip():
+                version = result.stdout.strip()
+                # تحديث ملف VERSION
+                try:
+                    with open(version_file, 'w') as f:
+                        f.write(version)
+                except:
+                    pass
+        except:
+            pass
+    return jsonify({'success': True, 'version': version})
 
 
 if __name__ == '__main__':
