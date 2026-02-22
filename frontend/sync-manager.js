@@ -95,15 +95,19 @@ class SyncManager {
                     const result = await response.json();
 
                     if (result.success) {
-                        // حذف من المعلقة
+                        // حذف من المعلقة (سواء كانت جديدة أو مكررة)
                         await localDB.delete('pending_invoices', invoice.local_id);
-                        
+
                         // حذف من local_invoices
-                        if (invoice.data.id) {
+                        if (invoice.data && invoice.data.id) {
                             await localDB.delete('local_invoices', invoice.data.id);
                         }
-                        
-                        console.log(`[Sync] Uploaded invoice ${invoice.local_id}`);
+
+                        if (result.duplicate) {
+                            console.log(`[Sync] Duplicate invoice removed: ${invoice.local_id}`);
+                        } else {
+                            console.log(`[Sync] Uploaded invoice ${invoice.local_id}`);
+                        }
                     }
                 } catch (error) {
                     console.error(`[Sync] Failed to upload invoice:`, error);
