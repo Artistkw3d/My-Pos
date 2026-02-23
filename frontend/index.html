@@ -268,6 +268,7 @@
             <div class="header-right">
                 <span class="user-info" id="userInfo"></span>
                 <button class="logout-btn" id="logoutBtn" onclick="if(!navigator.onLine || typeof _htmlOnlineStatus!=='undefined'&&!_htmlOnlineStatus || typeof _realOnlineStatus!=='undefined'&&!_realOnlineStatus){return false;}logout()">خروج</button>
+                <button class="emergency-logout-btn" id="emergencyLogoutBtn" onclick="emergencyLogout()" title="خروج طوارئ - يعمل بدون اتصال">⚠️</button>
             </div>
         </div>
 
@@ -1365,6 +1366,48 @@
                     <button onclick="saveSettings()" class="btn">حفظ</button>
                 </div>
 
+                <!-- إعدادات وضع التزامن -->
+                <div style="max-width: 600px; margin-top: 30px;">
+                    <h3 style="color: #0ea5e9; margin-bottom: 15px;">🔄 إعدادات التزامن</h3>
+                    <div style="background: #f0f4ff; padding: 20px; border-radius: 12px; border: 2px solid #667eea;">
+                        <div class="form-group">
+                            <label>وضع التشغيل:</label>
+                            <select id="syncModeSelect" onchange="onSyncModeChange()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                <option value="local">محلي بالكامل - بدون سيرفر خارجي</option>
+                                <option value="server">تزامن مع سيرفر خارجي</option>
+                            </select>
+                            <p style="font-size: 12px; color: #666; margin-top: 5px;">المحلي: كل البيانات تبقى في جهازك فقط | السيرفر: تزامن البيانات مع سيرفر مركزي</p>
+                        </div>
+
+                        <!-- إعدادات السيرفر - تظهر فقط عند اختيار وضع السيرفر -->
+                        <div id="serverSyncSettings" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 2px solid #e2e8f0;">
+                            <div class="form-group">
+                                <label>عنوان السيرفر:</label>
+                                <select id="syncServerPreset" onchange="onSyncServerPresetChange()" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%;">
+                                    <option value="">-- اختر سيرفر --</option>
+                                    <option value="https://pos.example.com">pos.example.com (رئيسي)</option>
+                                    <option value="custom">إدخال عنوان مخصص...</option>
+                                </select>
+                            </div>
+                            <div id="customServerUrlGroup" class="form-group" style="display: none;">
+                                <label>عنوان مخصص:</label>
+                                <input type="url" id="syncCustomServerUrl" placeholder="https://my-server.com" style="padding: 10px; border: 2px solid #cbd5e0; border-radius: 6px; width: 100%; direction: ltr; text-align: left;">
+                                <p style="font-size: 12px; color: #666; margin-top: 5px;">أدخل العنوان الكامل مع https://</p>
+                            </div>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                                <button onclick="saveSyncModeSettings()" class="btn" style="background: #667eea;">💾 حفظ إعدادات التزامن</button>
+                                <button onclick="testSyncServer()" class="btn" style="background: #06b6d4;">🔌 اختبار الاتصال</button>
+                            </div>
+                            <div id="syncServerTestResult" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
+                        </div>
+
+                        <!-- حالة الوضع الحالي -->
+                        <div id="syncModeStatus" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #e6fffa; border: 1px solid #81e6d9;">
+                            <span id="syncModeStatusText" style="font-size: 13px; color: #2d3748;">الوضع الحالي: محلي بالكامل</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- إعدادات تنبيه المخزون المنخفض -->
                 <div style="max-width: 600px; margin-top: 30px;">
                     <h3 style="color: #e53e3e; margin-bottom: 15px;">📦 إعدادات تنبيه المخزون</h3>
@@ -1566,9 +1609,74 @@
         <!-- Admin Dashboard Tab -->
         <div class="tab-content" id="admindashboardTab" style="display: none;">
             <div style="padding: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-                    <h2 style="margin: 0; color: #1a202c;">📊 شاشة الأدمن - مراقبة الشركة</h2>
-                    <button onclick="loadAdminDashboard()" class="btn" style="background: #667eea; padding: 10px 20px; border-radius: 8px; color: white; border: none; cursor: pointer;">🔄 تحديث البيانات</button>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 10px;">
+                    <h2 style="margin: 0; color: #1a202c;">شاشة الأدمن - مراقبة الشركة</h2>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button onclick="loadAdminDashboard()" class="btn" style="background: #667eea; padding: 10px 20px; border-radius: 8px; color: white; border: none; cursor: pointer;">تحديث البيانات</button>
+                    </div>
+                </div>
+
+                <!-- قسم المزامنة - للأدمن فقط -->
+                <div id="syncSection" style="background: linear-gradient(135deg, #1e293b, #334155); border-radius: 16px; padding: 25px; margin-bottom: 25px; color: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <h3 style="margin: 0 0 5px; font-size: 18px;">مركز المزامنة</h3>
+                            <p id="syncStatusText" style="margin: 0; font-size: 13px; opacity: 0.8;">لم يتم المزامنة بعد</p>
+                            <p id="syncProgressText" style="margin: 4px 0 0; font-size: 12px; opacity: 0.7;"></p>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button id="manualSyncBtn" onclick="manualSync()" style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all 0.3s;">مزامنة يدوية</button>
+                            <button id="fullSyncBtn" onclick="fullSync()" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: bold;">مزامنة كاملة</button>
+                        </div>
+                    </div>
+
+                    <!-- إحصائيات المزامنة -->
+                    <div id="syncStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold;" id="syncStatPendingInv">0</div>
+                            <div style="font-size: 12px; opacity: 0.8;">فواتير معلقة</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold;" id="syncStatPendingCust">0</div>
+                            <div style="font-size: 12px; opacity: 0.8;">عملاء معلقين</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold;" id="syncStatProducts">0</div>
+                            <div style="font-size: 12px; opacity: 0.8;">منتج محلي</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold;" id="syncStatCustomers">0</div>
+                            <div style="font-size: 12px; opacity: 0.8;">عميل محلي</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold;" id="syncStatLocalInv">0</div>
+                            <div style="font-size: 12px; opacity: 0.8;">فاتورة محلية</div>
+                        </div>
+                    </div>
+
+                    <!-- سجل المزامنة -->
+                    <div style="margin-top: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleSyncLog()">
+                            <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">سجل المزامنة</h4>
+                            <span id="syncLogToggle" style="font-size: 12px; opacity: 0.7;">عرض</span>
+                        </div>
+                        <div id="syncLogContainer" style="display: none; margin-top: 10px; max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px;">
+                            <div id="syncLogList" style="font-size: 12px; opacity: 0.8;">لا يوجد سجلات</div>
+                        </div>
+                    </div>
+
+                    <!-- وضع التزامن الحالي -->
+                    <div style="margin-top: 15px; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px;">
+                        <h4 style="margin: 0 0 10px; font-size: 14px;">وضع التزامن</h4>
+                        <div id="adminSyncModeInfo" style="font-size: 13px; opacity: 0.9; margin-bottom: 10px;">محلي بالكامل</div>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <input type="text" id="serverUrlInput" placeholder="رابط السيرفر (مثال: https://pos.example.com)" value="" style="flex: 1; min-width: 200px; padding: 10px; border-radius: 8px; border: none; font-size: 13px; direction: ltr;">
+                            <button onclick="saveServerUrl()" style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 13px;">حفظ</button>
+                            <button onclick="testServerConnection()" style="background: #06b6d4; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 13px;">اختبار الاتصال</button>
+                        </div>
+                        <p style="font-size: 11px; opacity: 0.6; margin-top: 8px;">لتغيير وضع التزامن (محلي/سيرفر) اذهب إلى الإعدادات</p>
+                        <div id="serverTestResult" style="margin-top: 8px; font-size: 12px; opacity: 0.8;"></div>
+                    </div>
                 </div>
 
                 <!-- إحصائيات عامة -->
@@ -1576,7 +1684,7 @@
 
                 <!-- ملخص الفواتير لكل فرع -->
                 <div style="background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px; margin-bottom: 25px;">
-                    <h3 style="margin: 0 0 20px; color: #2d3748; font-size: 18px;">🧾 الفواتير حسب الفروع</h3>
+                    <h3 style="margin: 0 0 20px; color: #2d3748; font-size: 18px;">الفواتير حسب الفروع</h3>
                     <div id="adminDashInvoicesTable" style="overflow-x: auto;">
                         <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
                     </div>
@@ -1585,8 +1693,8 @@
                 <!-- ملخص المخزون لكل فرع -->
                 <div style="background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h3 style="margin: 0; color: #2d3748; font-size: 18px;">📦 المخزون حسب الفروع</h3>
-                        <input type="text" id="adminDashStockSearch" placeholder="🔍 ابحث عن منتج..." oninput="filterAdminDashStock()" style="padding: 8px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; width: 250px;">
+                        <h3 style="margin: 0; color: #2d3748; font-size: 18px;">المخزون حسب الفروع</h3>
+                        <input type="text" id="adminDashStockSearch" placeholder="ابحث عن منتج..." oninput="filterAdminDashStock()" style="padding: 8px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; width: 250px;">
                     </div>
                     <div id="adminDashStockTable" style="overflow-x: auto;">
                         <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
@@ -1595,7 +1703,7 @@
 
                 <!-- أداء الشفتات -->
                 <div style="background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px; margin-top: 25px;">
-                    <h3 style="margin: 0 0 20px; color: #2d3748; font-size: 18px;">🕐 أداء الشفتات</h3>
+                    <h3 style="margin: 0 0 20px; color: #2d3748; font-size: 18px;">أداء الشفتات</h3>
                     <div id="adminDashShiftPerformance" style="overflow-x: auto;">
                         <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
                     </div>
@@ -3093,6 +3201,7 @@
 
     function _lockLogout(lock) {
         const btn = document.getElementById('logoutBtn');
+        const emergencyBtn = document.getElementById('emergencyLogoutBtn');
         if (!btn) return;
         if (lock) {
             btn.disabled = true;
@@ -3103,6 +3212,7 @@
             btn.style.textDecoration = 'line-through';
             btn.setAttribute('aria-disabled', 'true');
             btn.title = 'ممنوع - لا يمكن تسجيل الخروج بدون اتصال';
+            if (emergencyBtn) emergencyBtn.classList.add('visible');
         } else {
             btn.disabled = false;
             btn.classList.remove('offline-locked');
@@ -3112,6 +3222,7 @@
             btn.style.textDecoration = '';
             btn.removeAttribute('aria-disabled');
             btn.title = '';
+            if (emergencyBtn) emergencyBtn.classList.remove('visible');
         }
     }
 
@@ -3135,11 +3246,12 @@
     document.addEventListener('DOMContentLoaded', _checkReal);
     setTimeout(_checkReal, 1000);
 
-    // اعتراض أي نقرة على زر الخروج في وضع أوفلاين
+    // اعتراض أي نقرة على زر الخروج في وضع أوفلاين (ما عدا زر الطوارئ)
     document.addEventListener('click', function(e) {
         if (!_htmlOnlineStatus || !navigator.onLine) {
             const btn = e.target.closest('#logoutBtn, .logout-btn');
-            if (btn) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return false; }
+            const isEmergency = e.target.closest('#emergencyLogoutBtn, .emergency-logout-btn');
+            if (btn && !isEmergency) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return false; }
         }
     }, true);
     </script>
