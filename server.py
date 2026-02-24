@@ -21,9 +21,9 @@ import json
 import re
 import hashlib
 
-from database.schema import create_all_tables, create_indexes, insert_default_settings, insert_default_branch
-from database.master import init_master_db as _init_master_db
-from database.migrate import migrate_database as _migrate_database
+from db_modules.schema import create_all_tables, create_indexes, insert_default_settings, insert_default_branch
+from db_modules.master import init_master_db as _init_master_db
+from db_modules.migrate import migrate_database as _migrate_database
 
 app = Flask(__name__, static_folder='frontend')
 CORS(app)

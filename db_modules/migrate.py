@@ -6,7 +6,7 @@ and fixes old data inconsistencies.
 """
 
 import sqlite3
-from database.schema import create_all_tables, DEFAULT_SETTINGS_MIGRATE
+from db_modules.schema import create_all_tables, DEFAULT_SETTINGS_MIGRATE
 
 
 def migrate_database(db_path):

@@ -15,6 +15,7 @@ COPY server.py .
 COPY setup_database.py .
 COPY frontend/ ./frontend/
 COPY database/ ./database/
+COPY db_modules/ ./db_modules/
 
 # إنشاء مجلد للنسخ الاحتياطية
 RUN mkdir -p /app/database/backups
