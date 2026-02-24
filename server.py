@@ -3130,6 +3130,39 @@ def get_supplier_invoice_file(invoice_id):
 
 # ===== نظام Multi-Tenancy API =====
 
+@app.route('/api/tenant/check-status', methods=['GET'])
+def tenant_check_status():
+    """التحقق من حالة المستأجر - يستخدم من Electron أثناء تسجيل الدخول"""
+    try:
+        slug = request.args.get('slug', '').strip()
+        if not slug:
+            return jsonify({'success': False, 'error': 'معرف المتجر مطلوب'}), 400
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, is_active, expires_at FROM tenants WHERE slug = ?', (slug,))
+        tenant = cursor.fetchone()
+        conn.close()
+        if not tenant:
+            return jsonify({'success': False, 'error': 'معرف المتجر غير صحيح'})
+        is_active = bool(tenant['is_active'])
+        expires_at = tenant['expires_at']
+        if is_active and expires_at:
+            try:
+                from datetime import date
+                expiry = date.fromisoformat(expires_at[:10])
+                if date.today() > expiry:
+                    is_active = False
+            except Exception:
+                pass
+        return jsonify({
+            'success': True,
+            'is_active': is_active,
+            'expires_at': expires_at[:10] if expires_at else None,
+            'name': tenant['name']
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/super-admin/login', methods=['POST'])
 def super_admin_login():
     """تسجيل دخول المدير الأعلى"""
