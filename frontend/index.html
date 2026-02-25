@@ -31,10 +31,29 @@
         </div>
     </div>
 
+    <!-- Server Setup (first-time) -->
+    <div class="login-overlay" id="serverSetupOverlay" style="display:none;">
+        <div class="login-box">
+            <div class="login-logo"><img src="icon-192.png" style="width: 100px; height: 100px; border-radius: 20px; object-fit: cover;"></div>
+            <h1 class="login-title">إعداد الخادم</h1>
+            <p style="text-align:center; color:#666; margin-bottom:18px; font-size:14px;">أدخل عنوان خادم Flask للمزامنة وإدارة المتاجر</p>
+            <div class="login-form-group">
+                <label>عنوان الخادم (Server URL)</label>
+                <input type="text" id="setupServerUrl" placeholder="http://192.168.1.5:5000" style="direction:ltr; text-align:center; font-size:16px;">
+            </div>
+            <div id="setupTestResult" style="min-height:28px; text-align:center; font-size:13px; margin-bottom:8px;"></div>
+            <button type="button" class="login-btn" style="background:#3b82f6; margin-bottom:10px;" onclick="testSetupConnection()">اختبار الاتصال</button>
+            <button type="button" class="login-btn" onclick="saveServerSetup()">حفظ والمتابعة</button>
+            <div style="text-align:center; margin-top:14px;">
+                <a href="#" onclick="skipServerSetup(); return false;" style="color:#999; font-size:13px; text-decoration:underline;">تخطي (استخدام محلي فقط)</a>
+            </div>
+        </div>
+    </div>
+
     <!-- Login -->
     <div class="login-overlay" id="loginOverlay">
         <div class="login-box">
-            <div class="login-logo">🛍️</div>
+            <div class="login-logo"><img src="icon-192.png" style="width: 100px; height: 100px; border-radius: 20px; object-fit: cover;"></div>
             <h1 class="login-title">نظام نقاط البيع</h1>
             <div id="loginVersion" style="font-size: 12px; color: #333; margin-top: -5px; margin-bottom: 8px; font-weight: 500;"></div>
             <!-- اختيار وضع العرض -->
@@ -273,8 +292,7 @@
             </div>
             <div class="header-right">
                 <span class="user-info" id="userInfo"></span>
-                <button class="logout-btn" id="logoutBtn" onclick="if(!navigator.onLine || typeof _htmlOnlineStatus!=='undefined'&&!_htmlOnlineStatus || typeof _realOnlineStatus!=='undefined'&&!_realOnlineStatus){return false;}logout()">خروج</button>
-                <button class="emergency-logout-btn" id="emergencyLogoutBtn" onclick="emergencyLogout()" title="خروج طوارئ - يعمل بدون اتصال">⚠️</button>
+                <button class="logout-btn" id="logoutBtn" onclick="logout()">خروج</button>
             </div>
         </div>
 
@@ -1403,8 +1421,28 @@
                             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
                                 <button onclick="saveSyncModeSettings()" class="btn" style="background: #667eea;">💾 حفظ إعدادات التزامن</button>
                                 <button onclick="testSyncServer()" class="btn" style="background: #06b6d4;">🔌 اختبار الاتصال</button>
+                                <button id="syncNowSettingsBtn" onclick="syncNowFromSettings()" class="btn" style="background: #38a169;">🔄 مزامنة الآن</button>
                             </div>
                             <div id="syncServerTestResult" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
+                            <div id="syncNowResult" style="margin-top: 10px; padding: 12px; border-radius: 8px; display: none; font-size: 13px;"></div>
+                        </div>
+
+                        <!-- إعدادات المزامنة التلقائية -->
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #e2e8f0;">
+                            <div class="form-group" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <label style="margin: 0; white-space: nowrap;">⏱️ المزامنة التلقائية كل:</label>
+                                <select id="autoSyncIntervalSelect" onchange="saveAutoSyncInterval()" style="padding: 8px; border: 2px solid #cbd5e0; border-radius: 6px; width: auto;">
+                                    <option value="1">1 دقيقة</option>
+                                    <option value="2">2 دقيقة</option>
+                                    <option value="3">3 دقائق</option>
+                                    <option value="5" selected>5 دقائق</option>
+                                    <option value="10">10 دقائق</option>
+                                    <option value="15">15 دقيقة</option>
+                                    <option value="30">30 دقيقة</option>
+                                    <option value="60">60 دقيقة</option>
+                                </select>
+                                <span id="autoSyncNextRun" style="font-size: 12px; color: #666;"></span>
+                            </div>
                         </div>
 
                         <!-- حالة الوضع الحالي -->
@@ -3202,64 +3240,6 @@
         _lockLogout(true);
     });
 
-    // === حماية زر الخروج مباشرة في HTML (تعمل حتى لو app.js قديم) ===
-    let _htmlOnlineStatus = navigator.onLine;
-
-    function _lockLogout(lock) {
-        const btn = document.getElementById('logoutBtn');
-        const emergencyBtn = document.getElementById('emergencyLogoutBtn');
-        if (!btn) return;
-        if (lock) {
-            btn.disabled = true;
-            btn.classList.add('offline-locked');
-            btn.style.pointerEvents = 'none';
-            btn.style.opacity = '0.3';
-            btn.style.background = 'rgba(150,150,150,0.5)';
-            btn.style.textDecoration = 'line-through';
-            btn.setAttribute('aria-disabled', 'true');
-            btn.title = 'ممنوع - لا يمكن تسجيل الخروج بدون اتصال';
-            if (emergencyBtn) emergencyBtn.classList.add('visible');
-        } else {
-            btn.disabled = false;
-            btn.classList.remove('offline-locked');
-            btn.style.pointerEvents = '';
-            btn.style.opacity = '';
-            btn.style.background = '';
-            btn.style.textDecoration = '';
-            btn.removeAttribute('aria-disabled');
-            btn.title = '';
-            if (emergencyBtn) emergencyBtn.classList.remove('visible');
-        }
-    }
-
-    // فحص الاتصال الحقيقي بالسيرفر (navigator.onLine غير موثوق)
-    async function _checkReal() {
-        try {
-            const c = new AbortController();
-            const t = setTimeout(() => c.abort(), 3000);
-            const r = await fetch('/api/settings?_ping=1', { method: 'GET', cache: 'no-store', signal: c.signal });
-            clearTimeout(t);
-            _htmlOnlineStatus = r.ok;
-        } catch(e) {
-            _htmlOnlineStatus = false;
-        }
-        _lockLogout(!_htmlOnlineStatus);
-    }
-
-    // فحص دوري كل 5 ثواني بالـ ping الحقيقي
-    setInterval(_checkReal, 5000);
-    // فحص فوري عند تحميل الصفحة
-    document.addEventListener('DOMContentLoaded', _checkReal);
-    setTimeout(_checkReal, 1000);
-
-    // اعتراض أي نقرة على زر الخروج في وضع أوفلاين (ما عدا زر الطوارئ)
-    document.addEventListener('click', function(e) {
-        if (!_htmlOnlineStatus || !navigator.onLine) {
-            const btn = e.target.closest('#logoutBtn, .logout-btn');
-            const isEmergency = e.target.closest('#emergencyLogoutBtn, .emergency-logout-btn');
-            if (btn && !isEmergency) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return false; }
-        }
-    }, true);
     </script>
     
     <!-- Variant Selection Modal for POS -->
