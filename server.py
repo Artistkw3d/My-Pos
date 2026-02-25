@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 import json
 import re
 import hashlib
+import jwt
 
 from db_modules.schema import create_all_tables, create_indexes, insert_default_settings, insert_default_branch
 from db_modules.master import init_master_db as _init_master_db
@@ -27,6 +28,10 @@ from db_modules.migrate import migrate_database as _migrate_database
 
 app = Flask(__name__, static_folder='frontend')
 CORS(app)
+
+# === License enforcement constants ===
+LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET', 'pos-offline-license-secret-v1')
+LICENSE_GRACE_DAYS = 7
 
 # إعدادات قواعد البيانات
 _base_db_dir = os.path.dirname(os.environ['DB_PATH']) if os.environ.get('DB_PATH') else 'database'
@@ -247,6 +252,27 @@ def ensure_user_permission_columns(cursor):
 def add_user():
     """إضافة مستخدم جديد"""
     try:
+        # License enforcement: check max_users
+        tenant_slug = get_tenant_slug()
+        if tenant_slug:
+            try:
+                m_conn = get_master_db()
+                m_cursor = m_conn.cursor()
+                m_cursor.execute('SELECT max_users FROM tenants WHERE slug = ?', (tenant_slug,))
+                t_row = m_cursor.fetchone()
+                m_conn.close()
+                if t_row:
+                    max_users = t_row['max_users'] or 999
+                    conn_check = get_db()
+                    cur_check = conn_check.cursor()
+                    cur_check.execute('SELECT COUNT(*) as c FROM users WHERE is_active = 1')
+                    active_count = cur_check.fetchone()['c']
+                    conn_check.close()
+                    if active_count >= max_users:
+                        return jsonify({'success': False, 'error': f'تم الوصول للحد الأقصى من المستخدمين ({max_users}). قم بترقية الاشتراك لإضافة المزيد.'}), 403
+            except Exception:
+                pass  # If master.db unavailable, allow (offline-first)
+
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
@@ -1923,6 +1949,27 @@ def get_branches():
 def add_branch():
     """إضافة فرع جديد"""
     try:
+        # License enforcement: check max_branches
+        tenant_slug = get_tenant_slug()
+        if tenant_slug:
+            try:
+                m_conn = get_master_db()
+                m_cursor = m_conn.cursor()
+                m_cursor.execute('SELECT max_branches FROM tenants WHERE slug = ?', (tenant_slug,))
+                t_row = m_cursor.fetchone()
+                m_conn.close()
+                if t_row:
+                    max_branches = t_row['max_branches'] or 999
+                    conn_check = get_db()
+                    cur_check = conn_check.cursor()
+                    cur_check.execute('SELECT COUNT(*) as c FROM branches WHERE is_active = 1')
+                    active_count = cur_check.fetchone()['c']
+                    conn_check.close()
+                    if active_count >= max_branches:
+                        return jsonify({'success': False, 'error': f'تم الوصول للحد الأقصى من الفروع ({max_branches}). قم بترقية الاشتراك لإضافة المزيد.'}), 403
+            except Exception:
+                pass  # If master.db unavailable, allow (offline-first)
+
         data = request.json
         conn = get_db()
         cursor = conn.cursor()
@@ -3125,6 +3172,81 @@ def get_supplier_invoice_file(invoice_id):
         if row:
             return jsonify({'success': True, 'file_data': row['file_data'], 'file_name': row['file_name'], 'file_type': row['file_type']})
         return jsonify({'success': False, 'error': 'الملف غير موجود'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ===== License Token Endpoints =====
+
+@app.route('/api/license/token', methods=['GET'])
+def generate_license_token():
+    """إنشاء رمز ترخيص JWT للمستأجر"""
+    try:
+        slug = request.args.get('slug', '').strip()
+        if not slug:
+            return jsonify({'success': False, 'error': 'slug مطلوب'}), 400
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tenants WHERE slug = ?', (slug,))
+        tenant = cursor.fetchone()
+        conn.close()
+        if not tenant:
+            return jsonify({'success': False, 'error': 'المستأجر غير موجود'}), 404
+        t = dict_from_row(tenant)
+        now = int(time.time())
+        payload = {
+            'sub': slug,
+            'max_branches': t.get('max_branches', 3),
+            'max_users': t.get('max_users', 5),
+            'is_active': t.get('is_active', 1),
+            'plan': t.get('plan', 'basic'),
+            'tenant_expires_at': t.get('expires_at', ''),
+            'iat': now,
+            'exp': now + (LICENSE_GRACE_DAYS * 86400),
+            'iss': 'pos-offline-flask'
+        }
+        token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
+        return jsonify({'success': True, 'token': token})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/license/refresh-token', methods=['GET'])
+def refresh_license_token():
+    """تجديد رمز الترخيص للمستأجر الحالي وحفظه في إعداداته"""
+    try:
+        slug = get_tenant_slug()
+        if not slug:
+            return jsonify({'success': False, 'error': 'لا يوجد معرف مستأجر'}), 400
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM tenants WHERE slug = ?', (slug,))
+        tenant = cursor.fetchone()
+        conn.close()
+        if not tenant:
+            return jsonify({'success': False, 'error': 'المستأجر غير موجود'}), 404
+        t = dict_from_row(tenant)
+        now = int(time.time())
+        payload = {
+            'sub': slug,
+            'max_branches': t.get('max_branches', 3),
+            'max_users': t.get('max_users', 5),
+            'is_active': t.get('is_active', 1),
+            'plan': t.get('plan', 'basic'),
+            'tenant_expires_at': t.get('expires_at', ''),
+            'iat': now,
+            'exp': now + (LICENSE_GRACE_DAYS * 86400),
+            'iss': 'pos-offline-flask'
+        }
+        token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
+        # Store token in tenant's settings table
+        try:
+            tenant_db = get_db()
+            tc = tenant_db.cursor()
+            tc.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('license_token', ?)", (token,))
+            tenant_db.commit()
+            tenant_db.close()
+        except Exception:
+            pass
+        return jsonify({'success': True, 'token': token})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

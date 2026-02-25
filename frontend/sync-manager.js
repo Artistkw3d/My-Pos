@@ -8,7 +8,7 @@ class SyncManager {
         this.isSyncing = false;
         this.lastSync = null;
         this.autoSyncInterval = null;
-        this.syncProgress = { total: 0, done: 0, step: '' };
+        this.syncProgress = { total: 1, done: 0, step: '' };
         this.serverUrl = null; // عنوان السيرفر البعيد (null = محلي)
         this._loadSyncMode();
     }
@@ -103,7 +103,13 @@ class SyncManager {
         };
 
         try {
-            // 1. رفع الفواتير المعلقة
+            // 1. Refresh license token
+            this.syncProgress.step = 'تجديد الترخيص...';
+            this.updateProgressUI();
+            await this.refreshLicenseToken();
+            this.syncProgress.done = 1;
+
+                        // 1. رفع الفواتير المعلقة
             this.syncProgress.step = 'رفع الفواتير...';
             this.updateProgressUI();
             const uploadResult = await this.uploadPendingData();
