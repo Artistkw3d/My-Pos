@@ -6,7 +6,7 @@ services:
     expose:
       - "5000"
     volumes:
-      - pos-data:/app/database
+      - /root/data/pos:/app/database
     environment:
       - TZ=Asia/Kuwait
     logging:
@@ -16,9 +16,6 @@ services:
         max-file: "3"
     networks:
       - nginx-proxy
-
-volumes:
-  pos-data:
 
 networks:
   nginx-proxy:
