@@ -1,4 +1,15 @@
-const API_URL = window.location.protocol === 'file:' ? 'http://localhost:5050' : window.location.origin;
+const API_URL = (function() {
+    // Capacitor: no local backend, use remote server
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        return localStorage.getItem('pos_server_url') || 'https://my-pos.org';
+    }
+    // Electron file:// protocol: use local Express server
+    if (window.location.protocol === 'file:') {
+        return 'http://localhost:5050';
+    }
+    // Web/Docker: use current origin
+    return window.location.origin;
+})();
 
 // === دالة حماية من XSS - تنظيف النصوص قبل إدراجها في HTML ===
 function escHTML(str) {
@@ -36,7 +47,6 @@ setInterval(async () => {
     await checkRealConnection();
     // عند تغيير الحالة
     if (wasOnline !== _realOnlineStatus) {
-        if (typeof _lockLogout === 'function') _lockLogout(!_realOnlineStatus);
         if (typeof updateLogoutButton === 'function') updateLogoutButton();
         // عند العودة أونلاين - مزامنة فورية!
         if (_realOnlineStatus && !wasOnline) {
@@ -72,6 +82,7 @@ function checkLicenseGracePeriod() {
 
     const expStr = localStorage.getItem('pos_license_exp');
     if (!expStr) {
+        // No token yet (first use) - no warning
         banner.style.display = 'none';
         return;
     }
@@ -87,11 +98,13 @@ function checkLicenseGracePeriod() {
     const daysLeft = remaining / 86400;
 
     if (remaining <= 0) {
+        // Token expired
         banner.style.display = 'block';
         banner.style.background = '#e74c3c';
         banner.style.color = '#fff';
         text.textContent = '⛔ انتهت صلاحية الترخيص! يرجى الاتصال بالخادم الرئيسي لتجديد الترخيص.';
     } else if (daysLeft <= 2) {
+        // Warning: less than 2 days left
         banner.style.display = 'block';
         banner.style.background = '#f39c12';
         banner.style.color = '#333';
@@ -200,6 +213,77 @@ function applyViewMode(mode) {
         document.getElementById('mobileModeBtn')?.classList.toggle('active', savedMode === 'mobile');
     });
 })();
+
+// ===== شاشة إعداد الخادم (أول تشغيل) =====
+function checkFirstTimeSetup() {
+    const configured = localStorage.getItem('pos_flask_server_url_configured');
+    const skipped = localStorage.getItem('pos_setup_skipped');
+    if (!configured && !skipped) {
+        const setupOverlay = document.getElementById('serverSetupOverlay');
+        const loginOverlay = document.getElementById('loginOverlay');
+        if (setupOverlay) {
+            setupOverlay.style.display = '';
+            if (loginOverlay) loginOverlay.style.display = 'none';
+            return true;
+        }
+    }
+    return false;
+}
+
+function testSetupConnection() {
+    const urlInput = document.getElementById('setupServerUrl');
+    const resultDiv = document.getElementById('setupTestResult');
+    let url = (urlInput.value || '').trim().replace(/\/+$/, '');
+    if (!url) {
+        resultDiv.innerHTML = '<span style="color:#e74c3c;">الرجاء إدخال عنوان الخادم</span>';
+        return;
+    }
+    resultDiv.innerHTML = '<span style="color:#888;">جاري الاختبار...</span>';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    fetch(url + '/api/version', { method: 'GET', cache: 'no-store', signal: controller.signal })
+        .then(r => {
+            clearTimeout(timeout);
+            if (r.ok) return r.json();
+            throw new Error('status ' + r.status);
+        })
+        .then(data => {
+            const ver = data.version || data.data || '';
+            resultDiv.innerHTML = '<span style="color:#22c55e;">✓ متصل بنجاح' + (ver ? ' — v' + escHTML(String(ver)) : '') + '</span>';
+        })
+        .catch(err => {
+            clearTimeout(timeout);
+            resultDiv.innerHTML = '<span style="color:#e74c3c;">✗ فشل الاتصال: ' + escHTML(err.message) + '</span>';
+        });
+}
+
+function saveServerSetup() {
+    const urlInput = document.getElementById('setupServerUrl');
+    let url = (urlInput.value || '').trim().replace(/\/+$/, '');
+    if (!url) {
+        document.getElementById('setupTestResult').innerHTML = '<span style="color:#e74c3c;">الرجاء إدخال عنوان الخادم</span>';
+        return;
+    }
+    localStorage.setItem('pos_sync_server_url', url);
+    localStorage.setItem('pos_server_url', url);
+    localStorage.setItem('pos_sync_mode', 'server');
+    localStorage.setItem('pos_flask_server_url_configured', '1');
+    // Save to server settings (fire-and-forget)
+    fetch(API_URL + '/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flask_server_url: url })
+    }).catch(() => {});
+    // Show login
+    document.getElementById('serverSetupOverlay').style.display = 'none';
+    document.getElementById('loginOverlay').style.display = '';
+}
+
+function skipServerSetup() {
+    localStorage.setItem('pos_setup_skipped', '1');
+    document.getElementById('serverSetupOverlay').style.display = 'none';
+    document.getElementById('loginOverlay').style.display = '';
+}
 
 // استعادة المستخدم من localStorage
 function restoreUser() {
@@ -334,6 +418,11 @@ async function initializeUI() {
 
     // تشغيل فاحص قفل الشفت
     startShiftLockChecker();
+
+    // تشغيل المزامنة التلقائية بالفترة المحفوظة
+    if (typeof syncManager !== 'undefined') {
+        syncManager.start(); // uses saved interval from localStorage
+    }
 
     // فحص صلاحية الترخيص
     checkLicenseGracePeriod();
@@ -552,36 +641,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     }
 });
 
-// === حماية زر الخروج من الأوفلاين - ممنوع نهائياً ===
 function updateLogoutButton() {
-    const btn = document.getElementById('logoutBtn');
-    const emergencyBtn = document.getElementById('emergencyLogoutBtn');
-    if (!btn) return;
-    const isOnline = _realOnlineStatus && navigator.onLine;
-    if (isOnline) {
-        btn.disabled = false;
-        btn.classList.remove('offline-locked');
-        btn.style.pointerEvents = '';
-        btn.style.opacity = '';
-        btn.style.background = '';
-        btn.style.textDecoration = '';
-        btn.removeAttribute('aria-disabled');
-        btn.title = '';
-        // إخفاء زر الطوارئ عند الاتصال
-        if (emergencyBtn) emergencyBtn.classList.remove('visible');
-    } else {
-        btn.disabled = true;
-        btn.classList.add('offline-locked');
-        btn.style.pointerEvents = 'none';
-        btn.style.opacity = '0.3';
-        btn.style.background = 'rgba(150,150,150,0.5)';
-        btn.style.textDecoration = 'line-through';
-        btn.setAttribute('aria-disabled', 'true');
-        btn.title = 'ممنوع - لا يمكن تسجيل الخروج بدون اتصال';
-        btn.blur();
-        // إظهار زر الطوارئ عند عدم الاتصال
-        if (emergencyBtn) emergencyBtn.classList.add('visible');
-    }
+    // no-op: logout is always allowed
 }
 window.addEventListener('online', () => { checkRealConnection().then(updateLogoutButton); });
 window.addEventListener('offline', () => { _realOnlineStatus = false; updateLogoutButton(); });
@@ -589,33 +650,10 @@ setInterval(updateLogoutButton, 3000);
 document.addEventListener('DOMContentLoaded', () => { checkRealConnection().then(updateLogoutButton); });
 setTimeout(() => { checkRealConnection().then(updateLogoutButton); }, 500);
 
-// اعتراض أي نقرة على زر الخروج في وضع أوفلاين - خط دفاع إضافي (ما عدا زر الطوارئ)
-document.addEventListener('click', function(e) {
-    const isOnline = _realOnlineStatus && navigator.onLine;
-    if (!isOnline) {
-        const isEmergency = e.target.closest('#emergencyLogoutBtn, .emergency-logout-btn');
-        if (isEmergency) return; // السماح لزر الطوارئ بالعمل دائماً
-        const btn = e.target.closest('#logoutBtn, .logout-btn');
-        if (btn) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            return false;
-        }
-    }
-}, true); // capture phase لاعتراضها قبل أي handler آخر
 
 async function logout() {
     // إيقاف فاحص قفل الشفت
     stopShiftLockChecker();
-
-    // فحص الاتصال الحقيقي قبل السماح بالخروج
-    const reallyOnline = await checkRealConnection();
-    if (!reallyOnline || !navigator.onLine) {
-        alert('📴 لا يمكن تسجيل الخروج - لا يوجد اتصال بالسيرفر');
-        updateLogoutButton();
-        return;
-    }
 
     if (!confirm('هل أنت متأكد من تسجيل الخروج؟')) return;
     
@@ -1362,12 +1400,20 @@ function getPaymentMethods() {
 
 // Complete Sale
 // نسخة مبسطة من completeSale
+let _isProcessingSale = false;
 async function completeSale() {
+    // منع الضغط المزدوج
+    if (_isProcessingSale) return;
     if (cart.length === 0) {
         alert('السلة فارغة!');
         return;
     }
-    
+    _isProcessingSale = true;
+    const completeBtn = document.querySelector('.complete-btn');
+    if (completeBtn) { completeBtn.disabled = true; completeBtn.style.opacity = '0.5'; completeBtn.textContent = '⏳ جاري الحفظ...'; }
+
+    try {
+
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const discountValue = parseFloat(document.getElementById('discountInput').value) || 0;
     const discountType = document.getElementById('discountType').value;
@@ -1405,8 +1451,9 @@ async function completeSale() {
     document.getElementById('paymentMethod').value = paymentMethod;
     document.getElementById('transactionNumber').value = transactionNumber;
 
-    const timestamp = Date.now().toString().slice(-6);
-    const invoiceNumber = `${currentUser.invoice_prefix || 'INV'}-${timestamp}`;
+    const _ts = Date.now().toString(36).toUpperCase();
+    const _rnd = Math.random().toString(36).substring(2, 5).toUpperCase();
+    const invoiceNumber = `${currentUser.invoice_prefix || 'INV'}-${_ts}${_rnd}`;
 
     const customerName = document.getElementById('customerName').value || '';
     const customerPhone = document.getElementById('customerPhone').value || '';
@@ -1491,6 +1538,11 @@ async function completeSale() {
             const data = await response.json();
             
             if (data.success) {
+                // فحص التكرار
+                if (data.duplicate) {
+                    alert('هذه الفاتورة مسجلة مسبقاً');
+                    return;
+                }
                 // نجح الحفظ - تشغيل صوت النجاح
                 playInvoiceSound();
 
@@ -1501,6 +1553,18 @@ async function completeSale() {
                 }
 
                 currentInvoice = {...invoiceData, id: data.id, created_at: new Date().toISOString(), items: invoiceData.items};
+
+                // إذا وضع التزامن "سيرفر" → حفظ في pending_invoices للرفع للسيرفر المركزي
+                if (typeof syncManager !== 'undefined' && syncManager.isServerMode() && localDB.isReady) {
+                    try {
+                        await localDB.add('pending_invoices', {
+                            data: { ...invoiceData, invoice_number: data.invoice_number || invoiceNumber, created_at: new Date().toISOString() },
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (e) {
+                        console.log('[App] Pending sync queue skipped:', e.message);
+                    }
+                }
 
                 // تسجيل استخدام الكوبون
                 if (appliedCouponId) {
@@ -1565,6 +1629,13 @@ async function completeSale() {
         // Offline: حفظ محلياً مباشرة
         await saveInvoiceOffline(invoiceData, invoiceNumber);
     }
+
+    } finally {
+        // إعادة تفعيل زر الإتمام
+        _isProcessingSale = false;
+        const _btn = document.querySelector('.complete-btn');
+        if (_btn) { _btn.disabled = false; _btn.style.opacity = '1'; _btn.textContent = '✅ إتمام'; }
+    }
 }
 
 // دالة منفصلة لحفظ الفاتورة offline
@@ -1575,18 +1646,27 @@ async function saveInvoiceOffline(invoiceData, invoiceNumber) {
     }
     
     try {
+        // التحقق من عدم وجود فاتورة بنفس الرقم محلياً
+        const existingPending = await localDB.getAll('pending_invoices');
+        const isDuplicate = existingPending.some(p => p.data && p.data.invoice_number === invoiceData.invoice_number);
+        if (isDuplicate) {
+            console.warn('[App] Duplicate invoice prevented:', invoiceData.invoice_number);
+            alert('هذه الفاتورة محفوظة مسبقاً');
+            return;
+        }
+
         const offlineInvoice = {
             ...invoiceData,
             created_at: new Date().toISOString(),
-            id: 'offline_' + Date.now()
+            id: 'offline_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6)
         };
-        
+
         // حفظ في pending_invoices للرفع
         await localDB.add('pending_invoices', {
             data: offlineInvoice,
             timestamp: new Date().toISOString()
         });
-        
+
         // حفظ في local_invoices للعرض
         await localDB.save('local_invoices', offlineInvoice);
         
@@ -5738,7 +5818,7 @@ async function fetchVersion() {
         const res = await fetch(`${API_URL}/api/version`, {cache: 'no-store'});
         const data = await res.json();
         if (data.success) {
-            const vText = `آخر تحديث: ${data.version}`;
+            const vText = `v${data.version}`;
             const hv = document.getElementById('headerVersion');
             const lv = document.getElementById('loginVersion');
             if (hv) hv.textContent = vText;
@@ -5750,6 +5830,18 @@ fetchVersion();
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[App] DOMContentLoaded - checking for saved user...');
+
+    // First-time setup check
+    if (checkFirstTimeSetup()) {
+        console.log('[App] First-time setup screen shown');
+        return;
+    }
+
+    // Auto-sync on launch if server is configured
+    if (typeof getSyncServerUrl === 'function' && getSyncServerUrl() && typeof syncManager !== 'undefined') {
+        console.log('[App] Server configured, triggering background sync...');
+        try { syncManager.sync(); } catch(e) {}
+    }
 
     // إذا كان المدير الأعلى مسجل دخوله، لا نستعيد جلسة المستخدم العادي
     const savedSA = localStorage.getItem('pos_super_admin');
@@ -12902,6 +12994,13 @@ function saveSyncModeSettings() {
         // تحديث عنوان السيرفر القديم أيضاً للتوافق
         localStorage.setItem('pos_server_url', serverUrl);
 
+        // حفظ عنوان الخادم في قاعدة البيانات المحلية لاستخدامه من Electron
+        fetch(`${API_URL}/api/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ flask_server_url: serverUrl })
+        }).catch(function() { /* ignore - offline */ });
+
         // تحديث SyncManager
         if (typeof syncManager !== 'undefined') {
             syncManager.serverUrl = serverUrl;
@@ -13073,6 +13172,79 @@ function updateSyncModeStatus() {
     }
 }
 
+// مزامنة الآن من صفحة الإعدادات
+async function syncNowFromSettings() {
+    const resultEl = document.getElementById('syncNowResult');
+    const btn = document.getElementById('syncNowSettingsBtn');
+    if (!resultEl) return;
+
+    const mode = getSyncMode();
+    const serverUrl = getSyncServerUrl();
+    if (mode !== 'server' || !serverUrl) {
+        resultEl.style.display = 'block';
+        resultEl.style.background = '#fffff0';
+        resultEl.style.border = '1px solid #ecc94b';
+        resultEl.innerHTML = '⚠️ يرجى حفظ إعدادات السيرفر أولاً';
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+    resultEl.style.display = 'block';
+    resultEl.style.background = '#ebf8ff';
+    resultEl.style.border = '1px solid #63b3ed';
+    resultEl.innerHTML = '⏳ جاري المزامنة الشاملة مع السيرفر...';
+
+    try {
+        if (typeof syncManager !== 'undefined') {
+            syncManager.serverUrl = serverUrl;
+        }
+
+        const r = await syncManager.sync();
+
+        if (r.success) {
+            resultEl.style.background = '#f0fff4';
+            resultEl.style.border = '1px solid #68d391';
+            let details = '<span style="font-size: 12px;">';
+            if (r.invoices_uploaded || r.customers_uploaded)
+                details += `📤 رفع: ${r.invoices_uploaded || 0} فاتورة، ${r.customers_uploaded || 0} عميل<br>`;
+            details += `📥 تحميل: ${r.branches || 0} فرع، ${r.products || 0} منتج، ${r.customers || 0} عميل، ${r.invoices || 0} فاتورة<br>`;
+            details += `📋 ${r.categories || 0} فئة، ${r.settings || 0} إعداد، ${r.returns || 0} مرتجع، ${r.expenses || 0} مصروف`;
+            details += '</span>';
+            resultEl.innerHTML = `✅ <strong>تمت المزامنة بنجاح!</strong><br>${details}`;
+        } else {
+            resultEl.style.background = '#fff5f5';
+            resultEl.style.border = '1px solid #fc8181';
+            const errMsg = r.error || r.reason || r.errors?.join(', ') || 'خطأ غير معروف';
+            resultEl.innerHTML = `❌ <strong>فشلت المزامنة</strong><br><span style="font-size: 12px;">${escHTML(errMsg)}</span>`;
+        }
+    } catch (e) {
+        resultEl.style.background = '#fff5f5';
+        resultEl.style.border = '1px solid #fc8181';
+        resultEl.innerHTML = `❌ <strong>خطأ في المزامنة</strong><br><span style="font-size: 12px;">${escHTML(e.message)}</span>`;
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// حفظ فترة المزامنة التلقائية
+function saveAutoSyncInterval() {
+    const select = document.getElementById('autoSyncIntervalSelect');
+    if (!select) return;
+    const minutes = parseInt(select.value, 10) || 5;
+    localStorage.setItem('pos_auto_sync_minutes', String(minutes));
+    if (typeof syncManager !== 'undefined') {
+        syncManager.restart();
+    }
+}
+
+// تحميل فترة المزامنة التلقائية
+function loadAutoSyncInterval() {
+    const select = document.getElementById('autoSyncIntervalSelect');
+    if (!select) return;
+    const saved = localStorage.getItem('pos_auto_sync_minutes') || '5';
+    select.value = saved;
+}
+
 // تحميل إعدادات التزامن عند فتح صفحة الإعدادات
 const _originalLoadSettings = typeof loadSettings === 'function' ? loadSettings : null;
 if (_originalLoadSettings) {
@@ -13080,6 +13252,7 @@ if (_originalLoadSettings) {
     loadSettings = async function() {
         await _origLoadSettings.apply(this, arguments);
         loadSyncModeSettings();
+        loadAutoSyncInterval();
     };
 }
 
