@@ -79,12 +79,10 @@ def init_master_db(master_db_path, hash_password):
         pass
 
     # Create default Super Admin account if none exists
-    cursor.execute("SELECT COUNT(*) FROM super_admins")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute(
-            "INSERT INTO super_admins (username, password, full_name) VALUES (?, ?, ?)",
-            ('superadmin', hash_password('admin123'), '\u0645\u062f\u064a\u0631 \u0627\u0644\u0646\u0638\u0627\u0645')
-        )
+    cursor.execute(
+        "INSERT OR IGNORE INTO super_admins (username, password, full_name) VALUES (?, ?, ?)",
+        ('superadmin', hash_password('admin123'), '\u0645\u062f\u064a\u0631 \u0627\u0644\u0646\u0638\u0627\u0645')
+    )
 
     conn.commit()
     conn.close()
