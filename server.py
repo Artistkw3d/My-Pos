@@ -80,7 +80,8 @@ def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
 
 PUBLIC_ROUTES = {
     '/api/login', '/api/super-admin/login', '/api/version',
-    '/api/tenant/check-status', '/api/license/verify'
+    '/api/tenant/check-status', '/api/license/verify',
+    '/api/sync/status', '/api/products', '/api/settings'
 }
 
 _login_attempts = {}
