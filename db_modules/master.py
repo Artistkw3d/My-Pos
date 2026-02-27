@@ -24,7 +24,8 @@ MASTER_TABLES_SQL = {
             subscription_amount REAL DEFAULT 0,
             subscription_period INTEGER DEFAULT 30,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TEXT
+            expires_at TEXT,
+            mode TEXT DEFAULT 'online'
         )
     ''',
     'super_admins': '''
@@ -75,6 +76,8 @@ def init_master_db(master_db_path, hash_password):
             cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_amount REAL DEFAULT 0")
         if 'subscription_period' not in cols:
             cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_period INTEGER DEFAULT 30")
+        if 'mode' not in cols:
+            cursor.execute("ALTER TABLE tenants ADD COLUMN mode TEXT DEFAULT 'online'")
     except:
         pass
 

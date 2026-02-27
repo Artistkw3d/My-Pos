@@ -3466,7 +3466,7 @@ def tenant_check_status():
             return jsonify({'success': False, 'error': 'معرف المتجر مطلوب'}), 400
         conn = get_master_db()
         cursor = conn.cursor()
-        cursor.execute('SELECT name, is_active, expires_at FROM tenants WHERE slug = ?', (slug,))
+        cursor.execute('SELECT name, is_active, expires_at, plan, mode FROM tenants WHERE slug = ?', (slug,))
         tenant = cursor.fetchone()
         conn.close()
         if not tenant:
@@ -3485,7 +3485,9 @@ def tenant_check_status():
             'success': True,
             'is_active': is_active,
             'expires_at': expires_at[:10] if expires_at else None,
-            'name': tenant['name']
+            'name': tenant['name'],
+            'plan': tenant['plan'] if 'plan' in tenant.keys() else 'basic',
+            'mode': tenant['mode'] if 'mode' in tenant.keys() else 'online'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
