@@ -174,7 +174,7 @@ body {
    MAIN LAYOUT — SIDEBAR + CONTENT
    ============================================ */
 .container {
-    display: flex;
+    display: block;
     min-height: 100vh;
     background: var(--bg);
 }
@@ -211,9 +211,14 @@ body {
 }
 
 .header-center #datetime {
-    font-size: 11px !important;
+    font-size: 13px !important;
     color: var(--t1) !important;
     margin-top: 4px;
+}
+
+.header-center #headerVersion {
+    font-size: 12px !important;
+    color: var(--t2) !important;
 }
 
 .header-center #headerVersion {
@@ -369,7 +374,7 @@ body {
    TAB CONTENT AREA
    ============================================ */
 .tab-content { display: none; }
-.tab-content.active { display: block; min-height: 100vh; overflow-y: auto; }
+.tab-content.active { display: block; width: 100%; min-height: 100vh; overflow-y: auto; }
 
 /* Main content - shifted for sidebar */
 .main-content {
