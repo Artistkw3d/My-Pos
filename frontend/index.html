@@ -15,7 +15,7 @@
 </head>
 <body>
     <!-- License Warning Banner -->
-    <div id="licenseWarningBanner" style="display:none; position:fixed; top:0; left:0; right:240px; z-index:99998; padding:6px 20px; text-align:center; font-size:13px; font-weight:bold; direction:rtl; cursor:pointer;" onclick="forceLicenseRefresh()">
+    <div id="licenseWarningBanner" style="display:none; position:relative; z-index:99998; padding:8px 20px; text-align:center; font-size:13px; font-weight:bold; direction:rtl; cursor:pointer;" onclick="forceLicenseRefresh()">
         <span id="licenseWarningText"></span>
         <button onclick="event.stopPropagation(); forceLicenseRefresh();" style="margin-right:15px; padding:4px 16px; border:none; border-radius:4px; cursor:pointer; font-size:13px; background:rgba(255,255,255,0.2); color:#fff;">تجديد الترخيص</button>
     </div>
@@ -989,14 +989,14 @@
                             </div>
                             <div class="form-group">
                                 <label>المخزون (IAS 2) <span style="color: #48bb78;">✓ تلقائي</span>:</label>
-                                <input type="number" id="xbrl_inventory_val" step="0.01" value="0" readonly style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                                <input type="number" id="xbrl_inventory_val" step="0.01" value="0" readonly style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: rgba(78,203,113,0.06);">
                             </div>
                             <div class="form-group">
                                 <label>أصول متداولة أخرى:</label>
                                 <input type="number" id="xbrl_other_current_assets" step="0.01" value="0" style="padding: 10px; border: 1px solid rgba(212,168,83,0.12); border-radius: 6px; width: 100%;">
                             </div>
                         </div>
-                        <div style="background: #ebf8ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="background: rgba(91,141,239,0.06); padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
                             <strong>إجمالي الأصول المتداولة:</strong>
                             <strong id="xbrl_total_current_assets" style="font-size: 18px; color: #2b6cb0;">0.00</strong>
                         </div>
@@ -1016,7 +1016,7 @@
                                 <input type="number" id="xbrl_other_non_current_assets" step="0.01" value="0" style="padding: 10px; border: 1px solid rgba(212,168,83,0.12); border-radius: 6px; width: 100%;">
                             </div>
                         </div>
-                        <div style="background: #ebf8ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="background: rgba(91,141,239,0.06); padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
                             <strong>إجمالي الأصول غير المتداولة:</strong>
                             <strong id="xbrl_total_non_current_assets" style="font-size: 18px; color: #2b6cb0;">0.00</strong>
                         </div>
@@ -1080,7 +1080,7 @@
                                 <input type="number" id="xbrl_other_equity" step="0.01" value="0" style="padding: 10px; border: 1px solid rgba(212,168,83,0.12); border-radius: 6px; width: 100%;">
                             </div>
                         </div>
-                        <div style="background: #f0fff4; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="background: rgba(78,203,113,0.06); padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
                             <strong style="font-size: 16px; color: #38a169;">إجمالي حقوق الملكية:</strong>
                             <strong id="xbrl_total_equity" style="font-size: 22px; color: #38a169;">0.00</strong>
                         </div>
@@ -1096,7 +1096,7 @@
                         <p style="color: var(--t2); font-size: 13px; margin-bottom: 15px;">الطريقة المباشرة - أدخل المبالغ الفعلية المحصلة والمدفوعة. البيانات المحسوبة من النظام تظهر كقيم افتراضية.</p>
 
                         <!-- رصيد النقد في بداية الفترة -->
-                        <div style="background: #f7fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <div style="background: #1e1e2a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                             <div class="form-group" style="max-width: 300px;">
                                 <label style="font-weight: bold; color: #1a365d;">رصيد النقد في بداية الفترة:</label>
                                 <input type="number" id="xbrl_cash_beginning" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #2b6cb0; border-radius: 6px; width: 100%;">
@@ -1107,15 +1107,15 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
                             <div class="form-group">
                                 <label>محصلات من العملاء <span style="color: #48bb78;">✓ تلقائي</span>:</label>
-                                <input type="number" id="xbrl_cf_customers" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                                <input type="number" id="xbrl_cf_customers" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: rgba(78,203,113,0.06);">
                             </div>
                             <div class="form-group">
                                 <label>مدفوعات للموردين <span style="color: #48bb78;">✓ تلقائي</span>:</label>
-                                <input type="number" id="xbrl_cf_suppliers" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                                <input type="number" id="xbrl_cf_suppliers" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: rgba(78,203,113,0.06);">
                             </div>
                             <div class="form-group">
                                 <label>مدفوعات للموظفين <span style="color: #48bb78;">✓ تلقائي</span>:</label>
-                                <input type="number" id="xbrl_cf_employees" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                                <input type="number" id="xbrl_cf_employees" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: rgba(78,203,113,0.06);">
                             </div>
                             <div class="form-group">
                                 <label>مصاريف تشغيلية أخرى مدفوعة:</label>
@@ -1130,7 +1130,7 @@
                                 <input type="number" id="xbrl_cf_taxes_paid" step="0.01" value="0" onchange="recalcXBRLCashFlow()" style="padding: 10px; border: 1px solid rgba(212,168,83,0.12); border-radius: 6px; width: 100%;">
                             </div>
                         </div>
-                        <div style="background: #f0fff4; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="background: rgba(78,203,113,0.06); padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
                             <strong style="color: #38a169;">صافي النقد من الأنشطة التشغيلية:</strong>
                             <strong id="xbrl_net_cash_operating" style="font-size: 18px; color: #38a169;">0.00</strong>
                         </div>
@@ -1222,7 +1222,7 @@
                                 <input type="number" id="xbrl_eq_opening_other" step="0.01" value="0" onchange="recalcXBRLEquityChanges()" style="padding: 10px; border: 1px solid rgba(212,168,83,0.12); border-radius: 6px; width: 100%;">
                             </div>
                         </div>
-                        <div style="background: #ebf8ff; padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="background: rgba(91,141,239,0.06); padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
                             <strong style="color: #2b6cb0;">إجمالي حقوق الملكية الافتتاحية:</strong>
                             <strong id="xbrl_eq_opening_total" style="font-size: 18px; color: #2b6cb0;">0.00</strong>
                         </div>
@@ -1231,7 +1231,7 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px;">
                             <div class="form-group">
                                 <label>صافي ربح الفترة <span style="color: #48bb78;">✓ تلقائي</span>:</label>
-                                <input type="number" id="xbrl_eq_net_profit" step="0.01" value="0" readonly style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: #f0fff4;">
+                                <input type="number" id="xbrl_eq_net_profit" step="0.01" value="0" readonly style="padding: 10px; border: 2px solid #48bb78; border-radius: 6px; width: 100%; background: rgba(78,203,113,0.06);">
                             </div>
                             <div class="form-group">
                                 <label>الدخل الشامل الآخر (OCI):</label>
@@ -1254,15 +1254,15 @@
 
                         <h4 style="color: #1a365d; margin: 15px 0 10px;">الأرصدة الختامية (نهاية الفترة)</h4>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
-                            <div style="background: #f7fafc; padding: 12px 15px; border-radius: 8px; text-align: center;">
+                            <div style="background: #1e1e2a; padding: 12px 15px; border-radius: 8px; text-align: center;">
                                 <div style="color: var(--t2); font-size: 12px;">رأس المال</div>
                                 <div id="xbrl_eq_closing_capital" style="font-size: 18px; font-weight: bold; color: #f0ece4;">0.00</div>
                             </div>
-                            <div style="background: #f7fafc; padding: 12px 15px; border-radius: 8px; text-align: center;">
+                            <div style="background: #1e1e2a; padding: 12px 15px; border-radius: 8px; text-align: center;">
                                 <div style="color: var(--t2); font-size: 12px;">أرباح مبقاة</div>
                                 <div id="xbrl_eq_closing_retained" style="font-size: 18px; font-weight: bold; color: #f0ece4;">0.00</div>
                             </div>
-                            <div style="background: #f7fafc; padding: 12px 15px; border-radius: 8px; text-align: center;">
+                            <div style="background: #1e1e2a; padding: 12px 15px; border-radius: 8px; text-align: center;">
                                 <div style="color: var(--t2); font-size: 12px;">بنود أخرى</div>
                                 <div id="xbrl_eq_closing_other" style="font-size: 18px; font-weight: bold; color: #f0ece4;">0.00</div>
                             </div>
@@ -1677,7 +1677,7 @@
                     <h3 style="color: #4285f4; margin: 0 0 20px;">
                         <span style="display: inline-flex; align-items: center; gap: 8px;">
                             ☁️ ربط Google Drive
-                            <span id="gdriveStatusBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 20px; background: #fee2e2; color: #ef4444;">غير متصل</span>
+                            <span id="gdriveStatusBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 20px; background: rgba(232,93,93,0.12); color: var(--red);">غير متصل</span>
                         </span>
                     </h3>
 
@@ -1710,7 +1710,7 @@
                         <div id="gdriveRedirectUriSection" style="display: none; margin-top: 15px;">
                             <div style="background: rgba(245,158,11,0.08); padding: 15px; border-radius: 10px; border-right: 4px solid rgba(245,158,11,0.5); margin-bottom: 15px;">
                                 <strong>⚠️ مهم:</strong> أضف هذا الرابط كـ <strong>Authorized redirect URI</strong> في Google Cloud Console:
-                                <div style="background: #fef3c7; padding: 10px; border-radius: 6px; margin-top: 8px; direction: ltr; font-family: monospace; font-size: 14px; word-break: break-all; cursor: pointer;" onclick="navigator.clipboard.writeText(this.textContent).then(()=>alert('تم النسخ!'))" title="اضغط للنسخ">
+                                <div style="background: rgba(245,158,11,0.1); padding: 10px; border-radius: 6px; margin-top: 8px; direction: ltr; font-family: monospace; font-size: 14px; word-break: break-all; cursor: pointer;" onclick="navigator.clipboard.writeText(this.textContent).then(()=>alert('تم النسخ!'))" title="اضغط للنسخ">
                                     <span id="gdriveRedirectUriDisplay"></span>
                                 </div>
                                 <small style="color: #92400e; margin-top: 5px; display: block;">اضغط على الرابط لنسخه - ثم أضفه في Google Cloud Console قبل الموافقة</small>
@@ -1992,7 +1992,7 @@
                 </div>
                 <hr style="border: 1px solid #e5e7eb; margin: 15px 0;">
                 <div class="form-group">
-                    <label>كلمة المرور الحالية: <span style="color: #ef4444;">*</span></label>
+                    <label>كلمة المرور الحالية: <span style="color: var(--red);">*</span></label>
                     <input type="password" id="saSettingsOldPassword" required placeholder="مطلوب للتأكيد">
                 </div>
                 <div class="form-group">
@@ -2094,7 +2094,7 @@
                     <div class="form-group" style="display: none;"><label>التكلفة (د.ك):</label><input type="number" id="inventoryCost" step="0.001" readonly></div>
 
                     <!-- نظام الخصائص/المتغيرات -->
-                    <div style="background: #f0fff4; padding: 20px; border-radius: 12px; margin: 15px 0; border: 2px solid #38a169;">
+                    <div style="background: rgba(78,203,113,0.06); padding: 20px; border-radius: 12px; margin: 15px 0; border: 2px solid #38a169;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                             <h4 style="color: #38a169; margin: 0;">📐 خصائص المنتج (مقاسات / أحجام / أوزان)</h4>
                             <button type="button" onclick="addVariantRow()" class="btn" style="background: #38a169; padding: 8px 16px; font-size: 14px;">
@@ -2154,7 +2154,7 @@
                     </div>
                     <div id="distributionVariantGroup" style="display: none;">
                         <label>الخاصية:</label>
-                        <select id="distributionVariant" style="width: 100%; padding: 10px; border: 2px solid #38a169; border-radius: 6px; background: #f0fff4;">
+                        <select id="distributionVariant" style="width: 100%; padding: 10px; border: 2px solid #38a169; border-radius: 6px; background: rgba(78,203,113,0.06);">
                             <option value="">المنتج الأساسي</option>
                         </select>
                     </div>
@@ -2190,7 +2190,7 @@
                     </div>
                     <div class="form-group">
                         <label>المخزون المتاح:</label>
-                        <div id="availableStock" style="font-size: 18px; font-weight: bold; color: #38a169; padding: 10px; background: #f0fff4; border-radius: 5px;">-</div>
+                        <div id="availableStock" style="font-size: 18px; font-weight: bold; color: #38a169; padding: 10px; background: rgba(78,203,113,0.06); border-radius: 5px;">-</div>
                     </div>
                     <div class="form-group">
                         <label>الكمية التالفة:</label>
@@ -2643,7 +2643,7 @@
                 <div id="transferItemsContainer" style="margin-bottom: 15px;">
                     <table style="width:100%; border-collapse:collapse; font-size:13px;">
                         <thead>
-                            <tr style="background:#f7fafc;">
+                            <tr style="background:#1e1e2a;">
                                 <th style="padding:8px; text-align:right; border-bottom:2px solid #e2e8f0;">الصنف</th>
                                 <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0; width:120px;">الكمية</th>
                                 <th style="padding:8px; text-align:center; border-bottom:2px solid #e2e8f0; width:60px;">حذف</th>

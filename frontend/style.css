@@ -16,7 +16,7 @@
     --gold-b: rgba(212,168,83,0.12);
     --t1: #f0ece4;
     --t2: #e0dce8;
-    --t3: #4a4656;
+    --t3: #9a96a6;
     --green: #4ecb71;
     --red: #e85d5d;
     --blue: #5b8def;
@@ -212,13 +212,13 @@ body {
 
 .header-center #datetime {
     font-size: 11px !important;
-    color: var(--t3) !important;
+    color: var(--t1) !important;
     margin-top: 4px;
 }
 
 .header-center #headerVersion {
     font-size: 10px !important;
-    color: var(--t3) !important;
+    color: var(--t2) !important;
 }
 
 /* Sidebar Stats */
@@ -957,7 +957,7 @@ body {
     display: block;
     margin-bottom: 5px;
     font-weight: 600;
-    color: var(--t2);
+    color: var(--t1);
     font-size: 13px;
 }
 
