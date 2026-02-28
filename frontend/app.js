@@ -127,7 +127,7 @@ async function checkLicense() {
     if (!tenantSlug) return true; // local-only mode
 
     const overlay = document.getElementById('licenseExpiredOverlay');
-    const banner = document.getElementById('licenseWarningBanner');
+    const banner = document.getElementById('licenseWarningBannerSidebar');
     const bannerText = document.getElementById('licenseWarningText');
 
     const licenseData = await loadAndVerifyLicenseData();
@@ -2314,7 +2314,7 @@ function displayInvoiceView(inv) {
                 ${inv.delivery_fee > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0;"><span>رسوم التوصيل:</span><span>${inv.delivery_fee.toFixed(3)} د.ك</span></div>` : ''}
                 <div style="display:flex; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:2px solid #667eea; font-size:16px; font-weight:bold; color:#667eea;"><span>الإجمالي:</span><span>${inv.total.toFixed(3)} د.ك</span></div>
             </div>
-            <div style="text-align:center; margin-top:20px; font-size:11px; color:#6c757d;"><p>شكراً لتعاملكم معنا 🌟</p></div>
+            <div style="text-align:center; margin-top:20px; font-size:11px; color:#9a96a6;"><p>شكراً لتعاملكم معنا 🌟</p></div>
         </div>
     `;
 }
@@ -2533,7 +2533,7 @@ tbody tr:nth-child(even){background:#1e1e2a;}
 .totals{margin-top:15px;font-size:14px;}
 .totals div{display:flex;justify-content:space-between;margin:8px 0;padding:5px 0;}
 .total-final{font-size:18px;font-weight:bold;border-top:3px solid #667eea;padding-top:10px;margin-top:10px;color:#667eea;}
-.footer{text-align:center;margin-top:25px;font-size:12px;color:#6c757d;border-top:2px solid #dee2e6;padding-top:15px;}
+.footer{text-align:center;margin-top:25px;font-size:12px;color:#9a96a6;border-top:2px solid #dee2e6;padding-top:15px;}
 </style>
 </head>
 <body>
@@ -2628,8 +2628,8 @@ async function loadProductsTable() {
                                         <div style="margin-bottom:10px;">${imgDisplay}</div>
                                         <div style="font-weight:bold; margin-bottom:5px; color:#2d3748;">${escHTML(p.name)}</div>
                                         <div style="color:#667eea; font-size:18px; font-weight:bold; margin:8px 0;">${p.price.toFixed(3)} د.ك</div>
-                                        <div style="color:#6c757d; font-size:13px; margin-bottom:10px;">المخزون: ${p.stock}</div>
-                                        ${p.barcode ? `<div style="color:#6c757d; font-size:11px; margin-bottom:10px;">📊 ${escHTML(p.barcode)}</div>` : ''}
+                                        <div style="color:#9a96a6; font-size:13px; margin-bottom:10px;">المخزون: ${p.stock}</div>
+                                        ${p.barcode ? `<div style="color:#9a96a6; font-size:11px; margin-bottom:10px;">📊 ${escHTML(p.barcode)}</div>` : ''}
                                         
                                         <!-- عرض إجمالي التكلفة فقط -->
                                         ${p.cost && p.cost > 0 ? `
@@ -2693,7 +2693,7 @@ function advancedSearchProducts() {
 
     const container = document.getElementById('productsTableContainer');
     if (filtered.length === 0) {
-        container.innerHTML = '<p style="text-align:center; padding:40px; color:#6c757d;">لا توجد نتائج</p>';
+        container.innerHTML = '<p style="text-align:center; padding:40px; color:#9a96a6;">لا توجد نتائج</p>';
         return;
     }
 
@@ -2720,8 +2720,8 @@ function advancedSearchProducts() {
                         <div style="margin-bottom:10px;">${imgDisplay}</div>
                         <div style="font-weight:bold; margin-bottom:5px; color:#2d3748;">${escHTML(p.name)}</div>
                         <div style="color:#667eea; font-size:18px; font-weight:bold; margin:8px 0;">${p.price.toFixed(3)} د.ك</div>
-                        <div style="color:#6c757d; font-size:13px; margin-bottom:10px;">المخزون: ${p.stock}</div>
-                        ${p.barcode ? `<div style="color:#6c757d; font-size:11px; margin-bottom:10px;">📊 ${escHTML(p.barcode)}</div>` : ''}
+                        <div style="color:#9a96a6; font-size:13px; margin-bottom:10px;">المخزون: ${p.stock}</div>
+                        ${p.barcode ? `<div style="color:#9a96a6; font-size:11px; margin-bottom:10px;">📊 ${escHTML(p.barcode)}</div>` : ''}
                         <div style="display:flex; gap:5px; justify-content:center; margin-top:10px;">
                             <button onclick="editProduct(${p.id})" class="btn-sm" style="flex:1;">✏️ تعديل</button>
                             <button onclick="deleteProduct(${p.id})" class="btn-sm btn-danger" style="flex:1;">🗑️</button>
@@ -3171,13 +3171,13 @@ function displayReports(report, topProducts) {
                                     <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>${getPaymentMethodName(pm.payment_method)}</span><span style="color:#28a745; font-weight:bold;">${pm.total.toFixed(3)} د.ك</span></div>
                                     <div style="display:flex; align-items:center; gap:10px;">
                                         <div style="flex:1; height:8px; background:#1e1e2a; border-radius:4px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:linear-gradient(90deg, #667eea, #764ba2);"></div></div>
-                                        <span style="font-size:11px; color:#6c757d;">${pm.count} (${pct}%)</span>
+                                        <span style="font-size:11px; color:#9a96a6;">${pm.count} (${pct}%)</span>
                                     </div>
                                 </div>
                             `;
                         }).join('')}
                     </div>
-                ` : '<p style="text-align:center; color:#6c757d;">لا توجد بيانات</p>'}
+                ` : '<p style="text-align:center; color:#9a96a6;">لا توجد بيانات</p>'}
             </div>
             <div class="report-card">
                 <h3>🏆 أفضل المنتجات</h3>
@@ -3186,11 +3186,11 @@ function displayReports(report, topProducts) {
                         ${topProducts.map((p, i) => `
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; margin-bottom:5px; background:#1e1e2a; border-radius:6px;">
                                 <div style="display:flex; align-items:center; gap:8px;"><span style="font-weight:bold; color:#667eea; font-size:16px;">#${i+1}</span><span style="font-size:13px;">${escHTML(p.product_name)}</span></div>
-                                <div style="text-align:left;"><div style="font-weight:bold; color:#28a745; font-size:13px;">${p.total_sales.toFixed(3)} د.ك</div><div style="font-size:10px; color:#6c757d;">${p.total_quantity} قطعة</div></div>
+                                <div style="text-align:left;"><div style="font-weight:bold; color:#28a745; font-size:13px;">${p.total_sales.toFixed(3)} د.ك</div><div style="font-size:10px; color:#9a96a6;">${p.total_quantity} قطعة</div></div>
                             </div>
                         `).join('')}
                     </div>
-                ` : '<p style="text-align:center; color:#6c757d;">لا توجد بيانات</p>'}
+                ` : '<p style="text-align:center; color:#9a96a6;">لا توجد بيانات</p>'}
             </div>
         </div>
     `;
@@ -3982,7 +3982,7 @@ async function loadAttendanceLog() {
                 const branchName = branches[r.branch_id] || 'غير محدد';
                 
                 html += `
-                    <tr style="background: ${checkOut ? '#f0fff4' : '#fff5f5'};">
+                    <tr style="background: ${checkOut ? 'rgba(78,203,113,0.06)' : 'rgba(232,93,93,0.06)'};">
                         <td><strong>${escHTML(r.user_name)}</strong></td>
                         <td>🏢 ${branchName}</td>
                         <td>${dateStr}</td>
@@ -3996,7 +3996,7 @@ async function loadAttendanceLog() {
             html += '</tbody></table>';
             
             if (data.records.length === 0) {
-                html = '<p style="text-align: center; padding: 40px; color: #6c757d;">لا توجد سجلات</p>';
+                html = '<p style="text-align: center; padding: 40px; color: #9a96a6;">لا توجد سجلات</p>';
             }
             
             container.innerHTML = html;
@@ -4059,7 +4059,7 @@ async function loadInventory() {
 async function displayInventory() {
     const container = document.getElementById('inventoryTableContainer');
     if (allInventory.length === 0) {
-        container.innerHTML = '<p style="text-align: center; padding: 40px; color: #6c757d;">لا توجد منتجات في المخزون</p>';
+        container.innerHTML = '<p style="text-align: center; padding: 40px; color: #9a96a6;">لا توجد منتجات في المخزون</p>';
         return;
     }
     
@@ -5436,7 +5436,7 @@ function displayExpenses(expenses) {
     const container = document.getElementById('expensesContainer');
 
     if (expenses.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">لا توجد تكاليف</div>';
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: #9a96a6;">لا توجد تكاليف</div>';
         return;
     }
 
@@ -6129,7 +6129,7 @@ function searchCustomerInPOS(query) {
     }).slice(0, 15);
 
     if (filtered.length === 0) {
-        container.innerHTML = '<div style="padding:10px; text-align:center; color:#6c757d; font-size:13px;">لا توجد نتائج</div>';
+        container.innerHTML = '<div style="padding:10px; text-align:center; color:#9a96a6; font-size:13px;">لا توجد نتائج</div>';
         container.style.display = 'block';
         return;
     }
@@ -8544,7 +8544,7 @@ function displayCouponsTable(coupons) {
     if (!container) return;
 
     if (coupons.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding:40px; color:#6c757d;"><div style="font-size:48px; margin-bottom:10px;">🎟️</div><p>لا توجد كوبونات بعد</p></div>';
+        container.innerHTML = '<div style="text-align:center; padding:40px; color:#9a96a6;"><div style="font-size:48px; margin-bottom:10px;">🎟️</div><p>لا توجد كوبونات بعد</p></div>';
         return;
     }
 
@@ -12490,7 +12490,7 @@ function filterSubscriptions() {
 function renderSubscriptions(subs) {
     const container = document.getElementById('subscriptionsTableContainer');
     if (subs.length === 0) {
-        container.innerHTML = '<p style="text-align:center; padding:40px; color:#6c757d;">لا توجد اشتراكات</p>';
+        container.innerHTML = '<p style="text-align:center; padding:40px; color:#9a96a6;">لا توجد اشتراكات</p>';
         return;
     }
     const today = new Date().toISOString().split('T')[0];
@@ -12562,7 +12562,7 @@ function showSubscriptionDetail(subId) {
             </div>
         </div>
         <h3 style="margin-bottom: 10px;">📦 منتجات الاشتراك</h3>
-        ${planItems.length === 0 ? '<p style="color:#6c757d;">لا توجد منتجات في هذه الفئة</p>' : `
+        ${planItems.length === 0 ? '<p style="color:#9a96a6;">لا توجد منتجات في هذه الفئة</p>' : `
         <table class="data-table">
             <thead><tr><th>المنتج</th><th>المتغير</th><th>المسموح</th><th>المستلم</th><th>المتبقي</th></tr></thead>
             <tbody>
@@ -12595,7 +12595,7 @@ async function loadRedemptionHistory(subId) {
         const data = await response.json();
         const container = document.getElementById('redemptionHistoryContainer');
         if (!data.success || !data.redemptions || data.redemptions.length === 0) {
-            container.innerHTML = '<p style="color:#6c757d; text-align:center;">لا توجد استلامات بعد</p>';
+            container.innerHTML = '<p style="color:#9a96a6; text-align:center;">لا توجد استلامات بعد</p>';
             return;
         }
         container.innerHTML = `
@@ -12687,7 +12687,7 @@ function renderPlanItems() {
     const container = document.getElementById('planItemsList');
     if (!container) return;
     if (_planItems.length === 0) {
-        container.innerHTML = '<p style="color:#6c757d; font-size:13px; margin:5px 0;">لم يتم إضافة منتجات بعد</p>';
+        container.innerHTML = '<p style="color:#9a96a6; font-size:13px; margin:5px 0;">لم يتم إضافة منتجات بعد</p>';
         return;
     }
     container.innerHTML = _planItems.map((it, i) => `
@@ -12706,7 +12706,7 @@ async function loadPlansList() {
             _allPlans = data.plans;
             const container = document.getElementById('plansListContainer');
             if (_allPlans.length === 0) {
-                container.innerHTML = '<p style="text-align:center; color:#6c757d;">لا توجد فئات</p>';
+                container.innerHTML = '<p style="text-align:center; color:#9a96a6;">لا توجد فئات</p>';
                 return;
             }
             container.innerHTML = _allPlans.map(p => {
@@ -12721,7 +12721,7 @@ async function loadPlansList() {
                         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                             <div>
                                 <strong style="font-size:16px; color:#1e40af;">${escHTML(p.name)}</strong>
-                                ${p.description ? `<span style="color:#6c757d; margin-right:8px;">(${escHTML(p.description)})</span>` : ''}
+                                ${p.description ? `<span style="color:#9a96a6; margin-right:8px;">(${escHTML(p.description)})</span>` : ''}
                             </div>
                             <div style="display:flex; gap:5px; align-items:center;">
                                 <span style="background:#28a745; color:white; padding:3px 10px; border-radius:12px; font-size:13px; font-weight:bold;">${p.price.toFixed(3)} د.ك</span>
@@ -13023,7 +13023,7 @@ function onPlanSelect() {
         document.getElementById('subPlanDetails').innerHTML = `
             <div style="font-weight:bold; margin-bottom:5px; color:#0369a1;">${escHTML(plan.name)}</div>
             <div>المدة: <strong>${plan.duration_days} يوم</strong> | السعر: <strong>${plan.price.toFixed(3)} د.ك</strong></div>
-            ${plan.description ? `<div style="color:#6c757d;">${escHTML(plan.description)}</div>` : ''}
+            ${plan.description ? `<div style="color:#9a96a6;">${escHTML(plan.description)}</div>` : ''}
             ${items.length > 0 ? `
             <div style="margin-top:8px; border-top:1px solid #bae6fd; padding-top:8px;">
                 <strong>📦 المنتجات المشمولة:</strong>
