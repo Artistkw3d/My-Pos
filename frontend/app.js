@@ -201,7 +201,7 @@ async function checkLicense() {
                     bannerText.textContent = '⚠ ينتهي الترخيص خلال ' + hours + ' ساعة. يرجى تجديد الاشتراك فوراً!';
                 } else {
                     banner.style.background = '#f39c12';
-                    banner.style.color = '#333';
+                    banner.style.color = '#fff';
                     const days = Math.floor(daysLeft);
                     bannerText.textContent = '⚠ ينتهي الترخيص خلال ' + days + ' يوم. يرجى تجديد الاشتراك.';
                 }
