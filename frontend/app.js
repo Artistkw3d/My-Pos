@@ -10079,7 +10079,7 @@ async function loadBackupsList() {
 
         const container = document.getElementById('backupsList');
         if (!data.backups || data.backups.length === 0) {
-            container.innerHTML = '<div style="padding: 30px; text-align: center; color: #a0aec0;">لا توجد نسخ احتياطية بعد</div>';
+            container.innerHTML = '<div style="padding: 30px; text-align: center; color: #e0dce8;">لا توجد نسخ احتياطية بعد</div>';
             return;
         }
 
@@ -10464,7 +10464,7 @@ async function loadGDriveFiles() {
         const container = document.getElementById('gdriveFilesList');
 
         if (!data.success || !data.files || data.files.length === 0) {
-            container.innerHTML = '<div style="padding: 30px; text-align: center; color: #a0aec0;">لا توجد نسخ في Google Drive</div>';
+            container.innerHTML = '<div style="padding: 30px; text-align: center; color: #e0dce8;">لا توجد نسخ في Google Drive</div>';
             return;
         }
 
@@ -10552,7 +10552,7 @@ async function loadAdminDashInvoices() {
 
         // جدول الفواتير حسب الفروع
         if (branches.length === 0) {
-            document.getElementById('adminDashInvoicesTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #a0aec0;">لا توجد فروع</div>';
+            document.getElementById('adminDashInvoicesTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #e0dce8;">لا توجد فروع</div>';
             return;
         }
 
@@ -10609,11 +10609,11 @@ async function loadAdminDashStock() {
 
 function renderAdminDashStockTable(branches, products) {
     if (!branches || branches.length === 0) {
-        document.getElementById('adminDashStockTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #a0aec0;">لا توجد فروع</div>';
+        document.getElementById('adminDashStockTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #e0dce8;">لا توجد فروع</div>';
         return;
     }
     if (!products || products.length === 0) {
-        document.getElementById('adminDashStockTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #a0aec0;">لا توجد منتجات</div>';
+        document.getElementById('adminDashStockTable').innerHTML = '<div style="padding: 20px; text-align: center; color: #e0dce8;">لا توجد منتجات</div>';
         return;
     }
 
@@ -10849,7 +10849,7 @@ function renderXBRLIncomeTable() {
         const indent = r.indent ? 'padding-right: 30px;' : '';
         html += `<tr style="${bg}">
             <td style="padding: 10px 15px; ${fw} ${fs} ${indent} color: ${r.color};">${r.label}</td>
-            <td style="padding: 10px 15px; font-size: 11px; color: #a0aec0; direction: ltr;">${r.ifrs}</td>
+            <td style="padding: 10px 15px; font-size: 11px; color: #e0dce8; direction: ltr;">${r.ifrs}</td>
             <td style="padding: 10px 15px; text-align: center; color: #4a5568;">${r.system !== null ? fmt(r.system) : '-'}</td>
             <td style="padding: 10px 15px; text-align: center; color: #805ad5;">${r.manual !== null ? fmt(r.manual) : '-'}</td>
             <td style="padding: 10px 15px; text-align: center; ${fw} ${fs} color: ${r.color};">${fmt(r.total)} ${currency}</td>
@@ -11299,7 +11299,7 @@ async function loadXBRLSavedReports() {
 
         const container = document.getElementById('xbrl_saved_reports');
         if (!data.reports || data.reports.length === 0) {
-            container.innerHTML = '<p style="color: #a0aec0; text-align: center; padding: 20px;">لا توجد تقارير محفوظة بعد</p>';
+            container.innerHTML = '<p style="color: #e0dce8; text-align: center; padding: 20px;">لا توجد تقارير محفوظة بعد</p>';
             return;
         }
 
@@ -11391,7 +11391,7 @@ async function loadShiftsList() {
 
         const container = document.getElementById('shiftsListContainer');
         if (data.shifts.length === 0) {
-            container.innerHTML = '<div style="text-align: center; color: #a0aec0; padding: 30px;">لا توجد شفتات. أضف شفت جديد.</div>';
+            container.innerHTML = '<div style="text-align: center; color: #e0dce8; padding: 30px;">لا توجد شفتات. أضف شفت جديد.</div>';
             return;
         }
 
@@ -11774,7 +11774,7 @@ async function loadAdminDashShiftPerformance() {
         const { shift_stats, unassigned_employees } = data;
 
         if (shift_stats.length === 0 && unassigned_employees.length === 0) {
-            container.innerHTML = '<div style="text-align: center; color: #a0aec0; padding: 20px;">لا توجد شفتات. أضف شفتات من إدارة المستخدمين.</div>';
+            container.innerHTML = '<div style="text-align: center; color: #e0dce8; padding: 20px;">لا توجد شفتات. أضف شفتات من إدارة المستخدمين.</div>';
             return;
         }
 
@@ -11828,7 +11828,7 @@ async function loadAdminDashShiftPerformance() {
                                 </tr>
                             `).join('')}
                         </tbody>
-                    </table>` : '<div style="font-size: 12px; color: #a0aec0; text-align: center;">لا يوجد موظفين في هذا الشفت</div>'}
+                    </table>` : '<div style="font-size: 12px; color: #e0dce8; text-align: center;">لا يوجد موظفين في هذا الشفت</div>'}
                 </div>`;
         });
         html += '</div>';

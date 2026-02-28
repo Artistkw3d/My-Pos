@@ -15,7 +15,7 @@
     --gold-bg: rgba(212,168,83,0.08);
     --gold-b: rgba(212,168,83,0.12);
     --t1: #f0ece4;
-    --t2: #8a8494;
+    --t2: #e0dce8;
     --t3: #4a4656;
     --green: #4ecb71;
     --red: #e85d5d;
@@ -607,6 +607,7 @@ body {
    ============================================ */
 .cart-section {
     background: var(--panel);
+    border-left: none;
     border-right: 1px solid var(--gold-b);
     padding: 14px 16px;
     display: flex;
@@ -618,7 +619,6 @@ body {
     flex-shrink: 0;
     height: calc(100vh);
     overflow-y: auto;
-    order: -1;
 }
 
 .cart-header {

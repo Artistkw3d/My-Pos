@@ -15,9 +15,9 @@
 </head>
 <body>
     <!-- License Warning Banner -->
-    <div id="licenseWarningBanner" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:99998; padding:10px 20px; text-align:center; font-size:14px; font-weight:bold; direction:rtl; cursor:pointer;" onclick="forceLicenseRefresh()">
+    <div id="licenseWarningBanner" style="display:none; position:fixed; top:0; left:0; right:240px; z-index:99998; padding:6px 20px; text-align:center; font-size:13px; font-weight:bold; direction:rtl; cursor:pointer;" onclick="forceLicenseRefresh()">
         <span id="licenseWarningText"></span>
-        <button onclick="event.stopPropagation(); forceLicenseRefresh();" style="margin-right:15px; padding:4px 16px; border:none; border-radius:4px; cursor:pointer; font-size:13px; background:#fff; color:#8a8494;">تجديد الترخيص</button>
+        <button onclick="event.stopPropagation(); forceLicenseRefresh();" style="margin-right:15px; padding:4px 16px; border:none; border-radius:4px; cursor:pointer; font-size:13px; background:rgba(255,255,255,0.2); color:#fff;">تجديد الترخيص</button>
     </div>
 
     <!-- License Expired Overlay -->
@@ -49,11 +49,11 @@
     <div id="negativeStockModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99996; justify-content:center; align-items:center;" onclick="if(event.target===this)this.style.display='none'">
         <div style="background:#16161f; color:#f0ece4; border-radius:12px; padding:24px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto; direction:rtl;">
             <h2 style="text-align:center; margin-bottom:16px; font-size:20px; color:#f87171;">تحذير: مخزون سلبي</h2>
-            <p style="text-align:center; font-size:13px; color:#8a8494; margin-bottom:14px;">المنتجات التالية لديها مخزون أقل من صفر. يرجى مراجعة المخزون وتعديله.</p>
+            <p style="text-align:center; font-size:13px; color:#e0dce8; margin-bottom:14px;">المنتجات التالية لديها مخزون أقل من صفر. يرجى مراجعة المخزون وتعديله.</p>
             <div id="negativeStockList" style="background:#451a1a; border:1px solid #dc2626; border-radius:8px; padding:12px; font-size:13px; line-height:1.8; margin-bottom:16px;"></div>
             <div style="text-align:center;">
                 <button onclick="document.getElementById('negativeStockModal').style.display='none'" style="padding:10px 32px; border:none; border-radius:8px; background:#d4a853; color:#f0ece4; font-size:15px; cursor:pointer; margin-left:8px;">إغلاق</button>
-                <button id="negativeStockDismiss" onclick="window._negStockDismissed=true; document.getElementById('negativeStockModal').style.display='none'" style="padding:10px 20px; border:1px solid #475569; border-radius:8px; background:transparent; color:#8a8494; font-size:13px; cursor:pointer;">عدم الإظهار في هذه الجلسة</button>
+                <button id="negativeStockDismiss" onclick="window._negStockDismissed=true; document.getElementById('negativeStockModal').style.display='none'" style="padding:10px 20px; border:1px solid #475569; border-radius:8px; background:transparent; color:#e0dce8; font-size:13px; cursor:pointer;">عدم الإظهار في هذه الجلسة</button>
             </div>
         </div>
     </div>
@@ -98,7 +98,7 @@
         <div class="login-box">
             <div class="login-logo"><img src="icon-192.png" style="width: 100px; height: 100px; border-radius: 20px; object-fit: cover;"></div>
             <h1 class="login-title">نظام نقاط البيع</h1>
-            <div id="loginVersion" style="font-size: 12px; color: #8a8494; margin-top: -5px; margin-bottom: 8px; font-weight: 500;"></div>
+            <div id="loginVersion" style="font-size: 12px; color: #e0dce8; margin-top: -5px; margin-bottom: 8px; font-weight: 500;"></div>
             <!-- اختيار وضع العرض -->
             <div class="view-mode-selector" id="viewModeSelector">
                 <div class="view-mode-label">اختر وضع العرض</div>
@@ -181,7 +181,7 @@
                 <div class="form-group" id="tenantSlugGroup">
                     <label>معرف المتجر (بالإنجليزية):</label>
                     <input type="text" id="tenantSlug" required placeholder="مثال: al-salam" pattern="[a-zA-Z0-9_-]+" style="direction: ltr;">
-                    <small style="color: #8a8494;">يستخدم للتعريف - أحرف إنجليزية وأرقام فقط</small>
+                    <small style="color: #e0dce8;">يستخدم للتعريف - أحرف إنجليزية وأرقام فقط</small>
                 </div>
                 <div class="form-group">
                     <label>اسم المالك:</label>
@@ -425,14 +425,14 @@
                                 <span style="font-weight: bold; color: var(--blue);">💎 نقاط الولاء</span>
                                 <span style="font-size: 18px; font-weight: bold; color: var(--blue);" id="customerLoyaltyPoints">0</span>
                             </div>
-                            <div style="font-size: 11px; color: #8a8494; margin-bottom: 8px;">
+                            <div style="font-size: 11px; color: #e0dce8; margin-bottom: 8px;">
                                 💰 سيربح: <span id="pointsToEarn" style="font-weight: bold; color: #38a169;">0</span> نقطة
                             </div>
                             <div style="display: flex; gap: 5px; align-items: center;">
                                 <input type="number" id="pointsToRedeem" placeholder="استخدم نقاط" min="0" step="1" style="flex: 1; padding: 6px; font-size: 12px;" oninput="calculateLoyaltyDiscount()">
                                 <button onclick="applyMaxPoints()" class="btn-sm" style="background: #f59e0b; padding: 6px 10px; font-size: 11px;">استخدم الكل</button>
                             </div>
-                            <div id="loyaltyHint" style="font-size: 10px; color: #8a8494; margin-top: 5px;">
+                            <div id="loyaltyHint" style="font-size: 10px; color: #e0dce8; margin-top: 5px;">
                                 💡 كل نقطة = <span id="pointValueHint">0.100</span> د.ك خصم
                             </div>
                         </div>
@@ -1629,7 +1629,7 @@
                     <div style="min-width: 0;">
                         <h3 style="color: var(--t2); margin-bottom: 15px;">📁 النسخ الاحتياطية المحلية</h3>
                         <div id="backupsList" style="background: #16161f; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
-                            <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                            <div style="padding: 30px; text-align: center; color: #e0dce8;">جاري التحميل...</div>
                         </div>
                     </div>
 
@@ -1637,7 +1637,7 @@
                     <div style="min-width: 0;">
                         <h3 style="color: var(--t2); margin-bottom: 15px;">☁️ النسخ في Google Drive</h3>
                         <div id="gdriveFilesList" style="background: #16161f; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
-                            <div style="padding: 30px; text-align: center; color: #a0aec0;">غير متصل بـ Google Drive</div>
+                            <div style="padding: 30px; text-align: center; color: #e0dce8;">غير متصل بـ Google Drive</div>
                         </div>
                     </div>
                 </div>
@@ -1823,7 +1823,7 @@
                 <div style="background: #16161f; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px; margin-bottom: 25px;">
                     <h3 style="margin: 0 0 20px; color: #f0ece4; font-size: 18px;">الفواتير حسب الفروع</h3>
                     <div id="adminDashInvoicesTable" style="overflow-x: auto;">
-                        <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                        <div style="padding: 30px; text-align: center; color: #e0dce8;">جاري التحميل...</div>
                     </div>
                 </div>
 
@@ -1834,7 +1834,7 @@
                         <input type="text" id="adminDashStockSearch" placeholder="ابحث عن منتج..." oninput="filterAdminDashStock()" style="padding: 8px 15px; border: 2px solid var(--gold-b); border-radius: 8px; font-size: 14px; width: 250px;">
                     </div>
                     <div id="adminDashStockTable" style="overflow-x: auto;">
-                        <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                        <div style="padding: 30px; text-align: center; color: #e0dce8;">جاري التحميل...</div>
                     </div>
                 </div>
 
@@ -1842,7 +1842,7 @@
                 <div style="background: #16161f; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 25px; margin-top: 25px;">
                     <h3 style="margin: 0 0 20px; color: #f0ece4; font-size: 18px;">أداء الشفتات</h3>
                     <div id="adminDashShiftPerformance" style="overflow-x: auto;">
-                        <div style="padding: 30px; text-align: center; color: #a0aec0;">جاري التحميل...</div>
+                        <div style="padding: 30px; text-align: center; color: #e0dce8;">جاري التحميل...</div>
                     </div>
                 </div>
             </div>
@@ -1996,7 +1996,7 @@
                     <input type="password" id="saSettingsOldPassword" required placeholder="مطلوب للتأكيد">
                 </div>
                 <div class="form-group">
-                    <label>كلمة المرور الجديدة: <small style="color: #8a8494;">(اتركها فارغة لعدم التغيير)</small></label>
+                    <label>كلمة المرور الجديدة: <small style="color: #e0dce8;">(اتركها فارغة لعدم التغيير)</small></label>
                     <input type="password" id="saSettingsNewPassword" placeholder="اتركها فارغة إذا لا تريد التغيير">
                 </div>
                 <div class="form-group">
@@ -3050,7 +3050,7 @@
                     <button onclick="addNewShift()" class="btn" style="background: #d4a853; color: #09090f; white-space: nowrap;">➕ إضافة</button>
                 </div>
                 <div id="shiftsListContainer" style="min-height: 100px;">
-                    <div style="text-align: center; color: #a0aec0; padding: 30px;">جاري التحميل...</div>
+                    <div style="text-align: center; color: #e0dce8; padding: 30px;">جاري التحميل...</div>
                 </div>
             </div>
         </div>
@@ -3164,7 +3164,7 @@
                             <div style="font-size: 24px; font-weight: bold; color: var(--blue); margin-bottom: 10px;">
                                 <span id="customerCurrentPoints">0</span> نقطة
                             </div>
-                            <div style="font-size: 12px; color: #8a8494;">
+                            <div style="font-size: 12px; color: #e0dce8;">
                                 💵 إجمالي المشتريات: <span id="customerTotalSpent">0.000</span> د.ك
                             </div>
                             <div style="margin-top: 10px;">
