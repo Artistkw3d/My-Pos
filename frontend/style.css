@@ -273,15 +273,15 @@ body {
 .header-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
+    gap: 10px;
+    padding: 12px 16px;
     border-radius: 8px;
     border: none;
     background: transparent;
     color: var(--t2);
     cursor: pointer;
     transition: all 0.2s;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     font-family: 'Tajawal', sans-serif;
     text-align: right;
@@ -369,7 +369,7 @@ body {
    TAB CONTENT AREA
    ============================================ */
 .tab-content { display: none; }
-.tab-content.active { display: block; }
+.tab-content.active { display: block; min-height: 100vh; overflow-y: auto; }
 
 /* Main content - shifted for sidebar */
 .main-content {

@@ -468,7 +468,7 @@ async function checkFirstTimeSetup() {
         // Electron: auto-fill localhost, show skip
         if (window.location.protocol === 'file:') {
             const urlInput = document.getElementById('setupServerUrl');
-            if (urlInput) { urlInput.value = 'http://localhost:5050'; urlInput.readOnly = true; urlInput.style.background = '#f1f5f9'; }
+            if (urlInput) { urlInput.value = 'http://localhost:5050'; urlInput.readOnly = true; urlInput.style.background = 'var(--raised)'; }
             const skipC = document.getElementById('setupSkipContainer');
             if (skipC) skipC.style.display = 'block';
         }
@@ -1600,9 +1600,9 @@ function showVariantSelectModal(product) {
     // خيار السعر الأساسي
     let html = `
         <button onclick="selectVariantAndAdd(${product.id}, null)" style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px; background: #16161f; border: 2px solid rgba(212,168,83,0.12); border-radius: 10px; cursor: pointer; font-size: 16px; transition: all 0.2s;"
-            onmouseover="this.style.borderColor='#667eea'; this.style.background='#f0f4ff';"
-            onmouseout="this.style.borderColor='#e2e8f0'; this.style.background='white';">
-            <span style="font-weight: bold;">الأساسي</span>
+            onmouseover="this.style.borderColor='#667eea'; this.style.background='rgba(91,141,239,0.08)';"
+            onmouseout="this.style.borderColor='rgba(212,168,83,0.12)'; this.style.background='var(--card)';">
+            <span style="font-weight: bold; color:var(--t1);">الأساسي</span>
             <span style="color: #667eea; font-weight: bold;">${product.price.toFixed(3)} د.ك</span>
         </button>
     `;
@@ -1611,8 +1611,9 @@ function showVariantSelectModal(product) {
     product.variants.forEach(v => {
         html += `
         <button onclick="selectVariantAndAdd(${product.id}, ${v.id})" style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px; background: #16161f; border: 2px solid rgba(78,203,113,0.2); border-radius: 10px; cursor: pointer; font-size: 16px; transition: all 0.2s;"
-            onmouseover="this.style.borderColor='#38a169'; this.style.background='#f0fff4';"
-            onmouseout="this.style.borderColor='#c6f6d5'; this.style.background='white';">
+            onmouseover="this.style.borderColor='#38a169'; this.style.background='rgba(78,203,113,0.08)';"
+            onmouseout="this.style.borderColor='rgba(78,203,113,0.2)'; this.style.background='var(--card)';">
+
             <span style="font-weight: bold;">📐 ${v.variant_name}</span>
             <span style="color: #38a169; font-weight: bold;">${v.price.toFixed(3)} د.ك</span>
         </button>
@@ -5220,12 +5221,12 @@ async function loadSystemLogs(page) {
 
                 // لون الخلفية حسب نوع العملية
                 let rowColor = '';
-                if (log.action_type === 'login') rowColor = 'background:#e8f5e9;';
-                else if (log.action_type === 'logout') rowColor = 'background:#fff3e0;';
-                else if (log.action_type === 'sale') rowColor = 'background:#e3f2fd;';
-                else if (log.action_type.includes('delete') || log.action_type === 'cancel_invoice') rowColor = 'background:#ffebee;';
-                else if (log.action_type === 'edit_invoice') rowColor = 'background:#fff8e1;';
-                else if (log.action_type === 'shift_lock') rowColor = 'background:#f3e5f5;';
+                if (log.action_type === 'login') rowColor = 'background:rgba(78,203,113,0.08);';
+                else if (log.action_type === 'logout') rowColor = 'background:rgba(212,168,83,0.08);';
+                else if (log.action_type === 'sale') rowColor = 'background:rgba(91,141,239,0.08);';
+                else if (log.action_type.includes('delete') || log.action_type === 'cancel_invoice') rowColor = 'background:rgba(232,93,93,0.08);';
+                else if (log.action_type === 'edit_invoice') rowColor = 'background:rgba(212,168,83,0.06);';
+                else if (log.action_type === 'shift_lock') rowColor = 'background:rgba(167,139,250,0.08);';
 
                 html += `
                     <tr style="${rowColor}">
@@ -5241,7 +5242,7 @@ async function loadSystemLogs(page) {
             html += '</tbody></table>';
 
             if (logs.length === 0) {
-                html = '<p style="text-align: center; padding: 40px; color: #999;">لا توجد سجلات</p>';
+                html = '<p style="text-align: center; padding: 40px; color: var(--t2);">لا توجد سجلات</p>';
             }
 
             container.innerHTML = html;
@@ -5250,11 +5251,11 @@ async function loadSystemLogs(page) {
             if (paginationEl && totalPages > 1) {
                 let pagHtml = '';
                 if (_systemLogsPage > 1) {
-                    pagHtml += `<button onclick="loadSystemLogs(${_systemLogsPage - 1})" style="margin:0 3px; padding:6px 12px; border-radius:6px; border:1px solid #ddd; cursor:pointer;">السابق</button>`;
+                    pagHtml += `<button onclick="loadSystemLogs(${_systemLogsPage - 1})" style="margin:0 3px; padding:6px 12px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1); cursor:pointer;">السابق</button>`;
                 }
-                pagHtml += `<span style="margin:0 10px; font-size:14px;">صفحة ${_systemLogsPage} من ${totalPages}</span>`;
+                pagHtml += `<span style="margin:0 10px; font-size:14px; color:var(--t2);">صفحة ${_systemLogsPage} من ${totalPages}</span>`;
                 if (_systemLogsPage < totalPages) {
-                    pagHtml += `<button onclick="loadSystemLogs(${_systemLogsPage + 1})" style="margin:0 3px; padding:6px 12px; border-radius:6px; border:1px solid #ddd; cursor:pointer;">التالي</button>`;
+                    pagHtml += `<button onclick="loadSystemLogs(${_systemLogsPage + 1})" style="margin:0 3px; padding:6px 12px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1); cursor:pointer;">التالي</button>`;
                 }
                 paginationEl.innerHTML = pagHtml;
             } else if (paginationEl) {
@@ -5489,7 +5490,7 @@ function displayExpenses(expenses) {
                                     </thead>
                                     <tbody>
                                         ${e.salary_details.map(s => `
-                                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                                        <tr style="border-bottom: 1px solid rgba(212,168,83,0.15);">
                                             <td style="padding: 8px; text-align: center;">${escHTML(s.employee_name)}</td>
                                             <td style="padding: 8px; text-align: center; color: #dc3545; font-weight: bold;">${s.monthly_salary.toFixed(3)} د.ك</td>
                                         </tr>`).join('')}
@@ -6139,10 +6140,10 @@ function searchCustomerInPOS(query) {
 }
 
 function customerResultItem(c) {
-    return `<div onclick="pickCustomerFromSearch('${c.id}')" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px; display:flex; justify-content:space-between; align-items:center;"
-        onmouseover="this.style.background='#f0f0ff'" onmouseout="this.style.background='white'">
+    return `<div onclick="pickCustomerFromSearch('${c.id}')" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid rgba(212,168,83,0.1); font-size:13px; display:flex; justify-content:space-between; align-items:center; color:var(--t1);"
+        onmouseover="this.style.background='rgba(91,141,239,0.08)'" onmouseout="this.style.background='transparent'">
         <span><strong>${escHTML(c.name)}</strong></span>
-        <span style="color:#667eea; font-size:12px; direction:ltr;">${escHTML(c.phone) || ''}</span>
+        <span style="color:var(--blue); font-size:12px; direction:ltr;">${escHTML(c.phone) || ''}</span>
     </div>`;
 }
 
@@ -9283,7 +9284,7 @@ async function viewTableInvoice(tableId) {
 
             content.innerHTML = `
                 <div style="padding: 15px;">
-                    <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #86efac;">
+                    <div style="background: rgba(78,203,113,0.08); padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid rgba(78,203,113,0.2);">
                         <strong>🍽️ ${escHTML(table.name)}</strong> | <strong>📄 فاتورة: ${escHTML(inv.invoice_number)}</strong>
                     </div>
                     <div style="font-size: 13px; margin-bottom: 10px;">
@@ -9587,14 +9588,14 @@ async function loadSuperAdminDashboard() {
                 }
 
                 tableHTML += `
-                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <tr style="border-bottom: 1px solid rgba(212,168,83,0.1);">
                         <td style="padding: 10px;">${i + 1}</td>
                         <td style="padding: 10px; font-weight: bold;">${escHTML(t.name)} ${sourceBadge}</td>
                         <td style="padding: 10px; direction: ltr; color: #64748b;">${escHTML(t.slug)}</td>
                         <td style="padding: 10px;">${escHTML(t.owner_name)}</td>
-                        <td style="padding: 10px;"><span style="background: ${t.plan === 'enterprise' ? '#fef3c7' : t.plan === 'premium' ? '#dbeafe' : '#f1f5f9'}; padding: 3px 8px; border-radius: 6px; font-size: 11px;">${planNames[t.plan] || t.plan}</span></td>
+                        <td style="padding: 10px;"><span style="background: ${t.plan === 'enterprise' ? 'rgba(245,158,11,0.15)' : t.plan === 'premium' ? 'rgba(91,141,239,0.15)' : 'rgba(154,150,166,0.15)'}; padding: 3px 8px; border-radius: 6px; font-size: 11px; color: var(--t1);">${planNames[t.plan] || t.plan}</span></td>
                         <td style="padding: 10px; text-align: center;">${t.is_active ? '<span style="color: #10b981; font-weight: bold;">✅ نشط</span>' : '<span style="color: #ef4444;">❌ معطل</span>'}</td>
-                        <td style="padding: 10px; text-align: center;">${t.mode === 'offline' ? '<span style="background: rgba(245,158,11,0.1); color: #92400e; padding: 3px 8px; border-radius: 6px; font-size: 11px;">📴 أوفلاين</span>' : '<span style="background: #d1fae5; color: #065f46; padding: 3px 8px; border-radius: 6px; font-size: 11px;">🌐 أونلاين</span>'}</td>
+                        <td style="padding: 10px; text-align: center;">${t.mode === 'offline' ? '<span style="background: rgba(245,158,11,0.1); color: #f59e0b; padding: 3px 8px; border-radius: 6px; font-size: 11px;">📴 أوفلاين</span>' : '<span style="background: rgba(78,203,113,0.1); color: var(--green); padding: 3px 8px; border-radius: 6px; font-size: 11px;">🌐 أونلاين</span>'}</td>
                         <td style="padding: 10px; text-align: center; font-size: 12px;">${subStatus}</td>
                         <td style="padding: 10px; text-align: center;">${t.users_count || 0}</td>
                         <td style="padding: 10px; text-align: center;">
@@ -9838,20 +9839,20 @@ async function viewTenantStats(tenantId) {
         document.getElementById('tenantStatsTitle').textContent = `📊 إحصائيات: ${t.name}`;
         document.getElementById('tenantStatsContent').innerHTML = `
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
-                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                    <div style="color: #64748b; font-size: 12px;">المعرف</div>
+                <div style="background: var(--raised); padding: 12px; border-radius: 8px;">
+                    <div style="color: var(--t3); font-size: 12px;">المعرف</div>
                     <div style="font-weight: bold; direction: ltr;">${t.slug}</div>
                 </div>
-                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                    <div style="color: #64748b; font-size: 12px;">الخطة</div>
+                <div style="background: var(--raised); padding: 12px; border-radius: 8px;">
+                    <div style="color: var(--t3); font-size: 12px;">الخطة</div>
                     <div style="font-weight: bold;">${planNames[t.plan] || t.plan}</div>
                 </div>
-                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                    <div style="color: #64748b; font-size: 12px;">المالك</div>
+                <div style="background: var(--raised); padding: 12px; border-radius: 8px;">
+                    <div style="color: var(--t3); font-size: 12px;">المالك</div>
                     <div style="font-weight: bold;">${t.owner_name}</div>
                 </div>
-                <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
-                    <div style="color: #64748b; font-size: 12px;">تاريخ الإنشاء</div>
+                <div style="background: var(--raised); padding: 12px; border-radius: 8px;">
+                    <div style="color: var(--t3); font-size: 12px;">تاريخ الإنشاء</div>
                     <div style="font-weight: bold;">${new Date(t.created_at).toLocaleDateString('ar')}</div>
                 </div>
             </div>
@@ -9913,7 +9914,7 @@ async function openSubscriptionModal(tenantId) {
             const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
             const isExpired = daysLeft < 0;
             infoHTML = `
-                <div style="background: ${isExpired ? '#fef2f2' : daysLeft <= 7 ? '#fffbeb' : '#f0fdf4'}; padding: 15px; border-radius: 10px; border: 2px solid ${isExpired ? '#fca5a5' : daysLeft <= 7 ? '#fcd34d' : '#86efac'};">
+                <div style="background: ${isExpired ? 'rgba(232,93,93,0.08)' : daysLeft <= 7 ? 'rgba(245,158,11,0.08)' : 'rgba(78,203,113,0.08)'}; padding: 15px; border-radius: 10px; border: 2px solid ${isExpired ? 'rgba(232,93,93,0.3)' : daysLeft <= 7 ? 'rgba(245,158,11,0.3)' : 'rgba(78,203,113,0.3)'};">
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center;">
                         <div>
                             <div style="font-size: 12px; color: #64748b;">المتجر</div>
@@ -9964,7 +9965,7 @@ async function openSubscriptionModal(tenantId) {
                     <th style="padding: 8px; text-align: center;">حذف</th>
                 </tr></thead><tbody>`;
             invData.invoices.forEach((inv, i) => {
-                invHTML += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                invHTML += `<tr style="border-bottom: 1px solid rgba(212,168,83,0.1);">
                     <td style="padding: 6px;">${i+1}</td>
                     <td style="padding: 6px; font-weight: bold;">${parseFloat(inv.amount).toFixed(3)} د.ك</td>
                     <td style="padding: 6px;">${inv.period_days} يوم</td>
@@ -10089,7 +10090,7 @@ async function loadBackupsList() {
             const dateStr = date.toLocaleDateString('ar', {year: 'numeric', month: 'long', day: 'numeric'});
             const timeStr = date.toLocaleTimeString('ar', {hour: '2-digit', minute: '2-digit'});
             html += `
-                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 15px; border-bottom: 1px solid rgba(212,168,83,0.15); display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-weight: bold; color: #2d3748;">${b.filename}</div>
                         <div style="font-size: 13px; color: #718096;">${dateStr} - ${timeStr} | ${formatFileSize(b.size)}</div>
@@ -10474,7 +10475,7 @@ async function loadGDriveFiles() {
             const dateStr = date.toLocaleDateString('ar', {year: 'numeric', month: 'long', day: 'numeric'});
             const timeStr = date.toLocaleTimeString('ar', {hour: '2-digit', minute: '2-digit'});
             html += `
-                <div style="padding: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 15px; border-bottom: 1px solid rgba(212,168,83,0.15); display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-weight: bold; color: #2d3748; font-size: 13px;">${escHTML(f.name)}</div>
                         <div style="font-size: 12px; color: #718096;">${dateStr} - ${timeStr} | ${formatFileSize(f.size)}</div>
@@ -10559,27 +10560,27 @@ async function loadAdminDashInvoices() {
         let tableHtml = `
             <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                 <thead>
-                    <tr style="background: #1e1e2a;">
-                        <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568;">الفرع</th>
-                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">إجمالي الفواتير</th>
-                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">إجمالي المبيعات</th>
-                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">فواتير اليوم</th>
-                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">مبيعات اليوم</th>
-                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568;">الملغية</th>
+                    <tr style="background: var(--raised);">
+                        <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold);">الفرع</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold);">إجمالي الفواتير</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold);">إجمالي المبيعات</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold);">فواتير اليوم</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold);">مبيعات اليوم</th>
+                        <th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold);">الملغية</th>
                     </tr>
                 </thead>
                 <tbody>`;
 
         branches.forEach((b, idx) => {
-            const bgColor = idx % 2 === 0 ? '#ffffff' : '#f7fafc';
+            const bgColor = idx % 2 === 0 ? 'var(--card)' : 'var(--raised)';
             tableHtml += `
                 <tr style="background: ${bgColor};">
-                    <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748;">🏢 ${escHTML(b.branch_name)}</td>
-                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #4a5568;">${b.total_invoices}</td>
-                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #38a169; font-weight: bold;">${Number(b.total_sales).toFixed(2)}</td>
-                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #667eea; font-weight: bold;">${b.today_invoices}</td>
-                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #38a169;">${Number(b.today_sales).toFixed(2)}</td>
-                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: ${b.cancelled_invoices > 0 ? '#e53e3e' : '#a0aec0'};">${b.cancelled_invoices}</td>
+                    <td style="padding: 12px 15px; border-bottom: 1px solid rgba(212,168,83,0.1); font-weight: bold; color: var(--t1);">🏢 ${escHTML(b.branch_name)}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: var(--t2);">${b.total_invoices}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: var(--green); font-weight: bold;">${Number(b.total_sales).toFixed(2)}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: var(--blue); font-weight: bold;">${b.today_invoices}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: var(--green);">${Number(b.today_sales).toFixed(2)}</td>
+                    <td style="padding: 12px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: ${b.cancelled_invoices > 0 ? 'var(--red)' : 'var(--t3)'};">${b.cancelled_invoices}</td>
                 </tr>`;
         });
 
@@ -10620,46 +10621,46 @@ function renderAdminDashStockTable(branches, products) {
     let html = `
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
             <thead>
-                <tr style="background: #1e1e2a;">
-                    <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568; position: sticky; right: 0; background: #1e1e2a; min-width: 180px;">المنتج</th>
-                    <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 100px;">التصنيف</th>`;
+                <tr style="background: var(--raised);">
+                    <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold); position: sticky; right: 0; background: var(--raised); min-width: 180px;">المنتج</th>
+                    <th style="padding: 12px 15px; text-align: right; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold); min-width: 100px;">التصنيف</th>`;
 
     branches.forEach(b => {
-        html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 120px;">🏢 ${escHTML(b.name)}</th>`;
+        html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold); min-width: 120px;">🏢 ${escHTML(b.name)}</th>`;
     });
 
-    html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid #e2e8f0; color: #4a5568; min-width: 100px; background: #1e1e2a;">الإجمالي</th>
+    html += `<th style="padding: 12px 15px; text-align: center; border-bottom: 2px solid rgba(212,168,83,0.2); color: var(--gold); min-width: 100px; background: var(--raised);">الإجمالي</th>
             </tr>
             </thead>
             <tbody>`;
 
     products.forEach((p, idx) => {
-        const bgColor = idx % 2 === 0 ? '#ffffff' : '#f7fafc';
+        const bgColor = idx % 2 === 0 ? 'var(--card)' : 'var(--raised)';
         let totalStock = 0;
 
         html += `<tr style="background: ${bgColor};">
-            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #2d3748; position: sticky; right: 0; background: ${bgColor};">${escHTML(p.name)}</td>
-            <td style="padding: 10px 15px; border-bottom: 1px solid #e2e8f0; color: #718096;">${escHTML(p.category) || '-'}</td>`;
+            <td style="padding: 10px 15px; border-bottom: 1px solid rgba(212,168,83,0.1); font-weight: bold; color: var(--t1); position: sticky; right: 0; background: ${bgColor};">${escHTML(p.name)}</td>
+            <td style="padding: 10px 15px; border-bottom: 1px solid rgba(212,168,83,0.1); color: var(--t2);">${escHTML(p.category) || '-'}</td>`;
 
         branches.forEach(b => {
             const branchData = p.branches[b.id];
             const stock = branchData ? branchData.stock : 0;
             totalStock += stock;
 
-            let stockColor = '#2d3748';
+            let stockColor = 'var(--t1)';
             let stockBg = '';
             if (stock === 0) {
-                stockColor = '#e53e3e';
+                stockColor = 'var(--red)';
                 stockBg = 'background: rgba(232,93,93,0.08);';
             } else if (stock <= 5) {
                 stockColor = '#dd6b20';
-                stockBg = 'background: #fffaf0;';
+                stockBg = 'background: rgba(221,107,32,0.08);';
             }
 
-            html += `<td style="padding: 10px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; color: ${stockColor}; font-weight: bold; ${stockBg}">${stock}</td>`;
+            html += `<td style="padding: 10px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: ${stockColor}; font-weight: bold; ${stockBg}">${stock}</td>`;
         });
 
-        html += `<td style="padding: 10px 15px; text-align: center; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #667eea; background: #1e1e2a;">${totalStock}</td>`;
+        html += `<td style="padding: 10px 15px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); font-weight: bold; color: var(--blue); background: var(--raised);">${totalStock}</td>`;
         html += '</tr>';
     });
 
@@ -11217,8 +11218,8 @@ async function generateXBRLReport() {
         document.getElementById('xbrl_cashflow_summary').innerHTML = `
             <table style="width: 100%; border-collapse: collapse;">
                 <tr style="background: rgba(78,203,113,0.06);"><td style="padding: 10px 15px; font-weight: bold; color: #38a169;">صافي النقد من الأنشطة التشغيلية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #38a169;">${fmt(s.net_cash_operating)} ${currency}</td></tr>
-                <tr style="background: #faf5ff;"><td style="padding: 10px 15px; font-weight: bold; color: #805ad5;">صافي النقد من الأنشطة الاستثمارية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #805ad5;">${fmt(s.net_cash_investing)} ${currency}</td></tr>
-                <tr style="background: #fffaf0;"><td style="padding: 10px 15px; font-weight: bold; color: #dd6b20;">صافي النقد من الأنشطة التمويلية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #dd6b20;">${fmt(s.net_cash_financing)} ${currency}</td></tr>
+                <tr style="background: rgba(167,139,250,0.06);"><td style="padding: 10px 15px; font-weight: bold; color: var(--purple);">صافي النقد من الأنشطة الاستثمارية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: var(--purple);">${fmt(s.net_cash_investing)} ${currency}</td></tr>
+                <tr style="background: rgba(221,107,32,0.06);"><td style="padding: 10px 15px; font-weight: bold; color: #dd6b20;">صافي النقد من الأنشطة التمويلية</td><td style="padding: 10px 15px; text-align: left; font-weight: bold; color: #dd6b20;">${fmt(s.net_cash_financing)} ${currency}</td></tr>
                 <tr style="background: #1a365d; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 15px;">صافي التغير في النقد</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 16px;">${fmt(s.net_change_cash)} ${currency}</td></tr>
                 <tr><td style="padding: 10px 15px; color: #718096;">رصيد النقد - بداية الفترة</td><td style="padding: 10px 15px; text-align: left; color: #718096;">${fmt(s.cash_beginning)} ${currency}</td></tr>
                 <tr style="background: #2b6cb0; color: white;"><td style="padding: 12px 15px; font-weight: bold; font-size: 16px;">رصيد النقد - نهاية الفترة</td><td style="padding: 12px 15px; text-align: left; font-weight: bold; font-size: 18px;">${fmt(s.cash_ending)} ${currency}</td></tr>
@@ -11248,7 +11249,7 @@ async function generateXBRLReport() {
                     <th style="padding: 8px 10px; text-align: center; color: #92400e;">الرصيد الختامي</th>
                 </tr>
                 ${s.partners.map(p => `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
+                <tr style="border-bottom: 1px solid rgba(212,168,83,0.15);">
                     <td style="padding: 8px 10px; font-weight: bold;">${escHTML(p.name)}</td>
                     <td style="padding: 8px 10px; text-align: center;">${p.share_percent.toFixed(1)}%</td>
                     <td style="padding: 8px 10px; text-align: center;">${fmt(p.capital_opening)} ${currency}</td>
@@ -11313,7 +11314,7 @@ async function loadXBRLSavedReports() {
         html += '</tr></thead><tbody>';
 
         data.reports.forEach(r => {
-            html += `<tr style="border-bottom: 1px solid #e2e8f0;">
+            html += `<tr style="border-bottom: 1px solid rgba(212,168,83,0.15);">
                 <td style="padding: 10px 15px;">#${r.id}</td>
                 <td style="padding: 10px 15px;">${r.report_type}</td>
                 <td style="padding: 10px 15px;">${r.period_start} → ${r.period_end}</td>
@@ -11409,7 +11410,7 @@ async function loadShiftsList() {
                 </thead>
                 <tbody>
                     ${data.shifts.map(s => `
-                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                        <tr style="border-bottom: 1px solid rgba(212,168,83,0.15);">
                             <td style="padding: 10px; font-weight: bold;">🕐 ${escHTML(s.name)}</td>
                             <td style="padding: 10px; text-align: center;">${escHTML(s.start_time) || '-'}</td>
                             <td style="padding: 10px; text-align: center;">${escHTML(s.end_time) || '-'}</td>
@@ -11610,7 +11611,7 @@ function renderEditInvoiceItems(items) {
             </thead>
             <tbody>
                 ${items.map((item, i) => `
-                    <tr style="border-bottom: 1px solid #e2e8f0;" data-index="${i}">
+                    <tr style="border-bottom: 1px solid rgba(212,168,83,0.15);" data-index="${i}">
                         <td style="padding: 8px;">${escHTML(item.product_name)}${item.variant_name ? ` (${escHTML(item.variant_name)})` : ''}</td>
                         <td style="padding: 8px; text-align: center;">
                             <input type="number" value="${item.quantity}" min="1" style="width: 60px; text-align: center; border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px;"
@@ -11814,17 +11815,17 @@ async function loadAdminDashShiftPerformance() {
                     <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
                         <thead>
                             <tr style="background: #1e1e2a;">
-                                <th style="padding: 6px 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">الموظف</th>
-                                <th style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">الفواتير</th>
-                                <th style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">المبيعات</th>
+                                <th style="padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(212,168,83,0.15);">الموظف</th>
+                                <th style="padding: 6px 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.15);">الفواتير</th>
+                                <th style="padding: 6px 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.15);">المبيعات</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${ss.employees.map(emp => `
                                 <tr>
-                                    <td style="padding: 5px 8px; border-bottom: 1px solid #f0f0f0;">${escHTML(emp.full_name)}</td>
-                                    <td style="padding: 5px 8px; text-align: center; border-bottom: 1px solid #f0f0f0;">${emp.invoice_count}</td>
-                                    <td style="padding: 5px 8px; text-align: center; border-bottom: 1px solid #f0f0f0; color: #38a169; font-weight: bold;">${Number(emp.total_sales).toFixed(2)}</td>
+                                    <td style="padding: 5px 8px; border-bottom: 1px solid rgba(212,168,83,0.1);">${escHTML(emp.full_name)}</td>
+                                    <td style="padding: 5px 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1);">${emp.invoice_count}</td>
+                                    <td style="padding: 5px 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: #38a169; font-weight: bold;">${Number(emp.total_sales).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -11841,17 +11842,17 @@ async function loadAdminDashShiftPerformance() {
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                         <thead>
                             <tr style="background: #1e1e2a;">
-                                <th style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">الموظف</th>
-                                <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">الفواتير</th>
-                                <th style="padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">المبيعات</th>
+                                <th style="padding: 8px; text-align: right; border-bottom: 1px solid rgba(212,168,83,0.15);">الموظف</th>
+                                <th style="padding: 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.15);">الفواتير</th>
+                                <th style="padding: 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.15);">المبيعات</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${unassigned_employees.map(emp => `
                                 <tr>
-                                    <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0;">${escHTML(emp.full_name)}</td>
-                                    <td style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #f0f0f0;">${emp.invoice_count}</td>
-                                    <td style="padding: 6px 8px; text-align: center; border-bottom: 1px solid #f0f0f0; color: #38a169; font-weight: bold;">${Number(emp.total_sales).toFixed(2)}</td>
+                                    <td style="padding: 6px 8px; border-bottom: 1px solid rgba(212,168,83,0.1);">${escHTML(emp.full_name)}</td>
+                                    <td style="padding: 6px 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1);">${emp.invoice_count}</td>
+                                    <td style="padding: 6px 8px; text-align: center; border-bottom: 1px solid rgba(212,168,83,0.1); color: #38a169; font-weight: bold;">${Number(emp.total_sales).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -12215,12 +12216,12 @@ async function viewTransferDetails(transferId) {
             </div>`;
         }
         if (t.reject_reason) {
-            html += `<div style="background:#ffebee; padding:12px; border-radius:8px; grid-column:1/3;">
+            html += `<div style="background:rgba(232,93,93,0.08); padding:12px; border-radius:8px; grid-column:1/3; color:var(--t1);">
                 <strong>سبب الرفض:</strong> ${escHTML(t.reject_reason)}
             </div>`;
         }
         if (t.notes) {
-            html += `<div style="background:#fff8e1; padding:12px; border-radius:8px; grid-column:1/3;">
+            html += `<div style="background:rgba(212,168,83,0.08); padding:12px; border-radius:8px; grid-column:1/3; color:var(--t1);">
                 <strong>ملاحظات:</strong> ${escHTML(t.notes)}
             </div>`;
         }
@@ -12713,14 +12714,14 @@ async function loadPlansList() {
                 const items = p.items || [];
                 const cardImage = p.image ? `<img src="${p.image}" style="width:100%; height:100%; object-fit:cover;">` : _getDefaultCardBg(p.name);
                 return `
-                <div style="display:flex; gap:15px; align-items:start; background:#fff; border:2px solid #e0e0e0; border-radius:12px; padding:15px; margin-bottom:12px; flex-wrap:wrap;">
+                <div style="display:flex; gap:15px; align-items:start; background:var(--card); border:2px solid rgba(212,168,83,0.15); border-radius:12px; padding:15px; margin-bottom:12px; flex-wrap:wrap;">
                     <div style="width:160px; height:100px; border-radius:10px; overflow:hidden; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
                         ${cardImage}
                     </div>
                     <div style="flex:1; min-width:200px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                             <div>
-                                <strong style="font-size:16px; color:#1e40af;">${escHTML(p.name)}</strong>
+                                <strong style="font-size:16px; color:var(--gold);">${escHTML(p.name)}</strong>
                                 ${p.description ? `<span style="color:#9a96a6; margin-right:8px;">(${escHTML(p.description)})</span>` : ''}
                             </div>
                             <div style="display:flex; gap:5px; align-items:center;">
@@ -13754,8 +13755,8 @@ async function testSyncServer() {
 
     if (!serverUrl) {
         resultEl.style.display = 'block';
-        resultEl.style.background = '#fff5f5';
-        resultEl.style.color = '#e53e3e';
+        resultEl.style.background = 'rgba(232,93,93,0.08)';
+        resultEl.style.color = 'var(--red)';
         resultEl.textContent = 'الرجاء اختيار أو إدخال عنوان السيرفر أولاً';
         return;
     }
@@ -13763,8 +13764,8 @@ async function testSyncServer() {
     if (serverUrl.endsWith('/')) serverUrl = serverUrl.slice(0, -1);
 
     resultEl.style.display = 'block';
-    resultEl.style.background = '#fffff0';
-    resultEl.style.color = '#d69e2e';
+    resultEl.style.background = 'rgba(212,168,83,0.08)';
+    resultEl.style.color = 'var(--gold)';
     resultEl.innerHTML = 'جاري فحص السيرفر... <span class="sync-spinner"></span>';
 
     // فحص عدة endpoints لمعرفة وش شغال على السيرفر
@@ -13860,8 +13861,8 @@ async function testSyncServer() {
         resultEl.innerHTML = html;
     } else {
         // ما في أي استجابة
-        resultEl.style.background = '#fff5f5';
-        resultEl.style.color = '#e53e3e';
+        resultEl.style.background = 'rgba(232,93,93,0.08)';
+        resultEl.style.color = 'var(--red)';
         const firstErr = results[0]?.error || 'غير معروف';
         let errMsg = `<strong>فشل الاتصال بالسيرفر</strong><br>`;
         if (firstErr === 'timeout') {

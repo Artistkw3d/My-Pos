@@ -71,7 +71,7 @@
         <div class="login-box" style="max-width: 440px;">
             <div class="login-logo"><img src="icon-192.png" style="width: 80px; height: 80px; border-radius: 16px; object-fit: cover;"></div>
             <h1 class="login-title">إعداد النظام</h1>
-            <p style="text-align:center; color:#666; margin-bottom:18px; font-size:14px;">قم بربط النظام بالخادم لتفعيل المتجر</p>
+            <p style="text-align:center; color:var(--t2); margin-bottom:18px; font-size:14px;">قم بربط النظام بالخادم لتفعيل المتجر</p>
             <div class="login-form-group">
                 <label>عنوان الخادم (Server URL)</label>
                 <input type="text" id="setupServerUrl" placeholder="https://my-pos.org" style="direction:ltr; text-align:center; font-size:16px;">
@@ -312,8 +312,8 @@
             <!-- Brand / Title -->
             <div class="header-center">
                 <h1>🛍️ نظام نقاط البيع</h1>
-                <div id="headerVersion" style="font-size: 10px; color: var(--t3,#4a4656); margin-top: 2px; font-weight: 500;"></div>
-                <div id="datetime" style="font-size: 11px; color: var(--t3,#4a4656); margin-top: 4px;"></div>
+                <div id="headerVersion" style="font-size: 10px; color: var(--t2); margin-top: 2px; font-weight: 500;"></div>
+                <div id="datetime" style="font-size: 11px; color: var(--t1); margin-top: 4px;"></div>
             </div>
 
             <!-- Sidebar Stats -->
@@ -669,8 +669,8 @@
                 <!-- فلاتر البحث -->
                 <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; align-items: flex-end;">
                     <div style="flex: 1; min-width: 150px;">
-                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">نوع العملية:</label>
-                        <select id="logFilterAction" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:var(--t2);">نوع العملية:</label>
+                        <select id="logFilterAction" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1);">
                             <option value="">الكل</option>
                             <option value="login">🔐 تسجيل دخول</option>
                             <option value="logout">🚪 تسجيل خروج</option>
@@ -706,24 +706,24 @@
                         </select>
                     </div>
                     <div style="flex: 1; min-width: 150px;">
-                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">المستخدم:</label>
-                        <select id="logFilterUser" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:var(--t2);">المستخدم:</label>
+                        <select id="logFilterUser" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1);">
                             <option value="">الكل</option>
                         </select>
                     </div>
                     <div style="flex: 1; min-width: 140px;">
-                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">من تاريخ:</label>
-                        <input type="date" id="logFilterDateFrom" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:var(--t2);">من تاريخ:</label>
+                        <input type="date" id="logFilterDateFrom" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1);">
                     </div>
                     <div style="flex: 1; min-width: 140px;">
-                        <label style="display:block; font-size:12px; margin-bottom:4px; color:#666;">إلى تاريخ:</label>
-                        <input type="date" id="logFilterDateTo" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;">
+                        <label style="display:block; font-size:12px; margin-bottom:4px; color:var(--t2);">إلى تاريخ:</label>
+                        <input type="date" id="logFilterDateTo" onchange="loadSystemLogs()" style="width:100%; padding:8px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1);">
                     </div>
                     <div>
-                        <button onclick="clearLogFilters()" style="padding:8px 16px; border-radius:6px; border:1px solid #ddd; background:#1a1a22; cursor:pointer;">مسح الفلاتر</button>
+                        <button onclick="clearLogFilters()" style="padding:8px 16px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1); cursor:pointer;">مسح الفلاتر</button>
                     </div>
                 </div>
-                <div id="systemLogsStats" style="margin-bottom:10px; font-size:13px; color:#666;"></div>
+                <div id="systemLogsStats" style="margin-bottom:10px; font-size:13px; color:var(--t2);"></div>
                 <div id="systemLogsContent"></div>
                 <div id="systemLogsPagination" style="text-align:center; margin-top:15px;"></div>
             </div>
@@ -1938,7 +1938,7 @@
                     <button onclick="showAddTable()" class="add-btn">➕ إضافة طاولة</button>
                 </div>
                 <div id="tablesStatsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px;"></div>
-                <div id="tablesFloorPlan" style="position: relative; min-height: 500px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; overflow: hidden;"></div>
+                <div id="tablesFloorPlan" style="position: relative; min-height: 500px; background: var(--card); border: 2px dashed rgba(212,168,83,0.2); border-radius: 16px; overflow: hidden;"></div>
             </div>
         </div>
 
@@ -2105,7 +2105,7 @@
                         <div id="variantsContainer">
                             <!-- صفوف المتغيرات تضاف هنا -->
                         </div>
-                        <div id="variantsEmptyMsg" style="text-align: center; padding: 15px; color: #999; font-size: 14px;">
+                        <div id="variantsEmptyMsg" style="text-align: center; padding: 15px; color: var(--t2); font-size: 14px;">
                             لا توجد خصائص - المنتج بنوع واحد فقط
                         </div>
                     </div>
@@ -2581,7 +2581,7 @@
                 </div>
                 <!-- فلاتر -->
                 <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; align-items: center;">
-                    <select id="transferStatusFilter" onchange="loadStockTransfers()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+                    <select id="transferStatusFilter" onchange="loadStockTransfers()" style="padding:8px 12px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1);">
                         <option value="">كل الحالات</option>
                         <option value="pending">⏳ قيد الانتظار</option>
                         <option value="approved">✅ تم التجهيز</option>
@@ -2589,11 +2589,11 @@
                         <option value="completed">📦 مكتمل</option>
                         <option value="rejected">❌ مرفوض</option>
                     </select>
-                    <select id="transferBranchFilter" onchange="loadStockTransfers()" style="padding:8px 12px; border-radius:6px; border:1px solid #ddd;">
+                    <select id="transferBranchFilter" onchange="loadStockTransfers()" style="padding:8px 12px; border-radius:6px; border:1px solid rgba(212,168,83,0.2); background:var(--card); color:var(--t1);">
                         <option value="">كل الفروع</option>
                     </select>
                 </div>
-                <div id="transfersStats" style="margin-bottom:10px; font-size:13px; color:#666;"></div>
+                <div id="transfersStats" style="margin-bottom:10px; font-size:13px; color:var(--t2);"></div>
                 <div id="transfersTableContainer"></div>
             </div>
         </div>
@@ -2629,13 +2629,13 @@
                     <label style="font-weight:bold; display:block; margin-bottom:8px;">إضافة أصناف:</label>
                     <div style="display: flex; gap: 10px; align-items: end;">
                         <div style="flex:1;">
-                            <select id="transferProductSelect" style="width:100%; padding:10px; border:2px solid #e2e8f0; border-radius:8px; font-size:14px;">
+                            <select id="transferProductSelect" style="width:100%; padding:10px; border:2px solid rgba(212,168,83,0.2); border-radius:8px; font-size:14px; background:var(--card); color:var(--t1);">
                                 <option value="">-- اختر الصنف --</option>
                             </select>
                         </div>
                         <div style="width:90px;">
-                            <label style="font-size:11px; color:#666;">الكمية</label>
-                            <input type="number" id="transferProductQty" value="1" min="1" style="width:100%; padding:10px; border:2px solid #e2e8f0; border-radius:8px; text-align:center;">
+                            <label style="font-size:11px; color:var(--t2);">الكمية</label>
+                            <input type="number" id="transferProductQty" value="1" min="1" style="width:100%; padding:10px; border:2px solid rgba(212,168,83,0.2); border-radius:8px; text-align:center; background:var(--card); color:var(--t1);">
                         </div>
                         <button type="button" onclick="addTransferItemFromSelect()" style="padding:10px 18px; background:#d4a853; color:#f0ece4; border:none; border-radius:8px; cursor:pointer; font-size:14px; white-space:nowrap;">➕ أضف</button>
                     </div>
@@ -2931,7 +2931,7 @@
                 <input type="hidden" id="cancelInvoiceId">
                 <div style="margin-bottom: 15px;">
                     <label style="font-weight: bold; display: block; margin-bottom: 8px;">سبب الإلغاء:</label>
-                    <select id="cancelReasonSelect" onchange="toggleCustomReason()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
+                    <select id="cancelReasonSelect" onchange="toggleCustomReason()" style="width: 100%; padding: 10px; border: 1px solid rgba(212,168,83,0.2); border-radius: 8px; font-size: 14px; background:var(--card); color:var(--t1);">
                         <option value="">-- اختر السبب --</option>
                         <option value="فاتورة مكررة">فاتورة مكررة</option>
                         <option value="فاتورة ملغية">فاتورة ملغية</option>
@@ -2943,7 +2943,7 @@
                     </select>
                 </div>
                 <div id="customReasonDiv" style="margin-bottom: 15px; display: none;">
-                    <input type="text" id="customReasonInput" placeholder="اكتب السبب..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
+                    <input type="text" id="customReasonInput" placeholder="اكتب السبب..." style="width: 100%; padding: 10px; border: 1px solid rgba(212,168,83,0.2); border-radius: 8px; font-size: 14px; background:var(--card); color:var(--t1);">
                 </div>
                 <div style="margin-bottom: 20px; background: rgba(245,158,11,0.1); padding: 12px; border-radius: 8px; border: 1px solid rgba(245,158,11,0.3);">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
