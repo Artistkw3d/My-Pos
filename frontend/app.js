@@ -11,6 +11,27 @@ const API_URL = (function() {
     return window.location.origin;
 })();
 
+// === Theme Toggle ===
+function toggleTheme() {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('pos_theme_mode', isLight ? 'light' : 'dark');
+    _updateThemeButton(isLight);
+}
+
+function _updateThemeButton(isLight) {
+    const icon = document.getElementById('themeIcon');
+    const label = document.getElementById('themeLabel');
+    if (icon) icon.textContent = isLight ? '🌙' : '☀️';
+    if (label) label.textContent = isLight ? 'مظهر داكن' : 'مظهر فاتح';
+}
+
+// Restore theme immediately (before DOM renders)
+(function() {
+    if (localStorage.getItem('pos_theme_mode') === 'light') {
+        document.body.classList.add('light-mode');
+    }
+})();
+
 // === دالة حماية من XSS - تنظيف النصوص قبل إدراجها في HTML ===
 function escHTML(str) {
     if (str === null || str === undefined) return '';
@@ -6455,6 +6476,9 @@ fetchVersion();
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[App] DOMContentLoaded - checking for saved user...');
+
+    // Restore theme button state
+    _updateThemeButton(document.body.classList.contains('light-mode'));
 
     // First-time setup check (async for HMAC verification)
     if (await checkFirstTimeSetup()) {

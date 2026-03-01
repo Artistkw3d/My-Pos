@@ -23,6 +23,24 @@
     --purple: #a78bfa;
 }
 
+body.light-mode {
+    --bg: #f4f1ec;
+    --panel: #ffffff;
+    --card: #ffffff;
+    --raised: #f0ece4;
+    --gold: #b8892e;
+    --gold2: #d4a853;
+    --gold-bg: rgba(184,137,46,0.08);
+    --gold-b: rgba(184,137,46,0.18);
+    --t1: #1a1a2e;
+    --t2: #3a3a4e;
+    --t3: #7a7a8e;
+    --green: #28a745;
+    --red: #dc3545;
+    --blue: #2563eb;
+    --purple: #7c3aed;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -218,11 +236,6 @@ body {
 
 .header-center #headerVersion {
     font-size: 12px !important;
-    color: var(--t2) !important;
-}
-
-.header-center #headerVersion {
-    font-size: 10px !important;
     color: var(--t2) !important;
 }
 
@@ -1087,6 +1100,110 @@ select:focus, input:focus, textarea:focus {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================
+   THEME TOGGLE BUTTON
+   ============================================ */
+.theme-toggle-btn {
+    width: 100%;
+    background: var(--card);
+    padding: 9px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--gold-b);
+    color: var(--t2);
+    font-size: 13px;
+    font-family: 'Tajawal', sans-serif;
+    font-weight: 600;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--gold-bg);
+    color: var(--gold);
+}
+
+/* ============================================
+   LIGHT MODE OVERRIDES
+   ============================================ */
+body.light-mode .login-overlay {
+    background: linear-gradient(135deg, #f4f1ec 0%, #e8e4dc 50%, #f0ece4 100%);
+}
+
+body.light-mode .login-box {
+    box-shadow: 0 20px 60px rgba(0,0,0,0.08), 0 0 40px rgba(184,137,46,0.06);
+}
+
+body.light-mode .header {
+    box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+}
+
+body.light-mode .product-card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+body.light-mode .product-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+}
+
+body.light-mode .modal {
+    background: rgba(0,0,0,0.25);
+    backdrop-filter: blur(3px);
+}
+
+body.light-mode .modal-content {
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+
+body.light-mode .header-btn:hover {
+    background: rgba(0,0,0,0.04);
+}
+
+body.light-mode .data-table tbody tr:hover {
+    background: rgba(184,137,46,0.06);
+}
+
+body.light-mode ::-webkit-scrollbar-thumb {
+    background: #c0bcc8;
+}
+
+body.light-mode ::-webkit-scrollbar-thumb:hover {
+    background: #a0a0b0;
+}
+
+body.light-mode .cart-section {
+    box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+}
+
+body.light-mode .stat-card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+body.light-mode select,
+body.light-mode input[type="text"],
+body.light-mode input[type="number"],
+body.light-mode input[type="email"],
+body.light-mode input[type="password"],
+body.light-mode input[type="date"],
+body.light-mode input[type="tel"],
+body.light-mode textarea {
+    background: #ffffff !important;
+    border-color: rgba(184,137,46,0.2) !important;
+}
+
+body.light-mode .complete-btn,
+body.light-mode .login-btn,
+body.light-mode .btn,
+body.light-mode .add-to-cart-btn {
+    box-shadow: 0 4px 16px rgba(184,137,46,0.2);
+}
+
+body.light-mode .sidebar-stat {
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
 
 /* ============================================
    MOBILE MODE
