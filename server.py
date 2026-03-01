@@ -33,14 +33,34 @@ from db_modules.migrate import migrate_database as _migrate_database
 app = Flask(__name__, static_folder='frontend')
 
 # === License enforcement constants ===
-LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET', 'pos-offline-license-secret-v1')
-if LICENSE_SECRET == 'pos-offline-license-secret-v1' and not os.environ.get('POS_ALLOW_DEFAULT_SECRET'):
-    import warnings
-    warnings.warn(
-        "WARNING: Using default LICENSE_SECRET. Set POS_LICENSE_SECRET environment variable for production security.",
-        stacklevel=1
-    )
+_LICENSE_SECRET_ENV = os.environ.get('POS_LICENSE_SECRET', '')
+LICENSE_SECRET = ''
 LICENSE_GRACE_DAYS = 7
+
+def get_license_secret():
+    """Get or auto-generate license secret (stored in default DB settings)"""
+    global LICENSE_SECRET
+    if LICENSE_SECRET:
+        return LICENSE_SECRET
+    if _LICENSE_SECRET_ENV:
+        LICENSE_SECRET = _LICENSE_SECRET_ENV
+        return LICENSE_SECRET
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'license_secret'")
+        row = cursor.fetchone()
+        if row:
+            LICENSE_SECRET = row['value']
+        else:
+            LICENSE_SECRET = secrets.token_hex(32)
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('license_secret', ?)", (LICENSE_SECRET,))
+            conn.commit()
+        conn.close()
+    except Exception:
+        LICENSE_SECRET = secrets.token_hex(32)
+    return LICENSE_SECRET
 
 # === Auth secret for JWT tokens ===
 AUTH_SECRET = os.environ.get('POS_AUTH_SECRET', '')
@@ -88,6 +108,13 @@ _login_attempts = {}
 LOGIN_RATE_LIMIT = 5
 LOGIN_RATE_WINDOW = 60
 
+def get_client_ip():
+    """Get real client IP, respecting X-Forwarded-For behind proxy"""
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr
+
 def check_rate_limit(ip, endpoint):
     key = f"{ip}:{endpoint}"
     now = time.time()
@@ -109,7 +136,7 @@ def auth_middleware():
     if request.path in PUBLIC_ROUTES:
         return None
     if request.path in ('/api/login', '/api/super-admin/login'):
-        if not check_rate_limit(request.remote_addr, request.path):
+        if not check_rate_limit(get_client_ip(), request.path):
             return jsonify({'success': False, 'error': 'Too many login attempts. Try again later.'}), 429
         return None
     auth_header = request.headers.get('Authorization', '')
@@ -151,6 +178,17 @@ if ALLOWED_ORIGINS and ALLOWED_ORIGINS[0]:
     CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 else:
     CORS(app)
+    import warnings
+    warnings.warn("WARNING: CORS allows all origins. Set POS_CORS_ORIGINS for production.", stacklevel=1)
+
+@app.before_request
+def enforce_https():
+    """Redirect HTTP to HTTPS when POS_FORCE_HTTPS=1 (behind reverse proxy)"""
+    if os.environ.get('POS_FORCE_HTTPS') == '1':
+        if request.headers.get('X-Forwarded-Proto', 'https') != 'https':
+            from flask import redirect
+            url = request.url.replace('http://', 'https://', 1)
+            return redirect(url, code=301)
 
 @app.after_request
 def add_security_headers(response):
@@ -2142,7 +2180,7 @@ def get_settings():
         cursor.execute('SELECT * FROM settings')
         settings = {row['key']: row['value'] for row in cursor.fetchall()}
         conn.close()
-        sensitive_prefixes = ('gdrive_access_token', 'gdrive_refresh_token', 'gdrive_client_secret', 'auth_secret', 'license_token')
+        sensitive_prefixes = ('gdrive_access_token', 'gdrive_refresh_token', 'gdrive_client_secret', 'auth_secret', 'license_token', 'license_secret')
         filtered = {k: v for k, v in settings.items() if not k.startswith(sensitive_prefixes)}
         return jsonify({'success': True, 'settings': filtered})
     except Exception as e:
@@ -3459,7 +3497,7 @@ def generate_license_token():
         }
         if exp_ts is not None:
             payload['exp'] = exp_ts
-        token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
+        token = jwt.encode(payload, get_license_secret(), algorithm='HS256')
         return jsonify({'success': True, 'token': token})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -3501,7 +3539,7 @@ def refresh_license_token():
         }
         if exp_ts is not None:
             payload['exp'] = exp_ts
-        token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
+        token = jwt.encode(payload, get_license_secret(), algorithm='HS256')
         # Store token in tenant's settings table
         try:
             tenant_db = get_db()
@@ -3878,7 +3916,7 @@ def create_subscription_invoice():
                     'exp': exp_ts,
                     'iss': 'pos-offline-flask'
                 }
-                new_token = jwt.encode(token_payload, LICENSE_SECRET, algorithm='HS256')
+                new_token = jwt.encode(token_payload, get_license_secret(), algorithm='HS256')
                 tenant_db_path = get_tenant_db_path(tenant_slug)
                 t_conn = sqlite3.connect(tenant_db_path)
                 t_cur = t_conn.cursor()
