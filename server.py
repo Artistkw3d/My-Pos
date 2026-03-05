@@ -108,9 +108,8 @@ def auth_middleware():
     token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
     if not token:
         return jsonify({'success': False, 'error': 'Authentication required'}), 401
-    try:
-        # السطر الجديد
-payload = jwt.decode(token, POS_AUTH_SECRET, algorithms=['HS256'])
+    try: 
+        payload = jwt.decode(token, POS_AUTH_SECRET, algorithms=['HS256'])
         request.current_user = payload
         if not payload.get('is_super_admin'):
             req_tenant = request.headers.get('X-Tenant-ID', '')
