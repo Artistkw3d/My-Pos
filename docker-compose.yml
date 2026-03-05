@@ -9,6 +9,10 @@ services:
       - /root/data/pos:/app/database
     environment:
       - TZ=Asia/Kuwait
+      # ====================== الأسرار الجديدة (مهم جدًا) ======================
+      - POS_AUTH_SECRET=4a7bacf0-4f4a-4dc6-89e1-9dcf54df49de
+      - POS_LICENSE_SECRET=6b742c39-d397-42f4-96dc-ac45a1d5338d
+      # =====================================================================
     logging:
       driver: "json-file"
       options:
