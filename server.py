@@ -37,56 +37,21 @@ _LICENSE_SECRET_ENV = os.environ.get('POS_LICENSE_SECRET', '')
 LICENSE_SECRET = ''
 LICENSE_GRACE_DAYS = 7
 
-def get_license_secret():
-    """Get or auto-generate license secret (stored in default DB settings)"""
-    global LICENSE_SECRET
-    if LICENSE_SECRET:
-        return LICENSE_SECRET
-    if _LICENSE_SECRET_ENV:
-        LICENSE_SECRET = _LICENSE_SECRET_ENV
-        return LICENSE_SECRET
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'license_secret'")
-        row = cursor.fetchone()
-        if row:
-            LICENSE_SECRET = row['value']
-        else:
-            LICENSE_SECRET = secrets.token_hex(32)
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('license_secret', ?)", (LICENSE_SECRET,))
-            conn.commit()
-        conn.close()
-    except Exception:
-        LICENSE_SECRET = secrets.token_hex(32)
-    return LICENSE_SECRET
+# === License & Auth Secrets (Environment Variables فقط - بدون رجوع للـ DB) ===
+# تم إجبار النظام على استخدام الـ env فقط (اللي حطيته في docker-compose.yml)
 
-# === Auth secret for JWT tokens ===
-AUTH_SECRET = os.environ.get('POS_AUTH_SECRET', '')
+POS_LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET')
+if not POS_LICENSE_SECRET:
+    raise RuntimeError("❌ POS_LICENSE_SECRET environment variable is required! Please set it in docker-compose.yml")
 
-def get_auth_secret():
-    global AUTH_SECRET
-    if AUTH_SECRET:
-        return AUTH_SECRET
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'auth_secret'")
-        row = cursor.fetchone()
-        if row:
-            AUTH_SECRET = row['value']
-        else:
-            AUTH_SECRET = secrets.token_hex(32)
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_secret', ?)", (AUTH_SECRET,))
-            conn.commit()
-        conn.close()
-    except Exception:
-        AUTH_SECRET = secrets.token_hex(32)
-    return AUTH_SECRET
+POS_AUTH_SECRET = os.environ.get('POS_AUTH_SECRET')
+if not POS_AUTH_SECRET:
+    raise RuntimeError("❌ POS_AUTH_SECRET environment variable is required! Please set it in docker-compose.yml")
+
+# لا تحتاج الدوال القديمة بعد الحين (تم حذفها نهائيًا)
 
 def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
+    """Generate JWT auth token for authenticated user"""
     payload = {
         'user_id': user_data.get('id', 0),
         'username': user_data.get('username', ''),
@@ -96,7 +61,7 @@ def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
         'exp': datetime.utcnow() + timedelta(hours=24),
         'iat': datetime.utcnow()
     }
-    return jwt.encode(payload, get_auth_secret(), algorithm='HS256')
+    return jwt.encode(payload, POS_AUTH_SECRET, algorithm='HS256')
 
 PUBLIC_ROUTES = {
     '/api/login', '/api/super-admin/login', '/api/version',
@@ -144,7 +109,8 @@ def auth_middleware():
     if not token:
         return jsonify({'success': False, 'error': 'Authentication required'}), 401
     try:
-        payload = jwt.decode(token, get_auth_secret(), algorithms=['HS256'])
+        # السطر الجديد
+payload = jwt.decode(token, POS_AUTH_SECRET, algorithms=['HS256'])
         request.current_user = payload
         if not payload.get('is_super_admin'):
             req_tenant = request.headers.get('X-Tenant-ID', '')
