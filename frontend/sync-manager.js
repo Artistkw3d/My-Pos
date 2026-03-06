@@ -182,44 +182,44 @@ this.syncProgress.done = 2;  // نعدل الـ progress عشان ما يتوق�
             this.syncProgress.step = 'تحديث الفروع...';
             this.updateProgressUI();
             syncResult.branches = await this.downloadBranches();
-            this.syncProgress.done = 3;
+           // this.syncProgress.done = 3;
 
             // 4. Download products
-            this.syncProgress.step = 'تحديث المنتجات...';
-            this.updateProgressUI();
-            syncResult.products = await this.downloadProducts();
-            this.syncProgress.done = 4;
+           // this.syncProgress.step = 'تحديث المنتجات...';
+           // this.updateProgressUI();
+           // syncResult.products = await this.downloadProducts();
+          //  this.syncProgress.done = 4;
 
             // 5. Download customers
-            this.syncProgress.step = 'تحديث العملاء...';
-            this.updateProgressUI();
-            syncResult.customers = await this.downloadCustomers();
-            this.syncProgress.done = 5;
+          //  this.syncProgress.step = 'تحديث العملاء...';
+          //  this.updateProgressUI();
+          //  syncResult.customers = await this.downloadCustomers();
+          //  this.syncProgress.done = 5;
 
             // 6. Download invoices
-            this.syncProgress.step = 'تحديث الفواتير...';
-            this.updateProgressUI();
-            syncResult.invoices = await this.downloadInvoices();
-            this.syncProgress.done = 6;
+          //  this.syncProgress.step = 'تحديث الفواتير...';
+            //this.updateProgressUI();
+          //  syncResult.invoices = await this.downloadInvoices();
+         //   this.syncProgress.done = 6;
 
             // ... (باقي التحميلات مثل categories, returns, expenses, coupons كما هي في الكود الأصلي)
 
-            this.lastSync = new Date().toISOString();
-            localStorage.setItem('pos_last_sync', this.lastSync);
-            this.showStatus('تمت المزامنة بنجاح', 'success');
-            this.updateSyncUI('idle');
-        } catch (error) {
-            console.error('[Sync] Full sync error:', error);
-            this.showStatus('فشلت المزامنة: ' + error.message, 'error');
-            this.updateSyncUI('error');
-            syncResult.success = false;
-            syncResult.errors.push(error.message);
-        } finally {
-            this.isSyncing = false;
-        }
+       //     this.lastSync = new Date().toISOString();
+     //       localStorage.setItem('pos_last_sync', this.lastSync);
+     //       this.showStatus('تمت المزامنة بنجاح', 'success');
+     //       this.updateSyncUI('idle');
+    //    } catch (error) {
+    //        console.error('[Sync] Full sync error:', error);
+    //        this.showStatus('فشلت المزامنة: ' + error.message, 'error');
+    //        this.updateSyncUI('error');
+    //        syncResult.success = false;
+     //       syncResult.errors.push(error.message);
+     //   } finally {
+   //         this.isSyncing = false;
+   //     }
 
-        return syncResult;
-    }
+   //     return syncResult;
+  //  }
 
     // ... باقي الدوال كما هي (downloadCategories, downloadReturns, إلخ) بدون تغيير
 
