@@ -1,4 +1,51 @@
 const API_URL = (function() {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        return localStorage.getItem('pos_server_url') || 'https://my-pos.org';
+    }
+    if (window.location.protocol === 'file:') {
+        return 'http://localhost:5050';
+    }
+    return window.location.origin;
+})();
+
+// دالة apiRequest المعدلة (بدون recursion)
+async function apiRequest(url, options = {}) {
+    const token = localStorage.getItem('token') || '';
+    const tenantSlug = localStorage.getItem('pos_tenant_slug') || '';
+
+    const headers = {
+        ...(options.headers || {}),
+        'Authorization': token ? `Bearer ${token}` : '',
+        'X-Tenant-ID': tenantSlug
+    };
+
+    if (options.method && ['POST', 'PUT', 'PATCH'].includes(options.method.toUpperCase()) && options.body) {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    const fullUrl = `${API_URL}${url.startsWith('/') ? url : '/' + url}`;
+
+    const response = await fetch(fullUrl, {
+        ...options,
+        headers
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+}
+
+// ... باقي الكود كما هو (theme, escHTML, HMAC, saveSetupConfig, loadAndVerifySetupConfig, saveLicenseData, loadAndVerifyLicenseData, checkLicense, syncNowFromSettings, saveAutoSyncInterval, loadAutoSyncInterval, إلخ)
+
+// أي fetch موجود في الكود، غيّره إلى apiRequest مثل:
+// قبل: fetch('/api/super-admin/tenants')
+// بعد: apiRequest('/api/super-admin/tenants')
+
+console.log('All Systems Loaded!');
+
+const API_URL = (function() {
     // Capacitor: no local backend, use remote server
     if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         return localStorage.getItem('pos_server_url') || 'https://my-pos.org';
