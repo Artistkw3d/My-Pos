@@ -25,7 +25,7 @@ import html
 import jwt
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
-from setup_database import create_all_tables, insert_default_settings, insert_default_branch
+
 
 
 
@@ -223,14 +223,31 @@ def get_tenant_db_path(slug):
 _initialized_dbs = set()
 
 def ensure_db_tables(db_path):
-    """التأكد من وجود الجداول الأساسية في قاعدة البيانات - يُنفذ مرة واحدة فقط لكل مسار"""
     if db_path in _initialized_dbs:
         return
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    create_all_tables(cursor)
-    insert_default_settings(cursor, all_settings=False)
-    insert_default_branch(cursor)
+
+    # نسخ الإنشاء الأساسي هنا (بدل الاستيراد) – هذا مثال مبسط، أضف الجداول اللي تحتاجها
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'user'
+    )''')
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE,
+        value TEXT
+    )''')
+
+    # أضف باقي الجداول الأساسية اللي تحتاجها (مثل branches, products, etc.)
+    # ... (انسخ من setup_database.py الجداول المهمة)
+
+    # إدخال إعدادات افتراضية بسيطة
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_name', 'متجر افتراضي')")
+
     conn.commit()
     conn.close()
     _initialized_dbs.add(db_path)
