@@ -3541,6 +3541,18 @@ def tenant_check_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/super-admin/login', methods=['POST'])
+@jwt_required()
+def manage_tenants():
+    try:
+        # الكود الحالي...
+        print("manage_tenants called with method:", request.method)
+        # ...
+    except Exception as e:
+        print("Error in manage_tenants:", str(e))
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+        
 def super_admin_login():
     """تسجيل دخول المدير الأعلى"""
     try:
