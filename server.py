@@ -60,8 +60,8 @@ limiter = Limiter(
 # === License enforcement constants ===
 LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET', '')
 if not LICENSE_SECRET:
-    LICENSE_SECRET = 'pos-offline-license-secret-v1'
-    logger.warning("WARNING: POS_LICENSE_SECRET not set. Using insecure default. Set it in .env for production!")
+    LICENSE_SECRET = secrets.token_hex(32)
+    logger.warning("WARNING: POS_LICENSE_SECRET not set. Generated random secret (will change on restart). Set it in .env for production!")
 LICENSE_GRACE_DAYS = 7
 
 # === Auth secret for JWT tokens (Phase 2: require env var or generate secure fallback) ===
@@ -177,7 +177,7 @@ def write_audit_log(action, details='', user_id=None, username='', tenant_slug='
 PUBLIC_ROUTES = {
     '/api/login', '/api/super-admin/login', '/api/version',
     '/api/tenant/check-status', '/api/license/verify',
-    '/api/sync/status', '/api/products', '/api/settings',
+    '/api/sync/status',
     '/api/logout'
 }
 
@@ -694,6 +694,7 @@ def add_user():
         return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
+@require_admin()
 def update_user(user_id):
     """تحديث بيانات مستخدم"""
     try:
@@ -1154,7 +1155,8 @@ def add_inventory():
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -1254,7 +1256,8 @@ def save_variants(inventory_id):
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -1374,14 +1377,23 @@ def update_branch_stock(stock_id):
     """تحديث كمية في فرع"""
     try:
         data = request.json
+
+        # Validate stock value
+        try:
+            stock = float(data.get('stock', 0))
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'الكمية غير صالحة'}), 400
+        if stock < 0 or stock > 9999999:
+            return jsonify({'success': False, 'error': 'الكمية يجب أن تكون بين 0 و 9,999,999'}), 400
+
         conn = get_db()
         cursor = conn.cursor()
-        
+
         cursor.execute('''
-            UPDATE branch_stock 
+            UPDATE branch_stock
             SET stock = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        ''', (data.get('stock', 0), stock_id))
+        ''', (stock, stock_id))
         
         conn.commit()
         conn.close()
@@ -2648,7 +2660,12 @@ def adjust_customer_points(customer_id):
     """تعديل نقاط الولاء للعميل"""
     try:
         data = request.json
-        points = data.get('points', 0)
+        try:
+            points = int(data.get('points', 0))
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'النقاط غير صالحة'}), 400
+        if abs(points) > 999999:
+            return jsonify({'success': False, 'error': 'قيمة النقاط كبيرة جداً'}), 400
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
@@ -2712,7 +2729,8 @@ def add_customer():
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -2743,7 +2761,8 @@ def update_customer(customer_id):
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -2761,7 +2780,8 @@ def delete_customer(customer_id):
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -2839,6 +2859,15 @@ def add_expense():
     conn = None
     try:
         data = request.json
+
+        # Validate amount
+        try:
+            amount = float(data.get('amount', 0))
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'المبلغ غير صالح'}), 400
+        if amount <= 0 or amount > 999999:
+            return jsonify({'success': False, 'error': 'المبلغ يجب أن يكون بين 0 و 999,999'}), 400
+
         conn = get_db()
         cursor = conn.cursor()
 
@@ -2847,7 +2876,7 @@ def add_expense():
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             data.get('expense_type'),
-            data.get('amount'),
+            amount,
             data.get('description', ''),
             data.get('expense_date'),
             data.get('branch_id'),
@@ -2871,7 +2900,8 @@ def add_expense():
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -2891,7 +2921,8 @@ def delete_expense(expense_id):
     except Exception as e:
         if conn:
             conn.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
     finally:
         if conn:
             conn.close()
@@ -3600,6 +3631,15 @@ def get_supplier_invoices(supplier_id):
 def add_supplier_invoice():
     try:
         data = request.json
+
+        # Validate amount
+        try:
+            amount = float(data.get('amount', 0))
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'المبلغ غير صالح'}), 400
+        if amount < 0 or amount > 999999:
+            return jsonify({'success': False, 'error': 'المبلغ يجب أن يكون بين 0 و 999,999'}), 400
+
         file_data = data.get('file_data', '')
 
         # التحقق من حجم الملف (1 MB = ~1.37 MB base64)
@@ -3611,7 +3651,7 @@ def add_supplier_invoice():
         cursor.execute('''
             INSERT INTO supplier_invoices (supplier_id, invoice_number, amount, file_name, file_data, file_type, notes, invoice_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (data.get('supplier_id'), data.get('invoice_number', ''), data.get('amount', 0),
+        ''', (data.get('supplier_id'), data.get('invoice_number', ''), amount,
               data.get('file_name', ''), file_data, data.get('file_type', ''),
               data.get('notes', ''), data.get('invoice_date', '')))
         conn.commit()
