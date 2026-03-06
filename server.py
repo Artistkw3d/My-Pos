@@ -203,25 +203,6 @@ def needs_rehash(stored_hash):
     # SHA-256 القديم = 64 hex chars
     return len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash)
 
-def init_master_db():
-    """إنشاء قاعدة البيانات الرئيسية للمستأجرين"""
-    _init_master_db(MASTER_DB_PATH, hash_password)
-
-init_master_db()
-
-def init_default_db():
-    """إنشاء الجداول الأساسية في قاعدة البيانات الافتراضية إن لم تكن موجودة"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    create_all_tables(cursor)
-    create_indexes(cursor)
-    insert_default_settings(cursor, all_settings=True)
-    insert_default_branch(cursor)
-    conn.commit()
-    conn.close()
-    print("[Init] Default database initialized")
-
-init_default_db()
 
 def migrate_database(db_path=None):
     """ترقية قاعدة البيانات - إنشاء الجداول الأساسية وإضافة أعمدة وجداول جديدة"""
