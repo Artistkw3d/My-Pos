@@ -34,7 +34,7 @@ MASTER_TABLES_SQL = {
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             full_name TEXT NOT NULL,
-            must_change_password INTEGER DEFAULT 1,
+            must_change_password INTEGER DEFAULT 0,
             totp_secret TEXT,
             totp_enabled INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -122,7 +122,7 @@ def init_master_db(master_db_path, hash_password, verify_password=None):
         import os
         default_pw = os.environ.get('POS_SUPERADMIN_PASSWORD', 'admin123')
         cursor.execute(
-            "INSERT OR IGNORE INTO super_admins (username, password, full_name) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO super_admins (username, password, full_name, must_change_password) VALUES (?, ?, ?, 1)",
             ('superadmin', hash_password(default_pw), '\u0645\u062f\u064a\u0631 \u0627\u0644\u0646\u0638\u0627\u0645')
         )
         if default_pw == 'admin123':

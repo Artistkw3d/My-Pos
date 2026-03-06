@@ -4244,9 +4244,12 @@ def super_admin_change_password():
             conn.close()
             return jsonify({'success': False, 'error': 'كلمة المرور القديمة غير صحيحة'}), 400
 
+        # Always clear must_change_password flag when settings are updated
+        cursor.execute('UPDATE super_admins SET must_change_password = 0 WHERE id = ?', (admin_id,))
+
         # تحديث كلمة المرور
         if new_password:
-            cursor.execute('UPDATE super_admins SET password = ?, must_change_password = 0 WHERE id = ?',
+            cursor.execute('UPDATE super_admins SET password = ? WHERE id = ?',
                            (hash_password(new_password), admin_id))
             write_audit_log('PASSWORD_CHANGED', 'Super admin changed password', user_id=admin_id, username=admin['username'], ip_address=request.remote_addr)
 
