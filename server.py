@@ -47,6 +47,7 @@ logger = logging.getLogger('pos-server')
 security_logger = logging.getLogger('pos-security')
 
 app = Flask(__name__, static_folder='frontend')
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max request size
 
 # === Rate Limiter (Phase 4) ===
 limiter = Limiter(
@@ -4664,6 +4665,7 @@ def restore_backup():
         return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/schedule', methods=['PUT'])
+@require_admin()
 def update_backup_schedule():
     """تحديث جدولة النسخ الاحتياطي التلقائي"""
     try:
