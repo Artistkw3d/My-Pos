@@ -26,7 +26,7 @@ import jwt
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from setup_database import create_all_tables, create_indexes, insert_default_settings, insert_default_branch
+
 from db_modules.master import init_master_db as _init_master_db
 from db_modules.migrate import migrate_database as _migrate_database
 
