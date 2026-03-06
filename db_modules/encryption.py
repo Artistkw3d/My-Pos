@@ -19,8 +19,14 @@ def _get_fernet():
         return _fernet
     key = os.environ.get('POS_ENCRYPTION_KEY', '')
     if not key:
-        _encryption_available = False
-        return None
+        logger.warning("WARNING: POS_ENCRYPTION_KEY not set. Generating ephemeral key (will change on restart). Set it in .env for production!")
+        try:
+            from cryptography.fernet import Fernet
+            key = Fernet.generate_key().decode('utf-8')
+            os.environ['POS_ENCRYPTION_KEY'] = key
+        except ImportError:
+            _encryption_available = False
+            return None
     try:
         from cryptography.fernet import Fernet
         _fernet = Fernet(key.encode() if isinstance(key, str) else key)
