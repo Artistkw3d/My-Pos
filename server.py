@@ -144,14 +144,15 @@ def auth_middleware():
     if request.method == 'OPTIONS':
         return None
 
-    # Phase 3: Validate tenant header on all API requests
+    # Allow public routes without any validation first
+    if request.path in PUBLIC_ROUTES:
+        return None
+
+    # Phase 3: Validate tenant header on non-public API requests
     tenant_id = request.headers.get('X-Tenant-ID', '').strip()
     if tenant_id and not _validate_tenant_slug(tenant_id):
         security_logger.warning(f"Invalid tenant access attempt: slug='{tenant_id}' ip={request.remote_addr}")
         return jsonify({'success': False, 'error': 'Invalid tenant ID'}), 403
-
-    if request.path in PUBLIC_ROUTES:
-        return None
     if request.path in ('/api/login', '/api/super-admin/login'):
         return None
     auth_header = request.headers.get('Authorization', '')
@@ -203,8 +204,9 @@ def add_security_headers(response):
     # Phase 4: Tightened security headers
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
         "connect-src 'self'" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
         "frame-ancestors 'none'"

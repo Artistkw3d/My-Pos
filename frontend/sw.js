@@ -55,6 +55,11 @@ self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
+    // تجاهل الطلبات غير HTTP/HTTPS (مثل chrome-extension://)
+    if (!url.protocol.startsWith('http')) {
+        return;
+    }
+
     // طلبات فحص الاتصال - شبكة فقط
     if (url.searchParams.has('_ping')) {
         event.respondWith(fetch(request));
