@@ -204,19 +204,7 @@ def needs_rehash(stored_hash):
     return len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash)
 
 
-def migrate_database(db_path=None):
-    """ترقية قاعدة البيانات - إنشاء الجداول الأساسية وإضافة أعمدة وجداول جديدة"""
-    target_path = db_path or DB_PATH
-    _migrate_database(target_path)
 
-# ترقية قاعدة البيانات الافتراضية
-migrate_database()
-
-# ترقية جميع قواعد بيانات المستأجرين
-if os.path.exists(TENANTS_DB_DIR):
-    for f in os.listdir(TENANTS_DB_DIR):
-        if f.endswith('.db'):
-            migrate_database(os.path.join(TENANTS_DB_DIR, f))
 
 def get_tenant_slug():
     """استخراج معرف المستأجر من الطلب"""
