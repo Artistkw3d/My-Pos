@@ -25,7 +25,7 @@ import html
 import jwt
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
-
+from setup_database import create_all_tables, insert_default_settings, insert_default_branch
 
 
 
