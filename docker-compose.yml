@@ -6,9 +6,13 @@ services:
     expose:
       - "5000"
     volumes:
-      - /root/data/pos:/app/database
+      - pos-data:/app/database
     environment:
       - TZ=Asia/Kuwait
+      - POS_LICENSE_SECRET=${POS_LICENSE_SECRET:?Set POS_LICENSE_SECRET in .env}
+      - POS_AUTH_SECRET=${POS_AUTH_SECRET:?Set POS_AUTH_SECRET in .env}
+      - POS_CORS_ORIGINS=${POS_CORS_ORIGINS:-}
+      - POS_ENCRYPTION_KEY=${POS_ENCRYPTION_KEY:-}
     logging:
       driver: "json-file"
       options:
@@ -16,6 +20,14 @@ services:
         max-file: "3"
     networks:
       - nginx-proxy
+
+volumes:
+  pos-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /root/data/pos
 
 networks:
   nginx-proxy:

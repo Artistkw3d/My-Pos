@@ -23,26 +23,44 @@ import hashlib
 import secrets
 import html
 import jwt
+import logging
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from db_modules.schema import create_all_tables, create_indexes, insert_default_settings, insert_default_branch
 from db_modules.master import init_master_db as _init_master_db
 from db_modules.migrate import migrate_database as _migrate_database
+from db_modules.encryption import encrypt_value, decrypt_value, SENSITIVE_KEYS
+
+# === Secure Logging Setup (Phase 5) ===
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('pos-server')
+security_logger = logging.getLogger('pos-security')
 
 app = Flask(__name__, static_folder='frontend')
 
+# === Rate Limiter (Phase 4) ===
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per minute"],
+    storage_uri="memory://"
+)
+
 # === License enforcement constants ===
-LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET', 'pos-offline-license-secret-v1')
-if LICENSE_SECRET == 'pos-offline-license-secret-v1' and not os.environ.get('POS_ALLOW_DEFAULT_SECRET'):
-    import warnings
-    warnings.warn(
-        "WARNING: Using default LICENSE_SECRET. Set POS_LICENSE_SECRET environment variable for production security.",
-        stacklevel=1
-    )
+LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET', '')
+if not LICENSE_SECRET:
+    LICENSE_SECRET = 'pos-offline-license-secret-v1'
+    logger.warning("WARNING: POS_LICENSE_SECRET not set. Using insecure default. Set it in .env for production!")
 LICENSE_GRACE_DAYS = 7
 
-# === Auth secret for JWT tokens ===
+# === Auth secret for JWT tokens (Phase 2: require env var or generate secure fallback) ===
 AUTH_SECRET = os.environ.get('POS_AUTH_SECRET', '')
 
 def get_auth_secret():
@@ -56,14 +74,17 @@ def get_auth_secret():
         cursor.execute("SELECT value FROM settings WHERE key = 'auth_secret'")
         row = cursor.fetchone()
         if row:
-            AUTH_SECRET = row['value']
+            AUTH_SECRET = decrypt_value(row['value'])
         else:
             AUTH_SECRET = secrets.token_hex(32)
-            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_secret', ?)", (AUTH_SECRET,))
+            store_val = encrypt_value(AUTH_SECRET)
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_secret', ?)", (store_val,))
             conn.commit()
         conn.close()
     except Exception:
         AUTH_SECRET = secrets.token_hex(32)
+    if not os.environ.get('POS_AUTH_SECRET'):
+        logger.warning("POS_AUTH_SECRET not set. Using auto-generated secret (will change on restart if not persisted in DB).")
     return AUTH_SECRET
 
 def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
@@ -84,21 +105,37 @@ PUBLIC_ROUTES = {
     '/api/sync/status', '/api/products', '/api/settings'
 }
 
-_login_attempts = {}
-LOGIN_RATE_LIMIT = 5
-LOGIN_RATE_WINDOW = 60
+# === Tenant cache for validation (Phase 3) ===
+_tenant_cache = {}
+_tenant_cache_ttl = 300  # 5 minutes
 
-def check_rate_limit(ip, endpoint):
-    key = f"{ip}:{endpoint}"
+def _get_valid_tenants():
+    """Load valid tenant slugs from master DB with caching."""
     now = time.time()
-    attempts = _login_attempts.get(key, [])
-    attempts = [t for t in attempts if now - t < LOGIN_RATE_WINDOW]
-    _login_attempts[key] = attempts
-    if len(attempts) >= LOGIN_RATE_LIMIT:
+    if _tenant_cache.get('_last_refresh', 0) + _tenant_cache_ttl > now and _tenant_cache.get('slugs'):
+        return _tenant_cache['slugs']
+    try:
+        conn = sqlite3.connect(MASTER_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT slug FROM tenants')
+        slugs = {row['slug'] for row in cursor.fetchall()}
+        conn.close()
+        _tenant_cache['slugs'] = slugs
+        _tenant_cache['_last_refresh'] = now
+        return slugs
+    except Exception:
+        return _tenant_cache.get('slugs', set())
+
+def _validate_tenant_slug(slug):
+    """Validate tenant slug exists in master DB (Phase 3)."""
+    if not slug:
+        return True  # No tenant = default DB
+    safe_slug = re.sub(r'[^a-zA-Z0-9_-]', '', slug)
+    if not safe_slug or safe_slug != slug:
         return False
-    attempts.append(now)
-    _login_attempts[key] = attempts
-    return True
+    valid_tenants = _get_valid_tenants()
+    return safe_slug in valid_tenants
 
 @app.before_request
 def auth_middleware():
@@ -106,11 +143,16 @@ def auth_middleware():
         return None
     if request.method == 'OPTIONS':
         return None
+
+    # Phase 3: Validate tenant header on all API requests
+    tenant_id = request.headers.get('X-Tenant-ID', '').strip()
+    if tenant_id and not _validate_tenant_slug(tenant_id):
+        security_logger.warning(f"Invalid tenant access attempt: slug='{tenant_id}' ip={request.remote_addr}")
+        return jsonify({'success': False, 'error': 'Invalid tenant ID'}), 403
+
     if request.path in PUBLIC_ROUTES:
         return None
     if request.path in ('/api/login', '/api/super-admin/login'):
-        if not check_rate_limit(request.remote_addr, request.path):
-            return jsonify({'success': False, 'error': 'Too many login attempts. Try again later.'}), 429
         return None
     auth_header = request.headers.get('Authorization', '')
     token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
@@ -123,6 +165,7 @@ def auth_middleware():
             req_tenant = request.headers.get('X-Tenant-ID', '')
             token_tenant = payload.get('tenant', '')
             if token_tenant and req_tenant and req_tenant != token_tenant:
+                security_logger.warning(f"Cross-tenant access denied: token_tenant='{token_tenant}' req_tenant='{req_tenant}' user='{payload.get('username')}'")
                 return jsonify({'success': False, 'error': 'Tenant access denied'}), 403
         if request.path.startswith('/api/super-admin/') and not payload.get('is_super_admin'):
             return jsonify({'success': False, 'error': 'Super admin access required'}), 403
@@ -145,18 +188,33 @@ def require_admin():
         return decorated
     return decorator
 
-# === CORS configuration ===
-ALLOWED_ORIGINS = os.environ.get('POS_CORS_ORIGINS', '').split(',') if os.environ.get('POS_CORS_ORIGINS') else []
-if ALLOWED_ORIGINS and ALLOWED_ORIGINS[0]:
+# === CORS configuration (Phase 4: strict by default) ===
+_cors_env = os.environ.get('POS_CORS_ORIGINS', '').strip()
+ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(',') if o.strip()] if _cors_env else []
+if ALLOWED_ORIGINS:
     CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 else:
     CORS(app)
+    if os.environ.get('POS_LICENSE_SECRET'):
+        logger.warning("POS_CORS_ORIGINS not set. CORS allows all origins. Set specific origins for production!")
 
 @app.after_request
 def add_security_headers(response):
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' *"
+    # Phase 4: Tightened security headers
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
+        "frame-ancestors 'none'"
+    )
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
 # إعدادات قواعد البيانات
@@ -176,8 +234,13 @@ os.makedirs(BACKUPS_DIR, exist_ok=True)
 MIN_PASSWORD_LENGTH = 8
 
 def validate_password_strength(password):
+    """Phase 2: Password policy with complexity check."""
     if not password or len(password) < MIN_PASSWORD_LENGTH:
         return False, f'Password must be at least {MIN_PASSWORD_LENGTH} characters'
+    has_letter = any(c.isalpha() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    if not (has_letter and has_digit):
+        return False, 'Password must contain both letters and numbers'
     return True, ''
 
 def hash_password(password):
@@ -198,8 +261,10 @@ def needs_rehash(stored_hash):
     """هل كلمة المرور بحاجة لإعادة تشفير؟"""
     if not stored_hash:
         return False
-    # SHA-256 القديم = 64 hex chars
-    return len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash)
+    if len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash):
+        security_logger.info("Detected old SHA-256 password hash, will rehash on next login")
+        return True
+    return False
 
 def init_master_db():
     """إنشاء قاعدة البيانات الرئيسية للمستأجرين"""
@@ -298,6 +363,7 @@ def create_tenant_database(slug):
 # ===== API المستخدمين =====
 
 @app.route('/api/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     """تسجيل دخول المستخدم"""
     try:
@@ -396,12 +462,15 @@ def login():
                             }
                     except Exception:
                         pass
+                security_logger.info(f"User login success: user='{username}' tenant='{tenant_slug}' ip={request.remote_addr}")
                 return jsonify({'success': True, 'user': user_data, 'token': token, 'license': license_data})
 
         conn.close()
+        security_logger.warning(f"User login failed: user='{username}' tenant='{tenant_slug}' ip={request.remote_addr}")
         return jsonify({'success': False, 'error': 'اسم المستخدم أو كلمة المرور غير صحيحة'}), 401
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/users', methods=['GET'])
 def get_users():
@@ -416,7 +485,8 @@ def get_users():
         conn.close()
         return jsonify({'success': True, 'users': users})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 def ensure_user_permission_columns(cursor):
     """إضافة أعمدة الصلاحيات الجديدة إذا لم تكن موجودة"""
@@ -539,7 +609,8 @@ def add_user():
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': 'اسم المستخدم موجود مسبقاً'}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
 def update_user(user_id):
@@ -702,7 +773,8 @@ def update_user(user_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 @require_admin()
@@ -725,7 +797,8 @@ def delete_user(user_id):
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== الصفحة الرئيسية =====
 @app.route('/')
@@ -863,7 +936,8 @@ def get_products():
         conn.close()
         return jsonify({'success': True, 'products': products})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/products', methods=['POST'])
 def add_product():
@@ -895,7 +969,8 @@ def add_product():
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': 'الباركود موجود مسبقاً'}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/products/<int:product_id>', methods=['PUT'])
 def update_product(product_id):
@@ -926,7 +1001,8 @@ def update_product(product_id):
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 def delete_product(product_id):
@@ -940,7 +1016,8 @@ def delete_product(product_id):
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API المخزون الأساسي =====
 
@@ -961,7 +1038,8 @@ def get_inventory():
         conn.close()
         return jsonify({'success': True, 'inventory': inventory})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/inventory', methods=['POST'])
 def add_inventory():
@@ -1027,7 +1105,8 @@ def update_inventory(inventory_id):
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/inventory/<int:inventory_id>', methods=['DELETE'])
 def delete_inventory(inventory_id):
@@ -1044,7 +1123,8 @@ def delete_inventory(inventory_id):
 
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API خصائص/متغيرات المنتجات =====
 
@@ -1059,7 +1139,8 @@ def get_variants(inventory_id):
         conn.close()
         return jsonify({'success': True, 'variants': variants})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/inventory/<int:inventory_id>/variants', methods=['POST'])
 def save_variants(inventory_id):
@@ -1137,7 +1218,8 @@ def get_branch_stock():
         
         return jsonify({'success': True, 'stock': stock})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/branch-stock', methods=['POST'])
 def add_branch_stock():
@@ -1203,7 +1285,8 @@ def add_branch_stock():
 
         return jsonify({'success': True, 'id': stock_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/branch-stock/<int:stock_id>', methods=['PUT'])
 def update_branch_stock(stock_id):
@@ -1224,7 +1307,8 @@ def update_branch_stock(stock_id):
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/branch-stock/<int:stock_id>', methods=['DELETE'])
 def delete_branch_stock(stock_id):
@@ -1237,7 +1321,8 @@ def delete_branch_stock(stock_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/products/search', methods=['GET'])
 def search_products():
@@ -1284,7 +1369,8 @@ def search_products():
 
         return jsonify({'success': True, 'products': products})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API الفواتير =====
 
@@ -1320,7 +1406,8 @@ def get_invoices():
         
         return jsonify({'success': True, 'invoices': invoices})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/invoices/<int:invoice_id>', methods=['GET'])
 def get_invoice(invoice_id):
@@ -1347,7 +1434,8 @@ def get_invoice(invoice_id):
         
         return jsonify({'success': True, 'invoice': invoice})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/invoices/clear-all', methods=['DELETE'])
 @require_admin()
@@ -1369,7 +1457,8 @@ def clear_all_invoices():
         
         return jsonify({'success': True, 'deleted': deleted_count})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/invoices', methods=['POST'])
 def create_invoice():
@@ -1550,7 +1639,8 @@ def create_invoice():
             result['negative_stock_warnings'] = neg_warnings
         return jsonify(result)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/invoices/<int:invoice_id>/status', methods=['PUT'])
 def update_invoice_status(invoice_id):
@@ -1571,7 +1661,8 @@ def update_invoice_status(invoice_id):
 
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/invoices/<int:invoice_id>/cancel', methods=['PUT'])
 def cancel_invoice(invoice_id):
@@ -1653,7 +1744,8 @@ def cancel_invoice(invoice_id):
 
         return jsonify({'success': True, 'stock_returned': bool(stock_returned)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API التالف =====
 
@@ -1686,7 +1778,8 @@ def get_damaged_items():
         
         return jsonify({'success': True, 'damaged': damaged})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/damaged-items', methods=['POST'])
 def add_damaged_item():
@@ -1726,7 +1819,8 @@ def add_damaged_item():
         
         return jsonify({'success': True, 'id': damaged_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/damaged-items/<int:damaged_id>', methods=['DELETE'])
 def delete_damaged_item(damaged_id):
@@ -1739,7 +1833,8 @@ def delete_damaged_item(damaged_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/system-logs', methods=['GET'])
@@ -1783,7 +1878,8 @@ def get_system_logs():
 
         return jsonify({'success': True, 'logs': logs})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/system-logs', methods=['POST'])
 def add_system_log():
@@ -1813,7 +1909,8 @@ def add_system_log():
         
         return jsonify({'success': True, 'id': log_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API التقارير =====
 
@@ -1935,7 +2032,8 @@ def sales_report():
         
         return jsonify({'success': True, 'report': report})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/reports/inventory', methods=['GET'])
 def inventory_report():
@@ -1992,7 +2090,8 @@ def inventory_report():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/reports/damaged', methods=['GET'])
 def damaged_report():
@@ -2051,12 +2150,14 @@ def damaged_report():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
         conn.close()
         
         return jsonify({'success': True, 'report': report})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/reports/top-products', methods=['GET'])
 def top_products_report():
@@ -2084,7 +2185,8 @@ def top_products_report():
         
         return jsonify({'success': True, 'products': products})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/reports/low-stock', methods=['GET'])
 def low_stock_report():
@@ -2106,7 +2208,8 @@ def low_stock_report():
         
         return jsonify({'success': True, 'products': products})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/negative-stock', methods=['GET'])
 def negative_stock_report():
@@ -2129,7 +2232,8 @@ def negative_stock_report():
         conn.close()
         return jsonify({'success': True, 'items': items})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API الإعدادات =====
 
@@ -2146,7 +2250,8 @@ def get_settings():
         filtered = {k: v for k, v in settings.items() if not k.startswith(sensitive_prefixes)}
         return jsonify({'success': True, 'settings': filtered})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/settings', methods=['PUT'])
 @require_admin()
@@ -2158,17 +2263,20 @@ def update_settings():
         cursor = conn.cursor()
         
         for key, value in data.items():
+            # Phase 6: Encrypt sensitive values before storing
+            store_value = encrypt_value(value) if key in SENSITIVE_KEYS else value
             cursor.execute('''
                 INSERT OR REPLACE INTO settings (key, value, updated_at)
                 VALUES (?, ?, CURRENT_TIMESTAMP)
-            ''', (key, value))
+            ''', (key, store_value))
         
         conn.commit()
         conn.close()
         
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API الفروع =====
 
@@ -2183,7 +2291,8 @@ def get_branches():
         conn.close()
         return jsonify({'success': True, 'branches': branches})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/branches', methods=['POST'])
 def add_branch():
@@ -2229,7 +2338,8 @@ def add_branch():
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': 'اسم الفرع موجود مسبقاً'}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/branches/<int:branch_id>', methods=['PUT'])
 def update_branch(branch_id):
@@ -2263,7 +2373,8 @@ def update_branch(branch_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/branches/<int:branch_id>', methods=['DELETE'])
 def delete_branch(branch_id):
@@ -2276,7 +2387,8 @@ def delete_branch(branch_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API سجل الحضور =====
 
@@ -2296,7 +2408,8 @@ def check_in():
         conn.close()
         return jsonify({'success': True, 'id': attendance_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/attendance/check-out', methods=['POST'])
 def check_out():
@@ -2325,7 +2438,8 @@ def check_out():
             conn.close()
             return jsonify({'success': False, 'error': 'لا يوجد سجل حضور'})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/attendance', methods=['GET'])
 def get_attendance():
@@ -2360,7 +2474,8 @@ def get_attendance():
         conn.close()
         return jsonify({'success': True, 'records': records})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API العملاء (CRM) =====
 
@@ -2395,7 +2510,8 @@ def get_customers():
         
         return jsonify({'success': True, 'customers': customers})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customers/<int:customer_id>', methods=['GET'])
 def get_customer(customer_id):
@@ -2417,7 +2533,8 @@ def get_customer(customer_id):
         else:
             return jsonify({'success': False, 'error': 'العميل غير موجود'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customers/search', methods=['GET'])
 def search_customer():
@@ -2442,7 +2559,8 @@ def search_customer():
         else:
             return jsonify({'success': False, 'error': 'العميل غير موجود'})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customers/<int:customer_id>/points/adjust', methods=['POST'])
 def adjust_customer_points(customer_id):
@@ -2462,7 +2580,8 @@ def adjust_customer_points(customer_id):
         conn.close()
         return jsonify({'success': True, 'new_points': row['loyalty_points'] if row else 0})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customers', methods=['POST'])
 def add_customer():
@@ -2584,7 +2703,8 @@ def get_customer_invoices(customer_id):
         
         return jsonify({'success': True, 'invoices': invoices})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API التكاليف =====
 
@@ -2629,7 +2749,8 @@ def get_expenses():
 
         return jsonify({'success': True, 'expenses': expenses})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/expenses', methods=['POST'])
 def add_expense():
@@ -2754,7 +2875,8 @@ def sales_by_product():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/reports/sales-by-branch', methods=['GET'])
 def sales_by_branch():
@@ -2808,7 +2930,8 @@ def sales_by_branch():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/reports/profit-loss', methods=['GET'])
 def profit_loss():
@@ -2906,7 +3029,8 @@ def profit_loss():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== نظام المرتجعات =====
 
@@ -2930,7 +3054,8 @@ def get_returns():
             'returns': returns
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/returns/<int:return_id>', methods=['GET'])
 def get_return(return_id):
@@ -2951,7 +3076,8 @@ def get_return(return_id):
             'return': dict_from_row(return_data)
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/returns', methods=['POST'])
 def add_return():
@@ -2997,7 +3123,8 @@ def add_return():
             'message': 'تم إضافة المرتجع وإعادة المنتج للمخزون'
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/returns/<int:return_id>', methods=['DELETE'])
 def delete_return(return_id):
@@ -3032,7 +3159,8 @@ def delete_return(return_id):
             'message': 'تم حذف المرتجع'
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== تشغيل الخادم =====
 
@@ -3053,7 +3181,8 @@ def get_tables():
         conn.close()
         return jsonify({'success': True, 'tables': tables})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/tables', methods=['POST'])
 def add_table():
@@ -3070,7 +3199,8 @@ def add_table():
         conn.close()
         return jsonify({'success': True, 'id': table_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/tables/<int:table_id>', methods=['PUT'])
 def update_table(table_id):
@@ -3091,7 +3221,8 @@ def update_table(table_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/tables/<int:table_id>', methods=['DELETE'])
 def delete_table(table_id):
@@ -3103,7 +3234,8 @@ def delete_table(table_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/tables/<int:table_id>/assign', methods=['POST'])
 def assign_table_invoice(table_id):
@@ -3125,7 +3257,8 @@ def assign_table_invoice(table_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/tables/<int:table_id>/release', methods=['POST'])
 def release_table(table_id):
@@ -3139,7 +3272,8 @@ def release_table(table_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/tables/<int:table_id>/reserve', methods=['POST'])
 def reserve_table(table_id):
@@ -3161,7 +3295,8 @@ def reserve_table(table_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API الكوبونات =====
 
@@ -3175,7 +3310,8 @@ def get_coupons():
         conn.close()
         return jsonify({'success': True, 'coupons': coupons})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/coupons', methods=['POST'])
 def add_coupon():
@@ -3195,7 +3331,8 @@ def add_coupon():
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': 'كود الكوبون موجود مسبقاً'}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/coupons/<int:coupon_id>', methods=['PUT'])
 def update_coupon(coupon_id):
@@ -3215,7 +3352,8 @@ def update_coupon(coupon_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/coupons/<int:coupon_id>', methods=['DELETE'])
 def delete_coupon(coupon_id):
@@ -3227,7 +3365,8 @@ def delete_coupon(coupon_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/coupons/validate', methods=['POST'])
 def validate_coupon():
@@ -3273,7 +3412,8 @@ def validate_coupon():
         conn.close()
         return jsonify({'success': True, 'discount': round(discount, 3), 'coupon': coupon})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/coupons/use', methods=['POST'])
 def use_coupon():
@@ -3288,7 +3428,8 @@ def use_coupon():
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== API الموردين =====
 
@@ -3307,7 +3448,8 @@ def get_suppliers():
         conn.close()
         return jsonify({'success': True, 'suppliers': suppliers})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers', methods=['POST'])
 def add_supplier():
@@ -3325,7 +3467,8 @@ def add_supplier():
         conn.close()
         return jsonify({'success': True, 'id': supplier_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers/<int:supplier_id>', methods=['PUT'])
 def update_supplier(supplier_id):
@@ -3342,7 +3485,8 @@ def update_supplier(supplier_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers/<int:supplier_id>', methods=['DELETE'])
 def delete_supplier(supplier_id):
@@ -3355,7 +3499,8 @@ def delete_supplier(supplier_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers/<int:supplier_id>/invoices', methods=['GET'])
 def get_supplier_invoices(supplier_id):
@@ -3367,7 +3512,8 @@ def get_supplier_invoices(supplier_id):
         conn.close()
         return jsonify({'success': True, 'invoices': invoices})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers/invoices', methods=['POST'])
 def add_supplier_invoice():
@@ -3392,7 +3538,8 @@ def add_supplier_invoice():
         conn.close()
         return jsonify({'success': True, 'id': invoice_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers/invoices/<int:invoice_id>', methods=['DELETE'])
 def delete_supplier_invoice(invoice_id):
@@ -3404,7 +3551,8 @@ def delete_supplier_invoice(invoice_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/suppliers/invoices/<int:invoice_id>/file', methods=['GET'])
 def get_supplier_invoice_file(invoice_id):
@@ -3418,7 +3566,8 @@ def get_supplier_invoice_file(invoice_id):
             return jsonify({'success': True, 'file_data': row['file_data'], 'file_name': row['file_name'], 'file_type': row['file_type']})
         return jsonify({'success': False, 'error': 'الملف غير موجود'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== License Token Endpoints =====
 
@@ -3462,7 +3611,8 @@ def generate_license_token():
         token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
         return jsonify({'success': True, 'token': token})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/license/refresh-token', methods=['GET'])
 def refresh_license_token():
@@ -3513,7 +3663,8 @@ def refresh_license_token():
             pass
         return jsonify({'success': True, 'token': token})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== نظام Multi-Tenancy API =====
 
@@ -3550,9 +3701,11 @@ def tenant_check_status():
             'mode': tenant['mode'] if 'mode' in tenant.keys() else 'online'
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def super_admin_login():
     """تسجيل دخول المدير الأعلى"""
     try:
@@ -3577,15 +3730,18 @@ def super_admin_login():
                 'role': 'super_admin'
             }
             token = generate_auth_token(admin_data, is_super_admin=True)
+            security_logger.info(f"Super admin login success: user='{username}' ip={request.remote_addr}")
             return jsonify({
                 'success': True,
                 'admin': admin_data,
                 'token': token
             })
         conn.close()
+        security_logger.warning(f"Super admin login failed: user='{username}' ip={request.remote_addr}")
         return jsonify({'success': False, 'error': 'بيانات الدخول غير صحيحة'}), 401
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"Super admin login error: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/tenants', methods=['GET'])
 def get_tenants():
@@ -3615,7 +3771,8 @@ def get_tenants():
         conn.close()
         return jsonify({'success': True, 'tenants': tenants})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/tenants', methods=['POST'])
 def create_tenant():
@@ -3628,7 +3785,12 @@ def create_tenant():
         owner_email = data.get('owner_email', '').strip()
         owner_phone = data.get('owner_phone', '').strip()
         admin_username = data.get('admin_username', 'admin').strip()
-        admin_password = data.get('admin_password', 'admin123').strip()
+        admin_password = data.get('admin_password', '').strip()
+        if not admin_password:
+            return jsonify({'success': False, 'error': 'كلمة مرور المدير مطلوبة'}), 400
+        pw_valid, pw_error = validate_password_strength(admin_password)
+        if not pw_valid:
+            return jsonify({'success': False, 'error': pw_error}), 400
         plan = data.get('plan', 'basic')
         max_users = data.get('max_users', 5)
         max_branches = data.get('max_branches', 3)
@@ -3683,7 +3845,8 @@ def create_tenant():
 
         return jsonify({'success': True, 'id': tenant_id, 'slug': slug, 'expires_at': expires_at})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/tenants/<int:tenant_id>', methods=['PUT'])
 def update_tenant(tenant_id):
@@ -3730,7 +3893,8 @@ def update_tenant(tenant_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/tenants/<int:tenant_id>', methods=['DELETE'])
 def delete_tenant(tenant_id):
@@ -3754,7 +3918,8 @@ def delete_tenant(tenant_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/tenants/<int:tenant_id>/stats', methods=['GET'])
 def get_tenant_stats(tenant_id):
@@ -3789,7 +3954,8 @@ def get_tenant_stats(tenant_id):
 
         return jsonify({'success': True, 'stats': stats, 'tenant': dict_from_row(tenant)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/subscriptions/<int:tenant_id>', methods=['GET'])
 def get_subscription_invoices(tenant_id):
@@ -3802,7 +3968,8 @@ def get_subscription_invoices(tenant_id):
         conn.close()
         return jsonify({'success': True, 'invoices': invoices})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/subscriptions', methods=['POST'])
 def create_subscription_invoice():
@@ -3897,7 +4064,8 @@ def create_subscription_invoice():
             'end_date': end_date.isoformat()
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/subscriptions/<int:invoice_id>', methods=['DELETE'])
 def delete_subscription_invoice(invoice_id):
@@ -3910,7 +4078,8 @@ def delete_subscription_invoice(invoice_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/change-password', methods=['POST'])
 def super_admin_change_password():
@@ -3962,7 +4131,8 @@ def super_admin_change_password():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/backup/tenant/<int:tenant_id>', methods=['POST'])
 def super_admin_backup_tenant(tenant_id):
@@ -3982,7 +4152,8 @@ def super_admin_backup_tenant(tenant_id):
         backup_info['tenant_name'] = tenant['name']
         return jsonify({'success': True, 'backup': backup_info})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/backup/all', methods=['POST'])
 def super_admin_backup_all():
@@ -4022,7 +4193,8 @@ def super_admin_backup_all():
             'failed': len(errors)
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/backup/list', methods=['GET'])
 def super_admin_list_all_backups():
@@ -4067,7 +4239,8 @@ def super_admin_list_all_backups():
 
         return jsonify({'success': True, 'all_backups': all_backups})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== نظام النسخ الاحتياطي =====
 
@@ -4121,7 +4294,8 @@ def create_backup():
             return jsonify({'success': False, 'error': error}), 500
         return jsonify({'success': True, 'backup': backup_info})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/list', methods=['GET'])
 def list_backups():
@@ -4166,7 +4340,8 @@ def list_backups():
 
         return jsonify({'success': True, 'backups': backups, 'schedule': schedule})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/download/<filename>', methods=['GET'])
 def download_backup(filename):
@@ -4186,7 +4361,8 @@ def download_backup(filename):
 
         return send_file(filepath, as_attachment=True, download_name=safe_filename)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/delete/<filename>', methods=['DELETE', 'POST'])
 @require_admin()
@@ -4207,7 +4383,8 @@ def delete_backup(filename):
         os.remove(filepath)
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/restore', methods=['POST'])
 @require_admin()
@@ -4271,7 +4448,8 @@ def restore_backup():
 
         return jsonify({'success': True, 'message': 'تمت الاستعادة بنجاح. تم إنشاء نسخة احتياطية تلقائية قبل الاستعادة.'})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/schedule', methods=['PUT'])
 def update_backup_schedule():
@@ -4300,7 +4478,8 @@ def update_backup_schedule():
 
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== Google Drive Integration =====
 
@@ -4331,9 +4510,9 @@ def gdrive_save_credentials():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                       ('gdrive_client_id', client_id, datetime.now().isoformat()))
+                       ('gdrive_client_id', encrypt_value(client_id), datetime.now().isoformat()))
         cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                       ('gdrive_client_secret', client_secret, datetime.now().isoformat()))
+                       ('gdrive_client_secret', encrypt_value(client_secret), datetime.now().isoformat()))
         cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
                        ('gdrive_redirect_uri', redirect_uri, datetime.now().isoformat()))
         conn.commit()
@@ -4353,7 +4532,8 @@ def gdrive_save_credentials():
 
         return jsonify({'success': True, 'auth_url': auth_url, 'redirect_uri': redirect_uri})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 def _gdrive_exchange_code(auth_code, tenant_slug=None):
     """تبادل كود التفويض بالتوكن - دالة مشتركة"""
@@ -4364,10 +4544,10 @@ def _gdrive_exchange_code(auth_code, tenant_slug=None):
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
     row = cursor.fetchone()
-    client_id = row['value'] if row else None
+    client_id = decrypt_value(row['value']) if row else None
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_secret'")
     row = cursor.fetchone()
-    client_secret = row['value'] if row else None
+    client_secret = decrypt_value(row['value']) if row else None
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_redirect_uri'")
     row = cursor.fetchone()
     redirect_uri = row['value'] if row else None
@@ -4396,13 +4576,13 @@ def _gdrive_exchange_code(auth_code, tenant_slug=None):
     if 'access_token' not in tokens:
         raise ValueError('فشل الحصول على التوكن')
 
-    # حفظ التوكنات
+    # حفظ التوكنات (مشفرة)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                   ('gdrive_access_token', tokens['access_token'], datetime.now().isoformat()))
+                   ('gdrive_access_token', encrypt_value(tokens['access_token']), datetime.now().isoformat()))
     cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                   ('gdrive_refresh_token', tokens.get('refresh_token', ''), datetime.now().isoformat()))
+                   ('gdrive_refresh_token', encrypt_value(tokens.get('refresh_token', '')), datetime.now().isoformat()))
     cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
                    ('gdrive_token_expiry', str(time.time() + tokens.get('expires_in', 3600)), datetime.now().isoformat()))
     conn.commit()
@@ -4485,7 +4665,8 @@ def gdrive_connect():
         error_body = e.read().decode()
         return jsonify({'success': False, 'error': f'خطأ من Google: {error_body}'}), 400
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 def refresh_gdrive_token(db_path):
     """تجديد توكن Google Drive"""
@@ -4495,15 +4676,15 @@ def refresh_gdrive_token(db_path):
 
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_id'")
     row = cursor.fetchone()
-    client_id = row['value'] if row else None
+    client_id = decrypt_value(row['value']) if row else None
 
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_client_secret'")
     row = cursor.fetchone()
-    client_secret = row['value'] if row else None
+    client_secret = decrypt_value(row['value']) if row else None
 
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_refresh_token'")
     row = cursor.fetchone()
-    refresh_token = row['value'] if row else None
+    refresh_token = decrypt_value(row['value']) if row else None
     conn.close()
 
     if not all([client_id, client_secret, refresh_token]):
@@ -4527,7 +4708,7 @@ def refresh_gdrive_token(db_path):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-                           ('gdrive_access_token', new_token, datetime.now().isoformat()))
+                           ('gdrive_access_token', encrypt_value(new_token), datetime.now().isoformat()))
             cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
                            ('gdrive_token_expiry', str(time.time() + tokens.get('expires_in', 3600)), datetime.now().isoformat()))
             conn.commit()
@@ -4545,7 +4726,7 @@ def get_gdrive_token(db_path):
 
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_access_token'")
     row = cursor.fetchone()
-    access_token = row['value'] if row else None
+    access_token = decrypt_value(row['value']) if row else None
 
     cursor.execute("SELECT value FROM settings WHERE key = 'gdrive_token_expiry'")
     row = cursor.fetchone()
@@ -4587,7 +4768,8 @@ def gdrive_status():
             'has_credentials': has_credentials
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/gdrive/disconnect', methods=['POST'])
 def gdrive_disconnect():
@@ -4605,7 +4787,8 @@ def gdrive_disconnect():
 
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/gdrive/upload', methods=['POST'])
 def gdrive_upload():
@@ -4682,7 +4865,8 @@ def gdrive_upload():
             return jsonify({'success': False, 'error': 'انتهت صلاحية التوكن. يرجى إعادة ربط Google Drive.'}), 401
         return jsonify({'success': False, 'error': f'خطأ في Google Drive: {error_body}'}), 500
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 def _gdrive_find_or_create_folder(token, tenant_slug=None):
     """البحث عن مجلد POS-Backups أو إنشاؤه"""
@@ -4743,7 +4927,8 @@ def gdrive_list_files():
 
         return jsonify({'success': True, 'files': files})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 # ===== مجدول النسخ الاحتياطي التلقائي =====
 
@@ -4917,7 +5102,8 @@ def admin_dashboard_invoices_summary():
             'overall': overall
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/admin-dashboard/stock-summary', methods=['GET'])
@@ -4986,7 +5172,8 @@ def admin_dashboard_stock_summary():
             'products': products_list
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== XBRL / IFRS =====
@@ -5039,7 +5226,8 @@ def get_xbrl_company_info():
             return jsonify({'success': True, 'data': dict_from_row(row)})
         return jsonify({'success': True, 'data': None})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/xbrl/company-info', methods=['POST'])
 def save_xbrl_company_info():
@@ -5083,7 +5271,8 @@ def save_xbrl_company_info():
         conn.close()
         return jsonify({'success': True, 'message': 'تم حفظ بيانات الشركة'})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/xbrl/financial-data', methods=['GET'])
 def get_xbrl_financial_data():
@@ -5268,7 +5457,8 @@ def get_xbrl_financial_data():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/xbrl/generate', methods=['POST'])
 def generate_xbrl():
@@ -5887,7 +6077,8 @@ def generate_xbrl():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/xbrl/reports', methods=['GET'])
 def list_xbrl_reports():
@@ -5903,7 +6094,8 @@ def list_xbrl_reports():
         reports = [dict_from_row(r) for r in rows]
         return jsonify({'success': True, 'reports': reports})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/xbrl/reports/<int:report_id>', methods=['GET'])
 def get_xbrl_report(report_id):
@@ -5920,7 +6112,8 @@ def get_xbrl_report(report_id):
             return jsonify({'success': False, 'error': 'التقرير غير موجود'}), 404
         return jsonify({'success': True, 'report': dict_from_row(row)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== نظام الشفتات =====
@@ -5936,7 +6129,8 @@ def get_shifts():
         conn.close()
         return jsonify({'success': True, 'shifts': shifts})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/shifts', methods=['POST'])
 def add_shift():
@@ -5960,7 +6154,8 @@ def add_shift():
         conn.close()
         return jsonify({'success': True, 'id': shift_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/shifts/<int:shift_id>', methods=['PUT'])
 def update_shift(shift_id):
@@ -5984,7 +6179,8 @@ def update_shift(shift_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/shifts/<int:shift_id>', methods=['DELETE'])
 def delete_shift(shift_id):
@@ -5999,7 +6195,8 @@ def delete_shift(shift_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/shifts/check-lock', methods=['POST'])
 def check_shift_lock():
@@ -6047,7 +6244,8 @@ def check_shift_lock():
             'current_time': current_time
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== تعديل الفواتير =====
@@ -6176,7 +6374,8 @@ def edit_invoice(invoice_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/invoices/<int:invoice_id>/edit-history', methods=['GET'])
 def get_invoice_edit_history(invoice_id):
@@ -6189,7 +6388,8 @@ def get_invoice_edit_history(invoice_id):
         conn.close()
         return jsonify({'success': True, 'history': history})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== أداء الشفتات - شاشة الأدمن =====
@@ -6263,7 +6463,8 @@ def admin_dashboard_shift_performance():
             'unassigned_employees': unassigned
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== نظام طلبات النقل المخزني =====
@@ -6300,7 +6501,8 @@ def get_stock_transfers():
         conn.close()
         return jsonify({'success': True, 'transfers': transfers})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers/<int:transfer_id>', methods=['GET'])
@@ -6321,7 +6523,8 @@ def get_stock_transfer(transfer_id):
         conn.close()
         return jsonify({'success': True, 'transfer': transfer})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers', methods=['POST'])
@@ -6402,7 +6605,8 @@ def create_stock_transfer():
         conn.close()
         return jsonify({'success': True, 'id': transfer_id, 'transfer_number': transfer_number})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers/<int:transfer_id>/approve', methods=['PUT'])
@@ -6460,7 +6664,8 @@ def approve_stock_transfer(transfer_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers/<int:transfer_id>/reject', methods=['PUT'])
@@ -6496,7 +6701,8 @@ def reject_stock_transfer(transfer_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers/<int:transfer_id>/pickup', methods=['PUT'])
@@ -6532,7 +6738,8 @@ def pickup_stock_transfer(transfer_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers/<int:transfer_id>/receive', methods=['PUT'])
@@ -6609,7 +6816,8 @@ def receive_stock_transfer(transfer_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/stock-transfers/<int:transfer_id>', methods=['DELETE'])
@@ -6640,7 +6848,8 @@ def delete_stock_transfer(transfer_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== API الاشتراكات =====
@@ -6660,7 +6869,8 @@ def get_subscription_plans():
         conn.close()
         return jsonify({'success': True, 'plans': plans})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-plans', methods=['POST'])
 def add_subscription_plan():
@@ -6689,7 +6899,8 @@ def add_subscription_plan():
         conn.close()
         return jsonify({'success': True, 'id': plan_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-plans/<int:plan_id>', methods=['PUT'])
 def update_subscription_plan(plan_id):
@@ -6719,7 +6930,8 @@ def update_subscription_plan(plan_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-plans/<int:plan_id>', methods=['DELETE'])
 def delete_subscription_plan(plan_id):
@@ -6733,7 +6945,8 @@ def delete_subscription_plan(plan_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-plans/<int:plan_id>/items', methods=['GET'])
 def get_plan_items(plan_id):
@@ -6746,7 +6959,8 @@ def get_plan_items(plan_id):
         conn.close()
         return jsonify({'success': True, 'items': items})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-plans/<int:plan_id>/items', methods=['POST'])
 def add_plan_item(plan_id):
@@ -6765,7 +6979,8 @@ def add_plan_item(plan_id):
         conn.close()
         return jsonify({'success': True, 'id': item_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-plan-items/<int:item_id>', methods=['DELETE'])
 def delete_plan_item(item_id):
@@ -6778,7 +6993,8 @@ def delete_plan_item(item_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customer-subscriptions', methods=['GET'])
 def get_customer_subscriptions():
@@ -6819,7 +7035,8 @@ def get_customer_subscriptions():
         conn.close()
         return jsonify({'success': True, 'subscriptions': subs})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customer-subscriptions', methods=['POST'])
 def add_customer_subscription():
@@ -6885,7 +7102,8 @@ def add_customer_subscription():
         conn.close()
         return jsonify({'success': True, 'id': sub_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customer-subscriptions/<int:sub_id>', methods=['PUT'])
 def update_customer_subscription(sub_id):
@@ -6901,7 +7119,8 @@ def update_customer_subscription(sub_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customer-subscriptions/<int:sub_id>', methods=['DELETE'])
 def delete_customer_subscription(sub_id):
@@ -6914,7 +7133,8 @@ def delete_customer_subscription(sub_id):
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/customer-subscriptions/check', methods=['GET'])
 def check_customer_subscription():
@@ -6984,7 +7204,8 @@ def check_customer_subscription():
         conn.close()
         return jsonify({'success': True, 'subscription': sub, 'active': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-redemptions', methods=['POST'])
 def create_subscription_redemption():
@@ -7098,7 +7319,8 @@ def create_subscription_redemption():
         conn.close()
         return jsonify({'success': True, 'redeemed': redeemed_items})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/subscription-redemptions/<int:subscription_id>', methods=['GET'])
 def get_subscription_redemptions(subscription_id):
@@ -7111,7 +7333,8 @@ def get_subscription_redemptions(subscription_id):
         conn.close()
         return jsonify({'success': True, 'redemptions': redemptions})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 # ===== Sync API - للتزامن بين التطبيق المحلي والسيرفر =====
@@ -7261,7 +7484,8 @@ def sync_upload():
             'synced_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/sync/download', methods=['GET'])
@@ -7334,7 +7558,8 @@ def sync_download():
             'synced_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/sync/status', methods=['GET'])
@@ -7370,7 +7595,8 @@ def sync_status():
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/sync/full-download', methods=['GET'])
@@ -7462,7 +7688,8 @@ def sync_full_download():
             'full_sync': True
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 
 @app.route('/api/version', methods=['GET'])

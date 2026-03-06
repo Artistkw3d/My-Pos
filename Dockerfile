@@ -4,6 +4,9 @@ FROM python:3.11-slim
 # تعيين مجلد العمل
 WORKDIR /app
 
+# إنشاء مستخدم غير root للأمان
+RUN groupadd -r posapp && useradd -r -g posapp -d /app -s /sbin/nologin posapp
+
 # نسخ ملفات المتطلبات أولاً (للاستفادة من cache)
 COPY requirements.txt .
 
@@ -17,11 +20,15 @@ COPY frontend/ ./frontend/
 COPY database/ ./database/
 COPY db_modules/ ./db_modules/
 
-# إنشاء مجلد للنسخ الاحتياطية
-RUN mkdir -p /app/database/backups
+# إنشاء المجلدات اللازمة وتعيين الصلاحيات
+RUN mkdir -p /app/database/backups /app/database/tenants \
+    && chown -R posapp:posapp /app
 
 # فتح المنفذ 5000
 EXPOSE 5000
+
+# التشغيل كمستخدم غير root
+USER posapp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
