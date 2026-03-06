@@ -25,32 +25,48 @@ import html
 import jwt
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, JWTManager
 
-
+from db_modules.schema import create_all_tables, create_indexes, insert_default_settings, insert_default_branch
+from db_modules.master import init_master_db as _init_master_db
+from db_modules.migrate import migrate_database as _migrate_database
 
 app = Flask(__name__, static_folder='frontend')
 
 # === License enforcement constants ===
-_LICENSE_SECRET_ENV = os.environ.get('POS_LICENSE_SECRET', '')
-LICENSE_SECRET = ''
+LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET', 'pos-offline-license-secret-v1')
+if LICENSE_SECRET == 'pos-offline-license-secret-v1' and not os.environ.get('POS_ALLOW_DEFAULT_SECRET'):
+    import warnings
+    warnings.warn(
+        "WARNING: Using default LICENSE_SECRET. Set POS_LICENSE_SECRET environment variable for production security.",
+        stacklevel=1
+    )
 LICENSE_GRACE_DAYS = 7
 
-# === License & Auth Secrets (Environment Variables فقط - بدون رجوع للـ DB) ===
-# تم إجبار النظام على استخدام الـ env فقط (اللي حطيته في docker-compose.yml)
+# === Auth secret for JWT tokens ===
+AUTH_SECRET = os.environ.get('POS_AUTH_SECRET', '')
 
-POS_LICENSE_SECRET = os.environ.get('POS_LICENSE_SECRET')
-if not POS_LICENSE_SECRET:
-    raise RuntimeError("❌ POS_LICENSE_SECRET environment variable is required! Please set it in docker-compose.yml")
-
-POS_AUTH_SECRET = os.environ.get('POS_AUTH_SECRET')
-if not POS_AUTH_SECRET:
-    raise RuntimeError("❌ POS_AUTH_SECRET environment variable is required! Please set it in docker-compose.yml")
-
-# لا تحتاج الدوال القديمة بعد الحين (تم حذفها نهائيًا)
+def get_auth_secret():
+    global AUTH_SECRET
+    if AUTH_SECRET:
+        return AUTH_SECRET
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'auth_secret'")
+        row = cursor.fetchone()
+        if row:
+            AUTH_SECRET = row['value']
+        else:
+            AUTH_SECRET = secrets.token_hex(32)
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_secret', ?)", (AUTH_SECRET,))
+            conn.commit()
+        conn.close()
+    except Exception:
+        AUTH_SECRET = secrets.token_hex(32)
+    return AUTH_SECRET
 
 def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
-    """Generate JWT auth token for authenticated user"""
     payload = {
         'user_id': user_data.get('id', 0),
         'username': user_data.get('username', ''),
@@ -60,7 +76,7 @@ def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
         'exp': datetime.utcnow() + timedelta(hours=24),
         'iat': datetime.utcnow()
     }
-    return jwt.encode(payload, POS_AUTH_SECRET, algorithm='HS256')
+    return jwt.encode(payload, get_auth_secret(), algorithm='HS256')
 
 PUBLIC_ROUTES = {
     '/api/login', '/api/super-admin/login', '/api/version',
@@ -71,13 +87,6 @@ PUBLIC_ROUTES = {
 _login_attempts = {}
 LOGIN_RATE_LIMIT = 5
 LOGIN_RATE_WINDOW = 60
-
-def get_client_ip():
-    """Get real client IP, respecting X-Forwarded-For behind proxy"""
-    forwarded = request.headers.get('X-Forwarded-For', '')
-    if forwarded:
-        return forwarded.split(',')[0].strip()
-    return request.remote_addr
 
 def check_rate_limit(ip, endpoint):
     key = f"{ip}:{endpoint}"
@@ -100,15 +109,15 @@ def auth_middleware():
     if request.path in PUBLIC_ROUTES:
         return None
     if request.path in ('/api/login', '/api/super-admin/login'):
-        if not check_rate_limit(get_client_ip(), request.path):
+        if not check_rate_limit(request.remote_addr, request.path):
             return jsonify({'success': False, 'error': 'Too many login attempts. Try again later.'}), 429
         return None
     auth_header = request.headers.get('Authorization', '')
     token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
     if not token:
         return jsonify({'success': False, 'error': 'Authentication required'}), 401
-    try: 
-        payload = jwt.decode(token, POS_AUTH_SECRET, algorithms=['HS256'])
+    try:
+        payload = jwt.decode(token, get_auth_secret(), algorithms=['HS256'])
         request.current_user = payload
         if not payload.get('is_super_admin'):
             req_tenant = request.headers.get('X-Tenant-ID', '')
@@ -142,17 +151,6 @@ if ALLOWED_ORIGINS and ALLOWED_ORIGINS[0]:
     CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 else:
     CORS(app)
-    import warnings
-    warnings.warn("WARNING: CORS allows all origins. Set POS_CORS_ORIGINS for production.", stacklevel=1)
-
-@app.before_request
-def enforce_https():
-    """Redirect HTTP to HTTPS when POS_FORCE_HTTPS=1 (behind reverse proxy)"""
-    if os.environ.get('POS_FORCE_HTTPS') == '1':
-        if request.headers.get('X-Forwarded-Proto', 'https') != 'https':
-            from flask import redirect
-            url = request.url.replace('http://', 'https://', 1)
-            return redirect(url, code=301)
 
 @app.after_request
 def add_security_headers(response):
@@ -203,8 +201,39 @@ def needs_rehash(stored_hash):
     # SHA-256 القديم = 64 hex chars
     return len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash)
 
+def init_master_db():
+    """إنشاء قاعدة البيانات الرئيسية للمستأجرين"""
+    _init_master_db(MASTER_DB_PATH, hash_password)
 
+init_master_db()
 
+def init_default_db():
+    """إنشاء الجداول الأساسية في قاعدة البيانات الافتراضية إن لم تكن موجودة"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    create_all_tables(cursor)
+    create_indexes(cursor)
+    insert_default_settings(cursor, all_settings=True)
+    insert_default_branch(cursor)
+    conn.commit()
+    conn.close()
+    print("[Init] Default database initialized")
+
+init_default_db()
+
+def migrate_database(db_path=None):
+    """ترقية قاعدة البيانات - إنشاء الجداول الأساسية وإضافة أعمدة وجداول جديدة"""
+    target_path = db_path or DB_PATH
+    _migrate_database(target_path)
+
+# ترقية قاعدة البيانات الافتراضية
+migrate_database()
+
+# ترقية جميع قواعد بيانات المستأجرين
+if os.path.exists(TENANTS_DB_DIR):
+    for f in os.listdir(TENANTS_DB_DIR):
+        if f.endswith('.db'):
+            migrate_database(os.path.join(TENANTS_DB_DIR, f))
 
 def get_tenant_slug():
     """استخراج معرف المستأجر من الطلب"""
@@ -223,31 +252,14 @@ def get_tenant_db_path(slug):
 _initialized_dbs = set()
 
 def ensure_db_tables(db_path):
+    """التأكد من وجود الجداول الأساسية في قاعدة البيانات - يُنفذ مرة واحدة فقط لكل مسار"""
     if db_path in _initialized_dbs:
         return
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
-    # نسخ الإنشاء الأساسي هنا (بدل الاستيراد) – هذا مثال مبسط، أضف الجداول اللي تحتاجها
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'user'
-    )''')
-
-    cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        key TEXT UNIQUE,
-        value TEXT
-    )''')
-
-    # أضف باقي الجداول الأساسية اللي تحتاجها (مثل branches, products, etc.)
-    # ... (انسخ من setup_database.py الجداول المهمة)
-
-    # إدخال إعدادات افتراضية بسيطة
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_name', 'متجر افتراضي')")
-
+    create_all_tables(cursor)
+    insert_default_settings(cursor, all_settings=False)
+    insert_default_branch(cursor)
     conn.commit()
     conn.close()
     _initialized_dbs.add(db_path)
@@ -2130,7 +2142,7 @@ def get_settings():
         cursor.execute('SELECT * FROM settings')
         settings = {row['key']: row['value'] for row in cursor.fetchall()}
         conn.close()
-        sensitive_prefixes = ('gdrive_access_token', 'gdrive_refresh_token', 'gdrive_client_secret', 'auth_secret', 'license_token', 'license_secret')
+        sensitive_prefixes = ('gdrive_access_token', 'gdrive_refresh_token', 'gdrive_client_secret', 'auth_secret', 'license_token')
         filtered = {k: v for k, v in settings.items() if not k.startswith(sensitive_prefixes)}
         return jsonify({'success': True, 'settings': filtered})
     except Exception as e:
@@ -3447,7 +3459,7 @@ def generate_license_token():
         }
         if exp_ts is not None:
             payload['exp'] = exp_ts
-        token = jwt.encode(payload, get_license_secret(), algorithm='HS256')
+        token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
         return jsonify({'success': True, 'token': token})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -3489,7 +3501,7 @@ def refresh_license_token():
         }
         if exp_ts is not None:
             payload['exp'] = exp_ts
-        token = jwt.encode(payload, get_license_secret(), algorithm='HS256')
+        token = jwt.encode(payload, LICENSE_SECRET, algorithm='HS256')
         # Store token in tenant's settings table
         try:
             tenant_db = get_db()
@@ -3541,18 +3553,6 @@ def tenant_check_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/super-admin/login', methods=['POST'])
-@jwt_required()
-def manage_tenants():
-    try:
-        # الكود الحالي...
-        print("manage_tenants called with method:", request.method)
-        # ...
-    except Exception as e:
-        print("Error in manage_tenants:", str(e))
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-        
 def super_admin_login():
     """تسجيل دخول المدير الأعلى"""
     try:
@@ -3878,7 +3878,7 @@ def create_subscription_invoice():
                     'exp': exp_ts,
                     'iss': 'pos-offline-flask'
                 }
-                new_token = jwt.encode(token_payload, get_license_secret(), algorithm='HS256')
+                new_token = jwt.encode(token_payload, LICENSE_SECRET, algorithm='HS256')
                 tenant_db_path = get_tenant_db_path(tenant_slug)
                 t_conn = sqlite3.connect(tenant_db_path)
                 t_cur = t_conn.cursor()
