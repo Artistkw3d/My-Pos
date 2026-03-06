@@ -27,8 +27,7 @@ from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
-from db_modules.master import init_master_db as _init_master_db
-from db_modules.migrate import migrate_database as _migrate_database
+
 
 app = Flask(__name__, static_folder='frontend')
 
