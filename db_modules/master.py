@@ -34,6 +34,21 @@ MASTER_TABLES_SQL = {
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             full_name TEXT NOT NULL,
+            must_change_password INTEGER DEFAULT 1,
+            totp_secret TEXT,
+            totp_enabled INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''',
+    'audit_logs': '''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT NOT NULL,
+            details TEXT,
+            user_id INTEGER,
+            username TEXT,
+            tenant_slug TEXT,
+            ip_address TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''',
@@ -78,6 +93,19 @@ def init_master_db(master_db_path, hash_password):
             cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_period INTEGER DEFAULT 30")
         if 'mode' not in cols:
             cursor.execute("ALTER TABLE tenants ADD COLUMN mode TEXT DEFAULT 'online'")
+    except:
+        pass
+
+    # Migration: add security columns to super_admins
+    try:
+        cursor.execute("PRAGMA table_info(super_admins)")
+        sa_cols = [col[1] for col in cursor.fetchall()]
+        if 'must_change_password' not in sa_cols:
+            cursor.execute("ALTER TABLE super_admins ADD COLUMN must_change_password INTEGER DEFAULT 1")
+        if 'totp_secret' not in sa_cols:
+            cursor.execute("ALTER TABLE super_admins ADD COLUMN totp_secret TEXT")
+        if 'totp_enabled' not in sa_cols:
+            cursor.execute("ALTER TABLE super_admins ADD COLUMN totp_enabled INTEGER DEFAULT 0")
     except:
         pass
 

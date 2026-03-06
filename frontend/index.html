@@ -2008,6 +2008,13 @@
                 </div>
                 <button type="submit" class="btn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">💾 حفظ التغييرات</button>
             </form>
+            <hr style="border: 1px solid #e5e7eb; margin: 15px 5px;">
+            <div style="padding: 5px;">
+                <h3 style="margin: 0 0 10px; font-size: 15px;">🔐 المصادقة الثنائية (2FA)</h3>
+                <p style="color: #888; font-size: 13px; margin: 0 0 10px;">أضف طبقة حماية إضافية لحسابك باستخدام تطبيق مصادقة (Google Authenticator / Authy)</p>
+                <button id="totpToggleBtn" onclick="setupTOTP()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">تفعيل المصادقة الثنائية (2FA)</button>
+                <div id="totpSetupInfo" style="display: none;"></div>
+            </div>
         </div>
     </div>
 
