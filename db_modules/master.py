@@ -69,7 +69,7 @@ MASTER_TABLES_SQL = {
 }
 
 
-def init_master_db(master_db_path, hash_password):
+def init_master_db(master_db_path, hash_password, verify_password=None):
     """Create the master database with tenant management tables and default super admin.
 
     Args:
@@ -101,7 +101,13 @@ def init_master_db(master_db_path, hash_password):
         cursor.execute("PRAGMA table_info(super_admins)")
         sa_cols = [col[1] for col in cursor.fetchall()]
         if 'must_change_password' not in sa_cols:
-            cursor.execute("ALTER TABLE super_admins ADD COLUMN must_change_password INTEGER DEFAULT 1")
+            cursor.execute("ALTER TABLE super_admins ADD COLUMN must_change_password INTEGER DEFAULT 0")
+            # Only flag accounts still using default password
+            if verify_password:
+                cursor.execute("SELECT id, password FROM super_admins")
+                for sa in cursor.fetchall():
+                    if verify_password('admin123', sa[1]):
+                        cursor.execute("UPDATE super_admins SET must_change_password = 1 WHERE id = ?", (sa[0],))
         if 'totp_secret' not in sa_cols:
             cursor.execute("ALTER TABLE super_admins ADD COLUMN totp_secret TEXT")
         if 'totp_enabled' not in sa_cols:

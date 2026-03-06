@@ -349,7 +349,7 @@ def needs_rehash(stored_hash):
 
 def init_master_db():
     """إنشاء قاعدة البيانات الرئيسية للمستأجرين"""
-    _init_master_db(MASTER_DB_PATH, hash_password)
+    _init_master_db(MASTER_DB_PATH, hash_password, verify_password)
 
 init_master_db()
 
