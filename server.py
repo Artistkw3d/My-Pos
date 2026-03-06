@@ -24,6 +24,9 @@ import secrets
 import html
 import jwt
 import logging
+import hmac
+import struct
+import base64
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_limiter import Limiter
@@ -99,10 +102,82 @@ def generate_auth_token(user_data, tenant_slug='', is_super_admin=False):
     }
     return jwt.encode(payload, get_auth_secret(), algorithm='HS256')
 
+# === Token Blacklist (Phase 1.3: logout invalidation) ===
+_token_blacklist = {}
+_blacklist_lock = threading.Lock()
+
+def blacklist_token(token):
+    """Add a token to the blacklist until it expires."""
+    try:
+        payload = jwt.decode(token, get_auth_secret(), algorithms=['HS256'], options={'verify_exp': False})
+        exp = payload.get('exp', 0)
+        with _blacklist_lock:
+            _token_blacklist[token] = exp
+    except Exception:
+        with _blacklist_lock:
+            _token_blacklist[token] = time.time() + 86400
+
+def is_token_blacklisted(token):
+    """Check if a token has been blacklisted."""
+    with _blacklist_lock:
+        # Clean expired entries
+        now = time.time()
+        expired = [t for t, exp in _token_blacklist.items() if exp < now]
+        for t in expired:
+            del _token_blacklist[t]
+        return token in _token_blacklist
+
+# === TOTP 2FA for Super Admin (Phase 2.2) ===
+def generate_totp_secret():
+    """Generate a random TOTP secret (base32 encoded)."""
+    return base64.b32encode(secrets.token_bytes(20)).decode('utf-8')
+
+def get_totp_code(secret, time_step=30, digits=6):
+    """Generate current TOTP code from secret."""
+    key = base64.b32decode(secret, casefold=True)
+    counter = int(time.time()) // time_step
+    msg = struct.pack('>Q', counter)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = h[-1] & 0x0F
+    code = (struct.unpack('>I', h[offset:offset + 4])[0] & 0x7FFFFFFF) % (10 ** digits)
+    return str(code).zfill(digits)
+
+def verify_totp(secret, code, window=1):
+    """Verify TOTP code with a time window tolerance."""
+    for offset in range(-window, window + 1):
+        key = base64.b32decode(secret, casefold=True)
+        counter = (int(time.time()) // 30) + offset
+        msg = struct.pack('>Q', counter)
+        h = hmac.new(key, msg, hashlib.sha1).digest()
+        off = h[-1] & 0x0F
+        expected = (struct.unpack('>I', h[off:off + 4])[0] & 0x7FFFFFFF) % 1000000
+        if code == str(expected).zfill(6):
+            return True
+    return False
+
+def get_totp_uri(secret, username, issuer='POS-System'):
+    """Generate otpauth:// URI for QR code scanning."""
+    return f'otpauth://totp/{issuer}:{username}?secret={secret}&issuer={issuer}&digits=6&period=30'
+
+# === Audit Log Helper (Phase 3.1) ===
+def write_audit_log(action, details='', user_id=None, username='', tenant_slug='', ip_address=''):
+    """Write an entry to the audit_logs table in master DB."""
+    try:
+        conn = sqlite3.connect(MASTER_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''INSERT INTO audit_logs (action, details, user_id, username, tenant_slug, ip_address)
+                          VALUES (?, ?, ?, ?, ?, ?)''',
+                       (action, details, user_id, username, tenant_slug, ip_address))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Audit log write error: {e}")
+
 PUBLIC_ROUTES = {
     '/api/login', '/api/super-admin/login', '/api/version',
     '/api/tenant/check-status', '/api/license/verify',
-    '/api/sync/status', '/api/products', '/api/settings'
+    '/api/sync/status', '/api/products', '/api/settings',
+    '/api/logout'
 }
 
 # === Tenant cache for validation (Phase 3) ===
@@ -159,6 +234,9 @@ def auth_middleware():
     token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
     if not token:
         return jsonify({'success': False, 'error': 'Authentication required'}), 401
+    # Phase 1.3: Check token blacklist (logout invalidation)
+    if is_token_blacklisted(token):
+        return jsonify({'success': False, 'error': 'Token revoked'}), 401
     try:
         payload = jwt.decode(token, get_auth_secret(), algorithms=['HS256'])
         request.current_user = payload
@@ -195,9 +273,9 @@ ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(',') if o.strip()] if _cor
 if ALLOWED_ORIGINS:
     CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 else:
-    CORS(app)
-    if os.environ.get('POS_LICENSE_SECRET'):
-        logger.warning("POS_CORS_ORIGINS not set. CORS allows all origins. Set specific origins for production!")
+    # Default: allow same-origin only (no wildcard *)
+    CORS(app, origins=[], supports_credentials=True)
+    logger.warning("POS_CORS_ORIGINS not set. CORS restricted to same-origin only. Set origins in .env for cross-origin access.")
 
 @app.after_request
 def add_security_headers(response):
@@ -3714,6 +3792,7 @@ def super_admin_login():
         data = request.json
         username = data.get('username', '')
         password = data.get('password', '')
+        totp_code = data.get('totp_code', '')
         conn = get_master_db()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM super_admins WHERE username = ?', (username,))
@@ -3724,6 +3803,25 @@ def super_admin_login():
                 cursor.execute('UPDATE super_admins SET password = ? WHERE id = ?',
                                (hash_password(password), admin['id']))
                 conn.commit()
+
+            admin_dict = dict(admin)
+
+            # Phase 2.2: Check TOTP 2FA if enabled
+            totp_enabled = admin_dict.get('totp_enabled', 0)
+            totp_secret = admin_dict.get('totp_secret', '')
+            if totp_enabled and totp_secret:
+                if not totp_code:
+                    conn.close()
+                    return jsonify({'success': False, 'requires_2fa': True, 'error': 'مطلوب رمز التحقق الثنائي'}), 200
+                if not verify_totp(totp_secret, totp_code):
+                    conn.close()
+                    security_logger.warning(f"Super admin 2FA failed: user='{username}' ip={request.remote_addr}")
+                    write_audit_log('2FA_FAILED', f'Invalid TOTP code for {username}', ip_address=request.remote_addr)
+                    return jsonify({'success': False, 'error': 'رمز التحقق غير صحيح'}), 401
+
+            # Phase 2.1: Check if must change default password
+            must_change = admin_dict.get('must_change_password', 0)
+
             conn.close()
             admin_data = {
                 'id': admin['id'],
@@ -3733,13 +3831,17 @@ def super_admin_login():
             }
             token = generate_auth_token(admin_data, is_super_admin=True)
             security_logger.info(f"Super admin login success: user='{username}' ip={request.remote_addr}")
+            write_audit_log('SUPER_ADMIN_LOGIN', f'Super admin logged in', user_id=admin['id'], username=username, ip_address=request.remote_addr)
             return jsonify({
                 'success': True,
                 'admin': admin_data,
-                'token': token
+                'token': token,
+                'must_change_password': bool(must_change),
+                'totp_enabled': bool(totp_enabled)
             })
         conn.close()
         security_logger.warning(f"Super admin login failed: user='{username}' ip={request.remote_addr}")
+        write_audit_log('LOGIN_FAILED', f'Super admin login failed for {username}', ip_address=request.remote_addr)
         return jsonify({'success': False, 'error': 'بيانات الدخول غير صحيحة'}), 401
     except Exception as e:
         logger.error(f"Super admin login error: {e}")
@@ -4103,8 +4205,9 @@ def super_admin_change_password():
 
         # تحديث كلمة المرور
         if new_password:
-            cursor.execute('UPDATE super_admins SET password = ? WHERE id = ?',
+            cursor.execute('UPDATE super_admins SET password = ?, must_change_password = 0 WHERE id = ?',
                            (hash_password(new_password), admin_id))
+            write_audit_log('PASSWORD_CHANGED', 'Super admin changed password', user_id=admin_id, username=admin['username'], ip_address=request.remote_addr)
 
         # تحديث اسم المستخدم
         if new_username and new_username != admin['username']:
@@ -4134,6 +4237,111 @@ def super_admin_change_password():
         })
     except Exception as e:
         logger.error(f"API error [{request.path}]: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    """تسجيل الخروج وإلغاء صلاحية التوكن"""
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
+    if token:
+        blacklist_token(token)
+        try:
+            payload = jwt.decode(token, get_auth_secret(), algorithms=['HS256'], options={'verify_exp': False})
+            write_audit_log('LOGOUT', 'User logged out', user_id=payload.get('user_id'), username=payload.get('username'), ip_address=request.remote_addr)
+        except Exception:
+            pass
+    return jsonify({'success': True})
+
+@app.route('/api/super-admin/totp/setup', methods=['POST'])
+def setup_totp():
+    """إعداد المصادقة الثنائية للمدير الأعلى"""
+    try:
+        data = request.json
+        admin_id = data.get('admin_id')
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM super_admins WHERE id = ?', (admin_id,))
+        admin = cursor.fetchone()
+        if not admin:
+            conn.close()
+            return jsonify({'success': False, 'error': 'المدير غير موجود'}), 404
+        secret = generate_totp_secret()
+        cursor.execute('UPDATE super_admins SET totp_secret = ? WHERE id = ?', (secret, admin_id))
+        conn.commit()
+        conn.close()
+        uri = get_totp_uri(secret, admin['username'])
+        return jsonify({'success': True, 'secret': secret, 'uri': uri})
+    except Exception as e:
+        logger.error(f"TOTP setup error: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
+
+@app.route('/api/super-admin/totp/verify', methods=['POST'])
+def verify_totp_setup():
+    """تأكيد تفعيل المصادقة الثنائية بعد إدخال رمز صحيح"""
+    try:
+        data = request.json
+        admin_id = data.get('admin_id')
+        code = data.get('code', '')
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT totp_secret FROM super_admins WHERE id = ?', (admin_id,))
+        admin = cursor.fetchone()
+        if not admin or not admin['totp_secret']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'لم يتم إعداد المصادقة الثنائية بعد'}), 400
+        if verify_totp(admin['totp_secret'], code):
+            cursor.execute('UPDATE super_admins SET totp_enabled = 1 WHERE id = ?', (admin_id,))
+            conn.commit()
+            conn.close()
+            write_audit_log('2FA_ENABLED', 'Super admin enabled TOTP 2FA', user_id=admin_id, ip_address=request.remote_addr)
+            return jsonify({'success': True})
+        conn.close()
+        return jsonify({'success': False, 'error': 'الرمز غير صحيح، حاول مرة أخرى'}), 400
+    except Exception as e:
+        logger.error(f"TOTP verify error: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
+
+@app.route('/api/super-admin/totp/disable', methods=['POST'])
+def disable_totp():
+    """تعطيل المصادقة الثنائية"""
+    try:
+        data = request.json
+        admin_id = data.get('admin_id')
+        password = data.get('password', '')
+        conn = get_master_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM super_admins WHERE id = ?', (admin_id,))
+        admin = cursor.fetchone()
+        if not admin or not verify_password(password, admin['password']):
+            conn.close()
+            return jsonify({'success': False, 'error': 'كلمة المرور غير صحيحة'}), 400
+        cursor.execute('UPDATE super_admins SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', (admin_id,))
+        conn.commit()
+        conn.close()
+        write_audit_log('2FA_DISABLED', 'Super admin disabled TOTP 2FA', user_id=admin_id, username=admin['username'], ip_address=request.remote_addr)
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"TOTP disable error: {e}")
+        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
+
+@app.route('/api/super-admin/audit-logs', methods=['GET'])
+def get_audit_logs():
+    """جلب سجلات المراجعة"""
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        conn = sqlite3.connect(MASTER_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?', (limit, offset))
+        logs = [dict(row) for row in cursor.fetchall()]
+        cursor.execute('SELECT COUNT(*) as total FROM audit_logs')
+        total = cursor.fetchone()['total']
+        conn.close()
+        return jsonify({'success': True, 'logs': logs, 'total': total})
+    except Exception as e:
+        logger.error(f"Audit logs error: {e}")
         return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/super-admin/backup/tenant/<int:tenant_id>', methods=['POST'])
@@ -4287,6 +4495,7 @@ def create_backup_file(tenant_slug=None):
         return None, str(e)
 
 @app.route('/api/backup/create', methods=['POST'])
+@require_admin()
 def create_backup():
     """إنشاء نسخة احتياطية جديدة"""
     try:
@@ -4346,6 +4555,7 @@ def list_backups():
         return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
 
 @app.route('/api/backup/download/<filename>', methods=['GET'])
+@require_admin()
 def download_backup(filename):
     """تحميل نسخة احتياطية"""
     try:
