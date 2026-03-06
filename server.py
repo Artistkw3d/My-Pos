@@ -283,11 +283,11 @@ def add_security_headers(response):
     # Phase 4: Tightened security headers
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://static.cloudflareinsights.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
+        "connect-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com https://cloudflareinsights.com" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
         "frame-ancestors 'none'"
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
