@@ -10,6 +10,33 @@ const API_URL = (function() {
     // Web/Docker: use current origin
     return window.location.origin;
 })();
+// دالة مساعدة لكل طلبات API مع الهيدرات الآمنة
+async function apiRequest(url, options = {}) {
+    const token = localStorage.getItem('token') || '';
+    const tenantSlug = localStorage.getItem('pos_tenant_slug') || '';
+
+    const headers = {
+        ...(options.headers || {}),
+        'Authorization': token ? `Bearer ${token}` : '',
+        'X-Tenant-ID': tenantSlug
+    };
+
+    if (options.method && ['POST', 'PUT', 'PATCH'].includes(options.method.toUpperCase()) && options.body) {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    const response = await apiRequest(`${API_URL}${url}`, {
+        ...options,
+        headers
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+}
+
 
 // === Theme Toggle ===
 function toggleTheme() {
@@ -255,7 +282,7 @@ async function attemptLicenseRenewal() {
 
     if (status) status.textContent = 'جاري تجديد الترخيص...';
     try {
-        const resp = await fetch(API_URL + '/api/license/refresh-token');
+        const resp = await apiRequest(API_URL + '/api/license/refresh-token');
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
         if (data.success && data.token) {
@@ -289,7 +316,7 @@ async function checkRealConnection() {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const resp = await fetch(`${API_URL}/api/settings?_ping=1`, {
+        const resp = await apiRequest(`${API_URL}/api/settings?_ping=1`, {
             method: 'GET',
             cache: 'no-store',
             signal: controller.signal
@@ -338,7 +365,7 @@ async function forceLicenseRefresh() {
     const text = document.getElementById('licenseWarningText');
     if (text) text.textContent = 'جاري تجديد الترخيص...';
     try {
-        const resp = await fetch(API_URL + '/api/license/refresh-token');
+        const resp = await apiRequest(API_URL + '/api/license/refresh-token');
         if (resp.ok) {
             const data = await resp.json();
             if (data.success && data.token) {
@@ -371,9 +398,9 @@ let storeLogo = null;
 let currentTenantSlug = localStorage.getItem('pos_tenant_slug') || '';
 let currentSuperAdmin = null;
 
-// إعادة تعريف fetch لإضافة هيدر المستأجر + التوثيق تلقائياً
-const originalFetch = window.fetch;
-window.fetch = function(url, options = {}) {
+// إعادة تعريف apiRequest لإضافة هيدر المستأجر + التوثيق تلقائياً
+const originalapiRequest = window.apiRequest;
+window.apiRequest = function(url, options = {}) {
     if (typeof url === 'string' && url.includes('/api/')) {
         options.headers = options.headers || {};
         if (options.headers instanceof Headers) {
@@ -386,7 +413,7 @@ window.fetch = function(url, options = {}) {
             if (authToken) options.headers['Authorization'] = 'Bearer ' + authToken;
         }
     }
-    return originalFetch.call(this, url, options).then(response => {
+    return originalapiRequest.call(this, url, options).then(response => {
         // Handle 401 - only redirect for critical API calls, not background tasks
         if (response.status === 401 && typeof url === 'string' && url.includes('/api/') && !url.includes('/api/login')) {
             // Don't redirect for background/non-critical calls
@@ -409,12 +436,12 @@ window.fetch = function(url, options = {}) {
     });
 };
 
-// Helper for authenticated API calls (adds auth token to originalFetch)
-function authFetch(url, options = {}) {
+// Helper for authenticated API calls (adds auth token to originalapiRequest)
+function authapiRequest(url, options = {}) {
     options.headers = options.headers || {};
     const authToken = localStorage.getItem('pos_auth_token');
     if (authToken) options.headers['Authorization'] = 'Bearer ' + authToken;
-    return originalFetch(url, options);
+    return originalapiRequest(url, options);
 }
 
 // استعادة معرف المتجر في حقل الإدخال عند فتح الصفحة
@@ -535,7 +562,7 @@ async function testSetupConnection() {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
-        const resp = await fetch(url + '/api/version', { method: 'GET', cache: 'no-store', signal: controller.signal });
+        const resp = await apiRequest(url + '/api/version', { method: 'GET', cache: 'no-store', signal: controller.signal });
         clearTimeout(timeout);
         if (!resp.ok) throw new Error('status ' + resp.status);
         const vData = await resp.json();
@@ -552,7 +579,7 @@ async function testSetupConnection() {
         try {
             const controller2 = new AbortController();
             const timeout2 = setTimeout(() => controller2.abort(), 5000);
-            const resp2 = await fetch(url + '/api/tenant/check-status?slug=' + encodeURIComponent(slug), {
+            const resp2 = await apiRequest(url + '/api/tenant/check-status?slug=' + encodeURIComponent(slug), {
                 method: 'GET', cache: 'no-store', signal: controller2.signal
             });
             clearTimeout(timeout2);
@@ -632,7 +659,7 @@ async function saveServerSetup() {
         localStorage.setItem('pos_license_active', config.is_active ? '1' : '0');
     }
     // Fire-and-forget: save to server settings
-    fetch(API_URL + '/api/settings', {
+    apiRequest(API_URL + '/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ flask_server_url: config.server_url })
@@ -875,7 +902,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         const saMatch = rawUsername.match(/^(.+)\+superadmin#$/);
         if (saMatch) {
             const saUsername = saMatch[1];
-            const response = await originalFetch(`${API_URL}/api/super-admin/login`, {
+            const response = await originalapiRequest(`${API_URL}/api/super-admin/login`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ username: saUsername, password: password })
@@ -951,7 +978,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             }
         }
 
-        const response = await fetch(`${API_URL}/api/login`, {
+        const response = await apiRequest(`${API_URL}/api/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -1017,7 +1044,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
                     } else {
                         // Electron: call local Express endpoint to pull from Flask
                         const branch_id = data.user.branch_id || 1;
-                        const pullResp = await fetch(`${API_URL}/api/sync/pull-from-server?branch_id=${branch_id}`, {
+                        const pullResp = await apiRequest(`${API_URL}/api/sync/pull-from-server?branch_id=${branch_id}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         });
@@ -1196,7 +1223,7 @@ async function logout() {
     // تسجيل الانصراف (محاولة فقط)
     if (currentUser) {
         try {
-            await fetch(`${API_URL}/api/attendance/check-out`, {
+            await apiRequest(`${API_URL}/api/attendance/check-out`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ user_id: currentUser.id })
@@ -1356,7 +1383,7 @@ async function loadProducts() {
         
         // محاولة التحميل من السيرفر
         if (_realOnlineStatus) {
-            const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
+            const response = await apiRequest(`${API_URL}/api/products?branch_id=${branchId}`);
             const data = await response.json();
             if (data.success) {
                 allProducts = data.products;
@@ -1495,7 +1522,7 @@ async function showBranchStock(inventoryId, productName) {
     modal.classList.add('active');
 
     try {
-        const response = await fetch(`${API_URL}/api/branch-stock?inventory_id=${inventoryId}`);
+        const response = await apiRequest(`${API_URL}/api/branch-stock?inventory_id=${inventoryId}`);
         const data = await response.json();
 
         if (data.success && data.stock) {
@@ -1994,7 +2021,7 @@ async function completeSale() {
     let customerId = document.getElementById('selectedCustomerId').value || null;
     if (!customerId && (customerName || customerPhone) && _realOnlineStatus) {
         try {
-            const customerResponse = await fetch(`${API_URL}/api/customers`, {
+            const customerResponse = await apiRequest(`${API_URL}/api/customers`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -2061,7 +2088,7 @@ async function completeSale() {
     if (_realOnlineStatus) {
         // Online: محاولة إرسال للسيرفر
         try {
-            const response = await fetch(`${API_URL}/api/invoices`, {
+            const response = await apiRequest(`${API_URL}/api/invoices`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(invoiceData)
@@ -2100,7 +2127,7 @@ async function completeSale() {
                 // تسجيل استخدام الكوبون
                 if (appliedCouponId) {
                     try {
-                        await fetch(`${API_URL}/api/coupons/use`, {
+                        await apiRequest(`${API_URL}/api/coupons/use`, {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({ coupon_id: appliedCouponId })
@@ -2250,7 +2277,7 @@ async function saveInvoiceOffline(invoiceData, invoiceNumber) {
 // Invoice View & Print
 async function viewInvoiceDetails(invoiceId) {
     try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}`);
+        const response = await apiRequest(`${API_URL}/api/invoices/${invoiceId}`);
         const data = await response.json();
         if (data.success) {
             currentInvoice = data.invoice;
@@ -2410,7 +2437,7 @@ async function confirmCancelInvoice() {
     if (!confirm(`هل أنت متأكد من إلغاء الفاتورة؟\n\nالسبب: ${reason}\nإرجاع المخزون: ${returnStock ? 'نعم' : 'لا'}`)) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/cancel`, {
+        const response = await apiRequest(`${API_URL}/api/invoices/${invoiceId}/cancel`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ reason, return_stock: returnStock })
@@ -2609,7 +2636,7 @@ async function loadProductsTable() {
     try {
         // الأدمن يشوف كل المنتجات، الكاشير يشوف منتجات فرعه فقط
         const branchParam = window.userPermissions?.isAdmin ? 'all' : (currentUser?.branch_id || 1);
-        const response = await fetch(`${API_URL}/api/products?branch_id=${branchParam}`);
+        const response = await apiRequest(`${API_URL}/api/products?branch_id=${branchParam}`);
         const data = await response.json();
         if (data.success) {
             // حفظ المنتجات للتعديل
@@ -2834,7 +2861,7 @@ document.getElementById('productForm').addEventListener('submit', async (e) => {
     try {
         const url = productId ? `${API_URL}/api/products/${productId}` : `${API_URL}/api/products`;
         const method = productId ? 'PUT' : 'POST';
-        const response = await fetch(url, {
+        const response = await apiRequest(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(productData)
@@ -2898,7 +2925,7 @@ async function deleteProduct(id) {
     
     if (!confirm('حذف المنتج؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/products/${id}`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/products/${id}`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -2970,7 +2997,7 @@ async function loadInvoicesTable() {
         
         // Online: جلب من السيرفر
         if (_realOnlineStatus) {
-            const response = await fetch(`${API_URL}/api/invoices?limit=200`);
+            const response = await apiRequest(`${API_URL}/api/invoices?limit=200`);
             const data = await response.json();
             if (data.success) {
                 invoices = data.invoices;
@@ -3074,7 +3101,7 @@ async function viewLocalInvoice(invoiceId) {
     try {
         // محاولة من السيرفر أولاً (إذا online ورقم عادي)
         if (_realOnlineStatus && !invoiceId.toString().startsWith('offline_')) {
-            const response = await fetch(`${API_URL}/api/invoices/${invoiceId}`);
+            const response = await apiRequest(`${API_URL}/api/invoices/${invoiceId}`);
             const data = await response.json();
             if (data.success) {
                 currentInvoice = data.invoice;
@@ -3142,7 +3169,7 @@ async function clearAllInvoices() {
     if (!confirm('⚠️ حذف جميع الفواتير؟\nلا يمكن التراجع!')) return;
     if (!confirm('تأكيد نهائي؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/invoices/clear-all`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/invoices/clear-all`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -3165,8 +3192,8 @@ async function loadReports() {
     
     try {
         const [salesResponse, topProductsResponse] = await Promise.all([
-            fetch(url),
-            fetch(`${API_URL}/api/reports/top-products?limit=10`)
+            apiRequest(url),
+            apiRequest(`${API_URL}/api/reports/top-products?limit=10`)
         ]);
         const salesData = await salesResponse.json();
         const topProductsData = await topProductsResponse.json();
@@ -3247,9 +3274,9 @@ async function loadUsersTable() {
     try {
         // تحميل المستخدمين والفروع والشفتات
         const [usersResponse, branchesResponse, shiftsResponse] = await Promise.all([
-            fetch(`${API_URL}/api/users`),
-            fetch(`${API_URL}/api/branches`),
-            fetch(`${API_URL}/api/shifts`)
+            apiRequest(`${API_URL}/api/users`),
+            apiRequest(`${API_URL}/api/branches`),
+            apiRequest(`${API_URL}/api/shifts`)
         ]);
         const usersData = await usersResponse.json();
         const branchesData = await branchesResponse.json();
@@ -3381,7 +3408,7 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
     try {
         const url = userId ? `${API_URL}/api/users/${userId}` : `${API_URL}/api/users`;
         const method = userId ? 'PUT' : 'POST';
-        const response = await fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(userData)});
+        const response = await apiRequest(url, {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(userData)});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحفظ');
@@ -3392,7 +3419,7 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
             // إذا تم تعديل المستخدم الحالي، حدّث userInfo
             if (userId && parseInt(userId) === currentUser.id) {
                 // تحديث بيانات المستخدم الحالي
-                const updatedResponse = await fetch(`${API_URL}/api/users`);
+                const updatedResponse = await apiRequest(`${API_URL}/api/users`);
                 const updatedData = await updatedResponse.json();
                 if (updatedData.success) {
                     const updatedUser = updatedData.users.find(u => u.id === currentUser.id);
@@ -3401,7 +3428,7 @@ document.getElementById('userForm').addEventListener('submit', async (e) => {
                         Object.assign(currentUser, updatedUser);
                         
                         // جلب اسم الفرع
-                        const branchResponse = await fetch(`${API_URL}/api/branches`);
+                        const branchResponse = await apiRequest(`${API_URL}/api/branches`);
                         const branchData = await branchResponse.json();
                         if (branchData.success) {
                             const branch = branchData.branches.find(b => b.id === currentUser.branch_id);
@@ -3428,7 +3455,7 @@ async function editUser(id) {
         await loadBranchesForUserForm();
         await loadShiftsForUserForm();
 
-        const response = await fetch(`${API_URL}/api/users`);
+        const response = await apiRequest(`${API_URL}/api/users`);
         const data = await response.json();
         if (data.success) {
             const user = data.users.find(u => u.id === id);
@@ -3470,7 +3497,7 @@ async function editUser(id) {
 async function deleteUser(id) {
     if (!confirm('حذف المستخدم؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/users/${id}`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/users/${id}`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -3485,7 +3512,7 @@ async function deleteUser(id) {
 // Settings
 async function loadSettings() {
     try {
-        const response = await fetch(`${API_URL}/api/settings`);
+        const response = await apiRequest(`${API_URL}/api/settings`);
         const data = await response.json();
         if (data.success) {
             document.getElementById('storeName').value = data.settings.store_name || '';
@@ -3696,7 +3723,7 @@ async function saveSettings() {
     };
     
     try {
-        const response = await fetch(`${API_URL}/api/settings`, {
+        const response = await apiRequest(`${API_URL}/api/settings`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(settings)
@@ -3718,7 +3745,7 @@ async function saveLoyaltySettings() {
         loyalty_point_value: document.getElementById('loyaltyPointValue').value
     };
     try {
-        const response = await fetch(`${API_URL}/api/settings`, {
+        const response = await apiRequest(`${API_URL}/api/settings`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(settings)
@@ -3748,7 +3775,7 @@ async function saveLowStockSettings() {
         return;
     }
     try {
-        const response = await fetch(`${API_URL}/api/settings`, {
+        const response = await apiRequest(`${API_URL}/api/settings`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ low_stock_threshold: threshold })
@@ -3780,7 +3807,7 @@ function updateLoyaltyPreview() {
 
 async function loadBranchesDropdowns() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             // تحديث dropdown المستخدمين
@@ -3806,7 +3833,7 @@ async function loadBranchesDropdowns() {
 
 async function loadBranchesTable() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const container = document.getElementById('branchesTableContainer');
@@ -3863,7 +3890,7 @@ document.getElementById('branchForm').addEventListener('submit', async (e) => {
     try {
         const url = branchId ? `${API_URL}/api/branches/${branchId}` : `${API_URL}/api/branches`;
         const method = branchId ? 'PUT' : 'POST';
-        const response = await fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(branchData)});
+        const response = await apiRequest(url, {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(branchData)});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحفظ');
@@ -3879,7 +3906,7 @@ document.getElementById('branchForm').addEventListener('submit', async (e) => {
 
 async function editBranch(id) {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const branch = data.branches.find(b => b.id === id);
@@ -3900,7 +3927,7 @@ async function editBranch(id) {
 async function deleteBranch(id) {
     if (!confirm('حذف الفرع؟ (سيتم إخفاؤه فقط)')) return;
     try {
-        const response = await fetch(`${API_URL}/api/branches/${id}`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/branches/${id}`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -3919,7 +3946,7 @@ async function recordCheckIn() {
     if (!currentUser) return;
     
     try {
-        const response = await fetch(`${API_URL}/api/attendance/check-in`, {
+        const response = await apiRequest(`${API_URL}/api/attendance/check-in`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -3946,7 +3973,7 @@ async function checkOut() {
     if (!confirm('هل تريد تسجيل الخروج من النظام؟')) return;
     
     try {
-        const response = await fetch(`${API_URL}/api/attendance/check-out`, {
+        const response = await apiRequest(`${API_URL}/api/attendance/check-out`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -3974,12 +4001,12 @@ async function loadAttendanceLog() {
         if (userId) params.append('user_id', userId);
         if (date) params.append('date', date);
 
-        const response = await fetch(`${API_URL}/api/attendance?${params}`);
+        const response = await apiRequest(`${API_URL}/api/attendance?${params}`);
         const data = await response.json();
         
         if (data.success) {
             // تحميل الفروع لعرض الأسماء
-            const branchesResponse = await fetch(`${API_URL}/api/branches`);
+            const branchesResponse = await apiRequest(`${API_URL}/api/branches`);
             const branchesData = await branchesResponse.json();
             const branches = {};
             if (branchesData.success) {
@@ -4039,7 +4066,7 @@ async function loadAttendanceLog() {
 
 async function updateAttendanceUserFilter() {
     try {
-        const response = await fetch(`${API_URL}/api/users`);
+        const response = await apiRequest(`${API_URL}/api/users`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('filterAttendanceUser');
@@ -4068,7 +4095,7 @@ let allInventory = [];
 
 async function loadInventory() {
     try {
-        const response = await fetch(`${API_URL}/api/inventory`);
+        const response = await apiRequest(`${API_URL}/api/inventory`);
         const data = await response.json();
         if (data.success) {
             allInventory = data.inventory;
@@ -4099,7 +4126,7 @@ async function displayInventory() {
 
     try {
         // جلب التوزيعات الحالية (تشمل branch_name من الجوين)
-        const stockResponse = await fetch(`${API_URL}/api/branch-stock`);
+        const stockResponse = await apiRequest(`${API_URL}/api/branch-stock`);
         const stockData = await stockResponse.json();
         if (stockData.success) {
             stockData.stock.forEach(s => {
@@ -4115,7 +4142,7 @@ async function displayInventory() {
         }
         
         // جلب المبيعات
-        const invoicesResponse = await fetch(`${API_URL}/api/invoices`);
+        const invoicesResponse = await apiRequest(`${API_URL}/api/invoices`);
         const invoicesData = await invoicesResponse.json();
         if (invoicesData.success) {
             invoicesData.invoices.forEach(inv => {
@@ -4136,7 +4163,7 @@ async function displayInventory() {
         }
         
         // جلب التالف
-        const damagedResponse = await fetch(`${API_URL}/api/damaged-items`);
+        const damagedResponse = await apiRequest(`${API_URL}/api/damaged-items`);
         const damagedData = await damagedResponse.json();
         if (damagedData.success) {
             damagedData.damaged.forEach(d => {
@@ -4381,8 +4408,8 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e) =>
         const url = inventoryId ? `${API_URL}/api/inventory/${inventoryId}` : `${API_URL}/api/inventory`;
         const method = inventoryId ? 'PUT' : 'POST';
         
-        // بدون AbortController - فقط fetch عادي
-        const response = await fetch(url, {
+        // بدون AbortController - فقط apiRequest عادي
+        const response = await apiRequest(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(inventoryData)
@@ -4399,7 +4426,7 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e) =>
             const savedId = data.id || inventoryId;
             const variants = getVariantsData();
             try {
-                await fetch(`${API_URL}/api/inventory/${savedId}/variants`, {
+                await apiRequest(`${API_URL}/api/inventory/${savedId}/variants`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ variants })
@@ -4441,7 +4468,7 @@ document.getElementById('inventoryForm').addEventListener('submit', async (e) =>
         // رسالة خطأ بسيطة
         let errorMessage = '⚠️ حدث خطأ أثناء الحفظ';
         
-        if (error.message && error.message.includes('Failed to fetch')) {
+        if (error.message && error.message.includes('Failed to apiRequest')) {
             errorMessage = '🌐 لا يوجد اتصال بالسيرفر\n\nتحقق من:\n• الاتصال بالإنترنت\n• في البيت؟ استخدم: 192.168.8.21:8080';
         } else if (error.message && !error.message.includes('AbortError')) {
             errorMessage = `⚠️ ${error.message}`;
@@ -4504,7 +4531,7 @@ async function editInventory(id) {
 async function deleteInventory(id) {
     if (!confirm('حذف هذا المنتج من المخزون؟\n(سيتم حذف جميع التوزيعات على الفروع)')) return;
     try {
-        const response = await fetch(`${API_URL}/api/inventory/${id}`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/inventory/${id}`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -4571,7 +4598,7 @@ async function distributeToBranch(inventoryId) {
 
 async function loadBranchesForDistribution() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('distributionBranch');
@@ -4586,14 +4613,14 @@ async function loadBranchesForDistribution() {
 
 async function loadCurrentDistributions(inventoryId) {
     try {
-        const response = await fetch(`${API_URL}/api/branch-stock?inventory_id=${inventoryId}`);
+        const response = await apiRequest(`${API_URL}/api/branch-stock?inventory_id=${inventoryId}`);
         const data = await response.json();
         
         const container = document.getElementById('currentDistributions');
         
         if (data.success && data.stock.length > 0) {
             // تحميل أسماء الفروع
-            const branchesResponse = await fetch(`${API_URL}/api/branches`);
+            const branchesResponse = await apiRequest(`${API_URL}/api/branches`);
             const branchesData = await branchesResponse.json();
             const branches = {};
             if (branchesData.success) {
@@ -4652,7 +4679,7 @@ document.getElementById('distributionForm').addEventListener('submit', async (e)
     };
     
     try {
-        const response = await fetch(`${API_URL}/api/branch-stock`, {
+        const response = await apiRequest(`${API_URL}/api/branch-stock`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(distributionData)
@@ -4687,7 +4714,7 @@ async function editDistribution(stockId, currentStock) {
     }
     
     try {
-        const response = await fetch(`${API_URL}/api/branch-stock/${stockId}`, {
+        const response = await apiRequest(`${API_URL}/api/branch-stock/${stockId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ stock })
@@ -4706,7 +4733,7 @@ async function deleteDistribution(stockId) {
     if (!confirm('حذف هذا التوزيع؟')) return;
     
     try {
-        const response = await fetch(`${API_URL}/api/branch-stock/${stockId}`, {
+        const response = await apiRequest(`${API_URL}/api/branch-stock/${stockId}`, {
             method: 'DELETE'
         });
         const data = await response.json();
@@ -4793,11 +4820,11 @@ async function reportDamage(inventoryId) {
 async function loadBranchesForDamage() {
     try {
         // جلب الفروع
-        const branchesResponse = await fetch(`${API_URL}/api/branches`);
+        const branchesResponse = await apiRequest(`${API_URL}/api/branches`);
         const branchesData = await branchesResponse.json();
         
         // جلب التوزيعات
-        const stockResponse = await fetch(`${API_URL}/api/branch-stock?inventory_id=${currentDamageProduct.id}`);
+        const stockResponse = await apiRequest(`${API_URL}/api/branch-stock?inventory_id=${currentDamageProduct.id}`);
         const stockData = await stockResponse.json();
         
         branchStockData = {};
@@ -4863,7 +4890,7 @@ document.getElementById('damageForm').addEventListener('submit', async (e) => {
     };
     
     try {
-        const response = await fetch(`${API_URL}/api/damaged-items`, {
+        const response = await apiRequest(`${API_URL}/api/damaged-items`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(damageData)
@@ -4888,7 +4915,7 @@ document.getElementById('damageForm').addEventListener('submit', async (e) => {
 
 async function loadBranchesForReports() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('reportBranch');
@@ -4915,7 +4942,7 @@ async function loadSalesReport() {
         if (endDate) params.append('end_date', endDate);
         if (branchId) params.append('branch_id', branchId);
 
-        const response = await fetch(`${API_URL}/api/reports/sales?${params}`);
+        const response = await apiRequest(`${API_URL}/api/reports/sales?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -4989,7 +5016,7 @@ async function loadInventoryReport() {
         const params = new URLSearchParams();
         if (branchId) params.append('branch_id', branchId);
 
-        const response = await fetch(`${API_URL}/api/reports/inventory?${params}`);
+        const response = await apiRequest(`${API_URL}/api/reports/inventory?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -5062,7 +5089,7 @@ async function loadDamagedReport() {
         if (endDate) params.append('end_date', endDate);
         if (branchId) params.append('branch_id', branchId);
 
-        const response = await fetch(`${API_URL}/api/reports/damaged?${params}`);
+        const response = await apiRequest(`${API_URL}/api/reports/damaged?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -5156,7 +5183,7 @@ async function loadSystemLogs(page) {
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo) params.set('date_to', dateTo);
 
-        const response = await fetch(`${API_URL}/api/system-logs?${params.toString()}`);
+        const response = await apiRequest(`${API_URL}/api/system-logs?${params.toString()}`);
         const data = await response.json();
 
         if (data.success) {
@@ -5334,7 +5361,7 @@ async function logAction(actionType, description, targetId = null) {
     if (!currentUser) return;
     
     try {
-        await fetch(`${API_URL}/api/system-logs`, {
+        await apiRequest(`${API_URL}/api/system-logs`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -5421,7 +5448,7 @@ function exportDamagedReport() {
 
 async function loadBranchesForUserForm() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('userBranch');
@@ -5449,7 +5476,7 @@ async function loadExpenses() {
         if (endDate) params.append('end_date', endDate);
         if (branchId) params.append('branch_id', branchId);
 
-        const response = await fetch(`${API_URL}/api/expenses?${params}`);
+        const response = await apiRequest(`${API_URL}/api/expenses?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -5633,7 +5660,7 @@ function closeAddExpense() {
 
 async function loadBranchesForExpense() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('expenseBranch');
@@ -5647,7 +5674,7 @@ async function loadBranchesForExpense() {
 
 async function loadBranchesForExpenseFilter() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('expenseBranchFilter');
@@ -5683,7 +5710,7 @@ document.getElementById('expenseForm').addEventListener('submit', async (e) => {
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/expenses`, {
+        const response = await apiRequest(`${API_URL}/api/expenses`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(expenseData)
@@ -5707,7 +5734,7 @@ async function deleteExpense(id) {
     if (!confirm('هل أنت متأكد من حذف هذه التكلفة؟')) return;
     
     try {
-        const response = await fetch(`${API_URL}/api/expenses/${id}`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/expenses/${id}`, {method: 'DELETE'});
         const data = await response.json();
         if (data.success) {
             logAction('delete_expense', `حذف مصروف رقم ${id}`, id);
@@ -5732,7 +5759,7 @@ async function loadProductReport() {
         if (endDate) params.append('end_date', endDate);
         if (branchId) params.append('branch_id', branchId);
 
-        const response = await fetch(`${API_URL}/api/reports/sales-by-product?${params}`);
+        const response = await apiRequest(`${API_URL}/api/reports/sales-by-product?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -5830,7 +5857,7 @@ async function loadBranchReport() {
         if (startDate) params.append('start_date', startDate);
         if (endDate) params.append('end_date', endDate);
 
-        const response = await fetch(`${API_URL}/api/reports/sales-by-branch?${params}`);
+        const response = await apiRequest(`${API_URL}/api/reports/sales-by-branch?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -5931,7 +5958,7 @@ async function loadProfitLossReport() {
         if (endDate) params.append('end_date', endDate);
         if (branchId) params.append('branch_id', branchId);
 
-        const response = await fetch(`${API_URL}/api/reports/profit-loss?${params}`);
+        const response = await apiRequest(`${API_URL}/api/reports/profit-loss?${params}`);
         const data = await response.json();
         
         if (data.success) {
@@ -6026,7 +6053,7 @@ function displayProfitLossReport(report) {
 
 async function loadBranchesForAdvReports() {
     try {
-        const response = await fetch(`${API_URL}/api/branches`);
+        const response = await apiRequest(`${API_URL}/api/branches`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('advReportBranchFilter');
@@ -6043,7 +6070,7 @@ async function loadBranchesForAdvReports() {
 
 async function viewCustomerInvoices(customerId) {
     try {
-        const response = await fetch(`${API_URL}/api/customers/${customerId}/invoices`);
+        const response = await apiRequest(`${API_URL}/api/customers/${customerId}/invoices`);
         const data = await response.json();
         
         if (data.success) {
@@ -6088,7 +6115,7 @@ async function viewCustomerInvoices(customerId) {
 
 async function exportCustomersExcel() {
     try {
-        const response = await fetch(`${API_URL}/api/customers`);
+        const response = await apiRequest(`${API_URL}/api/customers`);
         const data = await response.json();
         
         if (data.success) {
@@ -6116,7 +6143,7 @@ let allCustomersDropdown = [];
 
 async function loadCustomersDropdown() {
     try {
-        const response = await fetch(`${API_URL}/api/customers`);
+        const response = await apiRequest(`${API_URL}/api/customers`);
         const data = await response.json();
         
         if (data.success) {
@@ -6418,7 +6445,7 @@ async function checkNegativeStock() {
     try {
         const branchId = currentUser && currentUser.branch_id ? currentUser.branch_id : '';
         const url = API_URL + '/api/negative-stock' + (branchId ? '?branch_id=' + branchId : '');
-        const resp = await fetch(url);
+        const resp = await apiRequest(url);
         if (!resp.ok) return;
         const data = await resp.json();
         if (data.success && data.items && data.items.length > 0) {
@@ -6465,9 +6492,9 @@ function playInvoiceSound() {
 
 // ===== استعادة المستخدم عند تحميل الصفحة =====
 // === جلب رقم الإصدار ===
-async function fetchVersion() {
+async function apiRequestVersion() {
     try {
-        const res = await fetch(`${API_URL}/api/version`, {cache: 'no-store'});
+        const res = await apiRequest(`${API_URL}/api/version`, {cache: 'no-store'});
         const data = await res.json();
         if (data.success) {
             const vText = `v${data.version}`;
@@ -6476,9 +6503,9 @@ async function fetchVersion() {
             if (hv) hv.textContent = vText;
             if (lv) lv.textContent = vText;
         }
-    } catch(e) { console.log('[Version] fetch failed:', e); }
+    } catch(e) { console.log('[Version] apiRequest failed:', e); }
 }
-fetchVersion();
+apiRequestVersion();
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[App] DOMContentLoaded - checking for saved user...');
@@ -7107,7 +7134,7 @@ let currentCustomerData = null;
 // تحميل جميع العملاء
 async function loadCustomers() {
     try {
-        const response = await fetch(`${API_URL}/api/customers`);
+        const response = await apiRequest(`${API_URL}/api/customers`);
         const data = await response.json();
         
         if (data.success) {
@@ -7241,7 +7268,7 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
             return;
         }
 
-        const response = await fetch(url, {
+        const response = await apiRequest(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(customerData)
@@ -7268,7 +7295,7 @@ document.getElementById('customerForm').addEventListener('submit', async (e) => 
 // تعديل عميل
 async function editCustomer(id) {
     try {
-        const response = await fetch(`${API_URL}/api/customers/${id}`);
+        const response = await apiRequest(`${API_URL}/api/customers/${id}`);
         const data = await response.json();
         
         if (data.success) {
@@ -7297,7 +7324,7 @@ async function editCustomer(id) {
 // عرض تفاصيل عميل
 async function viewCustomerDetails(id) {
     try {
-        const response = await fetch(`${API_URL}/api/customers/${id}`);
+        const response = await apiRequest(`${API_URL}/api/customers/${id}`);
         const data = await response.json();
 
         if (data.success) {
@@ -7332,7 +7359,7 @@ async function deleteCustomer(id) {
     if (!confirm('هل أنت متأكد من حذف هذا العميل؟')) return;
     
     try {
-        const response = await fetch(`${API_URL}/api/customers/${id}`, {method: 'DELETE'});
+        const response = await apiRequest(`${API_URL}/api/customers/${id}`, {method: 'DELETE'});
         const data = await response.json();
         
         if (data.success) {
@@ -7374,7 +7401,7 @@ document.getElementById('adjustPointsForm').addEventListener('submit', async (e)
     const reason = document.getElementById('adjustReason').value;
     
     try {
-        const response = await fetch(`${API_URL}/api/customers/${currentCustomerData.id}/points/adjust`, {
+        const response = await apiRequest(`${API_URL}/api/customers/${currentCustomerData.id}/points/adjust`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({points, reason})
@@ -7426,7 +7453,7 @@ async function searchCustomerByPhone() {
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/customers/search?phone=${encodeURIComponent(phone)}`);
+        const response = await apiRequest(`${API_URL}/api/customers/search?phone=${encodeURIComponent(phone)}`);
         const data = await response.json();
         
         if (data.success && data.customer) {
@@ -7582,7 +7609,7 @@ async function emergencyLogout() {
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 2000);
-            await fetch(`${API_URL}/api/attendance/check-out`, {
+            await apiRequest(`${API_URL}/api/attendance/check-out`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ user_id: currentUser.id }),
@@ -7642,7 +7669,7 @@ async function loadReturns(status = '') {
         if (status) params.append('status', status);
         let url = `${API_URL}/api/returns?${params}`;
         
-        const response = await fetch(url);
+        const response = await apiRequest(url);
         const data = await response.json();
         
         if (data.success) {
@@ -7830,7 +7857,7 @@ async function submitReturn() {
             employee_name: employeeName
         };
         
-        const response = await fetch(`${API_URL}/api/returns`, {
+        const response = await apiRequest(`${API_URL}/api/returns`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(returnData)
@@ -7856,7 +7883,7 @@ async function submitReturn() {
 // عرض تفاصيل المرتجع
 async function viewReturnDetails(id) {
     try {
-        const response = await fetch(`${API_URL}/api/returns/${id}`);
+        const response = await apiRequest(`${API_URL}/api/returns/${id}`);
         const data = await response.json();
         
         if (data.success) {
@@ -7892,7 +7919,7 @@ async function viewReturnDetails(id) {
 // طباعة المرتجع
 async function printReturn(id) {
     try {
-        const response = await fetch(`${API_URL}/api/returns/${id}`);
+        const response = await apiRequest(`${API_URL}/api/returns/${id}`);
         const data = await response.json();
         
         if (data.success) {
@@ -7981,7 +8008,7 @@ async function printReturn(id) {
 // طباعة مرتجع حراري 57×40 ملم
 async function printThermalReturn(id) {
     try {
-        const response = await fetch(`${API_URL}/api/returns/${id}`);
+        const response = await apiRequest(`${API_URL}/api/returns/${id}`);
         const data = await response.json();
         if (data.success) {
             const r = data.return;
@@ -8074,7 +8101,7 @@ async function deleteReturnConfirm(id) {
     }
     
     try {
-        const response = await fetch(`${API_URL}/api/returns/${id}`, {
+        const response = await apiRequest(`${API_URL}/api/returns/${id}`, {
             method: 'DELETE'
         });
         
@@ -8101,7 +8128,7 @@ console.log('[Returns System] Loaded ✅');
 
 async function updateOrderStatus(invoiceId, newStatus) {
     try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/status`, {
+        const response = await apiRequest(`${API_URL}/api/invoices/${invoiceId}/status`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ order_status: newStatus })
@@ -8199,7 +8226,7 @@ async function loadSuppliers() {
         return;
     }
     try {
-        const response = await fetch(`${API_URL}/api/suppliers`);
+        const response = await apiRequest(`${API_URL}/api/suppliers`);
         const data = await response.json();
         if (data.success) {
             allSuppliers = data.suppliers;
@@ -8308,7 +8335,7 @@ document.getElementById('supplierForm').addEventListener('submit', async (e) => 
     try {
         const url = supplierId ? `${API_URL}/api/suppliers/${supplierId}` : `${API_URL}/api/suppliers`;
         const method = supplierId ? 'PUT' : 'POST';
-        const response = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(supplierData) });
+        const response = await apiRequest(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(supplierData) });
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحفظ');
@@ -8326,7 +8353,7 @@ document.getElementById('supplierForm').addEventListener('submit', async (e) => 
 async function deleteSupplier(id) {
     if (!confirm('هل أنت متأكد من حذف هذا المورد وجميع فواتيره؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/suppliers/${id}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/suppliers/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -8347,7 +8374,7 @@ async function viewSupplierInvoices(supplierId, supplierName) {
     document.getElementById('supplierInvoiceSupplierId').value = supplierId;
 
     try {
-        const response = await fetch(`${API_URL}/api/suppliers/${supplierId}/invoices`);
+        const response = await apiRequest(`${API_URL}/api/suppliers/${supplierId}/invoices`);
         const data = await response.json();
         const container = document.getElementById('supplierInvoicesList');
 
@@ -8459,7 +8486,7 @@ document.getElementById('supplierInvoiceForm').addEventListener('submit', async 
     };
 
     try {
-        const response = await fetch(`${API_URL}/api/suppliers/invoices`, {
+        const response = await apiRequest(`${API_URL}/api/suppliers/invoices`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(invoiceData)
@@ -8481,7 +8508,7 @@ document.getElementById('supplierInvoiceForm').addEventListener('submit', async 
 
 async function viewSupplierFile(invoiceId) {
     try {
-        const response = await fetch(`${API_URL}/api/suppliers/invoices/${invoiceId}/file`);
+        const response = await apiRequest(`${API_URL}/api/suppliers/invoices/${invoiceId}/file`);
         const data = await response.json();
         if (data.success && data.file_data) {
             const viewer = document.getElementById('supplierFileViewer');
@@ -8502,7 +8529,7 @@ async function viewSupplierFile(invoiceId) {
 async function deleteSupplierInvoice(invoiceId) {
     if (!confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/suppliers/invoices/${invoiceId}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/suppliers/invoices/${invoiceId}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -8531,7 +8558,7 @@ async function loadCoupons() {
         return;
     }
     try {
-        const response = await fetch(`${API_URL}/api/coupons`);
+        const response = await apiRequest(`${API_URL}/api/coupons`);
         const data = await response.json();
 
         if (data.success) {
@@ -8670,7 +8697,7 @@ document.getElementById('couponForm')?.addEventListener('submit', async function
     try {
         const url = id ? `${API_URL}/api/coupons/${id}` : `${API_URL}/api/coupons`;
         const method = id ? 'PUT' : 'POST';
-        const response = await fetch(url, {
+        const response = await apiRequest(url, {
             method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(couponData)
@@ -8691,7 +8718,7 @@ document.getElementById('couponForm')?.addEventListener('submit', async function
 
 async function toggleCoupon(id, newState) {
     try {
-        const response = await fetch(`${API_URL}/api/coupons/${id}`, {
+        const response = await apiRequest(`${API_URL}/api/coupons/${id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ is_active: newState })
@@ -8708,7 +8735,7 @@ async function toggleCoupon(id, newState) {
 async function deleteCoupon(id) {
     if (!confirm('هل أنت متأكد من حذف هذا الكوبون؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/coupons/${id}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/coupons/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             alert('✅ تم الحذف');
@@ -8744,7 +8771,7 @@ async function applyCouponCode() {
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
     try {
-        const response = await fetch(`${API_URL}/api/coupons/validate`, {
+        const response = await apiRequest(`${API_URL}/api/coupons/validate`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ code: code, subtotal: subtotal })
@@ -8794,7 +8821,7 @@ let additionalOperations = [];
 
 async function loadOperationTemplates() {
     try {
-        const response = await fetch(`${API_URL}/api/operation-templates`);
+        const response = await apiRequest(`${API_URL}/api/operation-templates`);
         const data = await response.json();
         
         if (data.success) {
@@ -8869,7 +8896,7 @@ async function syncOfflineCustomers() {
         for (const customer of pending) {
             try {
                 const { id, _offline, ...data } = customer;
-                const response = await fetch(`${API_URL}/api/customers`, {
+                const response = await apiRequest(`${API_URL}/api/customers`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(data)
@@ -8919,7 +8946,7 @@ async function loadTablesDropdown() {
             section.style.display = 'none';
             return;
         }
-        const response = await fetch(`${API_URL}/api/tables`);
+        const response = await apiRequest(`${API_URL}/api/tables`);
         const data = await response.json();
         if (data.success && data.tables && data.tables.length > 0) {
             allTables = data.tables;
@@ -8946,7 +8973,7 @@ async function loadTables() {
         return;
     }
     try {
-        const response = await fetch(`${API_URL}/api/tables`);
+        const response = await apiRequest(`${API_URL}/api/tables`);
         const data = await response.json();
         if (data.success) {
             allTables = data.tables || [];
@@ -9143,7 +9170,7 @@ document.addEventListener('mouseup', async () => {
 
     // حفظ الموضع الجديد
     try {
-        await fetch(`${API_URL}/api/tables/${tableId}`, {
+        await apiRequest(`${API_URL}/api/tables/${tableId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ pos_x: newX, pos_y: newY })
@@ -9178,7 +9205,7 @@ document.addEventListener('touchend', async () => {
     dragState = null;
 
     try {
-        await fetch(`${API_URL}/api/tables/${tableId}`, {
+        await apiRequest(`${API_URL}/api/tables/${tableId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ pos_x: newX, pos_y: newY })
@@ -9231,7 +9258,7 @@ document.getElementById('tableForm')?.addEventListener('submit', async function(
     try {
         if (editingTableId) {
             // تحديث طاولة
-            const response = await fetch(`${API_URL}/api/tables/${editingTableId}`, {
+            const response = await apiRequest(`${API_URL}/api/tables/${editingTableId}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ name, seats })
@@ -9245,7 +9272,7 @@ document.getElementById('tableForm')?.addEventListener('submit', async function(
             }
         } else {
             // إضافة طاولة جديدة
-            const response = await fetch(`${API_URL}/api/tables`, {
+            const response = await apiRequest(`${API_URL}/api/tables`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ name, seats })
@@ -9273,7 +9300,7 @@ async function deleteTable(id) {
     if (!confirm('هل أنت متأكد من حذف هذه الطاولة؟')) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/tables/${id}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/tables/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             alert('تم حذف الطاولة', 'success');
@@ -9297,7 +9324,7 @@ async function viewTableInvoice(tableId) {
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/invoices/${table.current_invoice_id}`);
+        const response = await apiRequest(`${API_URL}/api/invoices/${table.current_invoice_id}`);
         const data = await response.json();
         if (data.success && data.invoice) {
             const inv = data.invoice;
@@ -9366,7 +9393,7 @@ async function releaseTableAction(tableId) {
     if (!confirm('هل تريد تحرير هذه الطاولة؟')) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
+        const response = await apiRequest(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
             alert('تم تحرير الطاولة', 'success');
@@ -9385,7 +9412,7 @@ async function releaseTableAction(tableId) {
 async function reserveTableAction(tableId) {
     if (!confirm('هل تريد حجز هذه الطاولة؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/tables/${tableId}/reserve`, { method: 'POST' });
+        const response = await apiRequest(`${API_URL}/api/tables/${tableId}/reserve`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
             alert('تم حجز الطاولة', 'success');
@@ -9404,7 +9431,7 @@ async function reserveTableAction(tableId) {
 async function unreserveTableAction(tableId) {
     if (!confirm('هل تريد إلغاء حجز هذه الطاولة؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
+        const response = await apiRequest(`${API_URL}/api/tables/${tableId}/release`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
             alert('تم إلغاء حجز الطاولة', 'success');
@@ -9430,12 +9457,12 @@ async function showAssignInvoice(tableId) {
 
     try {
         // البحث عن الفاتورة بالرقم
-        const response = await fetch(`${API_URL}/api/invoices`);
+        const response = await apiRequest(`${API_URL}/api/invoices`);
         const data = await response.json();
         if (data.success && data.invoices) {
             const invoice = data.invoices.find(inv => inv.invoice_number === invoiceNum.trim());
             if (invoice) {
-                const assignResponse = await fetch(`${API_URL}/api/tables/${tableId}/assign`, {
+                const assignResponse = await apiRequest(`${API_URL}/api/tables/${tableId}/assign`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ invoice_id: invoice.id })
@@ -9503,7 +9530,7 @@ document.getElementById('superAdminSettingsForm')?.addEventListener('submit', as
     }
 
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/change-password`, {
+        const response = await authapiRequest(`${API_URL}/api/super-admin/change-password`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -9532,7 +9559,7 @@ document.getElementById('superAdminSettingsForm')?.addEventListener('submit', as
 
 async function loadSuperAdminDashboard() {
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/tenants`);
+        const response = await authapiRequest(`${API_URL}/api/super-admin/tenants`);
         const data = await response.json();
         if (!data.success) return;
 
@@ -9677,7 +9704,7 @@ function showAddTenant() {
 
 async function editTenant(tenantId) {
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
+        const response = await authapiRequest(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
         const data = await response.json();
         if (!data.success) return;
         const t = data.tenant;
@@ -9728,7 +9755,7 @@ document.getElementById('tenantForm')?.addEventListener('submit', async (e) => {
             const newAdminPass = document.getElementById('tenantAdminPassword').value.trim();
             if (newAdminUser) updateData.admin_username = newAdminUser;
             if (newAdminPass) updateData.admin_password = newAdminPass;
-            const response = await authFetch(`${API_URL}/api/super-admin/tenants/${editingTenantId}`, {
+            const response = await authapiRequest(`${API_URL}/api/super-admin/tenants/${editingTenantId}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(updateData)
@@ -9742,7 +9769,7 @@ document.getElementById('tenantForm')?.addEventListener('submit', async (e) => {
             }
         } else {
             // إنشاء جديد
-            const response = await authFetch(`${API_URL}/api/super-admin/tenants`, {
+            const response = await authapiRequest(`${API_URL}/api/super-admin/tenants`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -9779,7 +9806,7 @@ document.getElementById('tenantForm')?.addEventListener('submit', async (e) => {
 
 async function toggleTenant(tenantId, newState) {
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/tenants/${tenantId}`, {
+        const response = await authapiRequest(`${API_URL}/api/super-admin/tenants/${tenantId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ is_active: newState })
@@ -9797,7 +9824,7 @@ async function toggleTenant(tenantId, newState) {
 async function superAdminBackupTenant(tenantId, tenantName) {
     if (!confirm(`هل تريد إنشاء نسخة احتياطية لمتجر "${tenantName}"؟`)) return;
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/backup/tenant/${tenantId}`, { method: 'POST' });
+        const response = await authapiRequest(`${API_URL}/api/super-admin/backup/tenant/${tenantId}`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
             const size = (data.backup.size / 1024).toFixed(1);
@@ -9822,7 +9849,7 @@ async function superAdminBackupAll() {
     btn.disabled = true;
 
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/backup/all`, { method: 'POST' });
+        const response = await authapiRequest(`${API_URL}/api/super-admin/backup/all`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
             let msg = `تم إنشاء ${data.total} نسخة احتياطية بنجاح`;
@@ -9852,7 +9879,7 @@ async function deleteTenantAction(tenantId, tenantName) {
     if (!confirm('تأكيد نهائي: هذا الإجراء لا يمكن التراجع عنه!')) return;
 
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/tenants/${tenantId}`, { method: 'DELETE' });
+        const response = await authapiRequest(`${API_URL}/api/super-admin/tenants/${tenantId}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             alert('تم حذف المتجر');
@@ -9867,7 +9894,7 @@ async function deleteTenantAction(tenantId, tenantName) {
 
 async function viewTenantStats(tenantId) {
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
+        const response = await authapiRequest(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
         const data = await response.json();
         if (!data.success) return;
 
@@ -9935,7 +9962,7 @@ async function openSubscriptionModal(tenantId) {
 
     try {
         // جلب بيانات المستأجر
-        const statsRes = await authFetch(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
+        const statsRes = await authapiRequest(`${API_URL}/api/super-admin/tenants/${tenantId}/stats`);
         const statsData = await statsRes.json();
 
         if (!statsData.success) return;
@@ -9987,7 +10014,7 @@ async function openSubscriptionModal(tenantId) {
         document.getElementById('subscriptionModalTitle').textContent = `💳 اشتراك: ${t.name}`;
 
         // جلب فواتير الاشتراك
-        const invRes = await authFetch(`${API_URL}/api/super-admin/subscriptions/${tenantId}`);
+        const invRes = await authapiRequest(`${API_URL}/api/super-admin/subscriptions/${tenantId}`);
         const invData = await invRes.json();
 
         let invHTML = '';
@@ -10042,7 +10069,7 @@ document.getElementById('subscriptionForm')?.addEventListener('submit', async (e
     }
 
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/subscriptions`, {
+        const response = await authapiRequest(`${API_URL}/api/super-admin/subscriptions`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ tenant_id: tenantId, amount, period_days: periodDays, payment_method: paymentMethod, notes })
@@ -10064,7 +10091,7 @@ document.getElementById('subscriptionForm')?.addEventListener('submit', async (e
 async function deleteSubInvoice(invoiceId, tenantId) {
     if (!confirm('هل تريد حذف هذه الفاتورة؟')) return;
     try {
-        const response = await authFetch(`${API_URL}/api/super-admin/subscriptions/${invoiceId}`, { method: 'DELETE' });
+        const response = await authapiRequest(`${API_URL}/api/super-admin/subscriptions/${invoiceId}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             openSubscriptionModal(tenantId);
@@ -10111,7 +10138,7 @@ function formatFileSize(bytes) {
 
 async function loadBackupsList() {
     try {
-        const response = await fetch(`${API_URL}/api/backup/list`, {
+        const response = await apiRequest(`${API_URL}/api/backup/list`, {
             headers: {}
         });
         const data = await response.json();
@@ -10170,7 +10197,7 @@ async function createBackup() {
     progressText.textContent = 'جاري إنشاء النسخة الاحتياطية...';
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/create`, {
+        const response = await apiRequest(`${API_URL}/api/backup/create`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'}
         });
@@ -10221,7 +10248,7 @@ async function deleteBackup(filename) {
     if (!confirm(`هل تريد حذف النسخة الاحتياطية ${filename}؟`)) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/delete/${encodeURIComponent(filename)}`, {
+        const response = await apiRequest(`${API_URL}/api/backup/delete/${encodeURIComponent(filename)}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'}
         });
@@ -10249,7 +10276,7 @@ async function restoreBackup() {
     formData.append('file', fileInput.files[0]);
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/restore`, {
+        const response = await apiRequest(`${API_URL}/api/backup/restore`, {
             method: 'POST',
             headers: {},
             body: formData
@@ -10270,7 +10297,7 @@ async function restoreFromLocal(filename) {
     if (!confirm(`⚠️ هل أنت متأكد من استعادة النسخة ${filename}؟\nسيتم استبدال جميع البيانات الحالية.\nسيتم إنشاء نسخة احتياطية تلقائية قبل الاستعادة.`)) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/restore`, {
+        const response = await apiRequest(`${API_URL}/api/backup/restore`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({filename: filename})
@@ -10289,7 +10316,7 @@ async function restoreFromLocal(filename) {
 
 async function saveBackupSchedule() {
     try {
-        const response = await fetch(`${API_URL}/api/backup/schedule`, {
+        const response = await apiRequest(`${API_URL}/api/backup/schedule`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -10320,7 +10347,7 @@ window._gdriveConnected = false;
 
 async function loadGDriveStatus() {
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/status`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/status`, {
             headers: {}
         });
         const data = await response.json();
@@ -10372,7 +10399,7 @@ async function gdriveStartAuth() {
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/save-credentials`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/save-credentials`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -10406,7 +10433,7 @@ async function gdriveConnect() {
     }
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/connect`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/connect`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({code: code})
@@ -10427,7 +10454,7 @@ async function gdriveDisconnect() {
     if (!confirm('هل تريد قطع اتصال Google Drive؟')) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/disconnect`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/disconnect`, {
             method: 'POST',
             headers: {}
         });
@@ -10447,7 +10474,7 @@ async function createAndUploadGDrive() {
     progressText.textContent = 'جاري إنشاء النسخة ورفعها إلى Google Drive...';
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/upload`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/upload`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({})
@@ -10475,7 +10502,7 @@ async function uploadBackupToGDrive(filename) {
     progressText.textContent = `جاري رفع ${filename} إلى Google Drive...`;
 
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/upload`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/upload`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({filename: filename})
@@ -10497,7 +10524,7 @@ async function uploadBackupToGDrive(filename) {
 
 async function loadGDriveFiles() {
     try {
-        const response = await fetch(`${API_URL}/api/backup/gdrive/files`, {
+        const response = await apiRequest(`${API_URL}/api/backup/gdrive/files`, {
             headers: {}
         });
         const data = await response.json();
@@ -10559,7 +10586,7 @@ async function loadAdminDashboard() {
 
 async function loadAdminDashInvoices() {
     try {
-        const response = await fetch(`${API_URL}/api/admin-dashboard/invoices-summary`);
+        const response = await apiRequest(`${API_URL}/api/admin-dashboard/invoices-summary`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
@@ -10634,7 +10661,7 @@ async function loadAdminDashInvoices() {
 
 async function loadAdminDashStock() {
     try {
-        const response = await fetch(`${API_URL}/api/admin-dashboard/stock-summary`);
+        const response = await apiRequest(`${API_URL}/api/admin-dashboard/stock-summary`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
@@ -10739,7 +10766,7 @@ async function loadXBRLTab() {
 
     // جلب بيانات الشركة المحفوظة
     try {
-        const res = await fetch('/api/xbrl/company-info');
+        const res = await apiRequest('/api/xbrl/company-info');
         const data = await res.json();
         if (data.success && data.data) {
             const c = data.data;
@@ -10780,7 +10807,7 @@ async function saveXBRLCompanyInfo() {
             contact_phone: document.getElementById('xbrl_phone').value,
             address: document.getElementById('xbrl_address').value
         };
-        const res = await fetch('/api/xbrl/company-info', {
+        const res = await apiRequest('/api/xbrl/company-info', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body)
@@ -10805,7 +10832,7 @@ async function loadXBRLFinancialData() {
     }
 
     try {
-        const res = await fetch(`/api/xbrl/financial-data?start_date=${startDate}&end_date=${endDate}`);
+        const res = await apiRequest(`/api/xbrl/financial-data?start_date=${startDate}&end_date=${endDate}`);
         const data = await res.json();
         if (!data.success) {
             alert('❌ خطأ: ' + data.error);
@@ -11205,7 +11232,7 @@ async function generateXBRLReport() {
     };
 
     try {
-        const res = await fetch('/api/xbrl/generate', {
+        const res = await apiRequest('/api/xbrl/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -11333,7 +11360,7 @@ function downloadXBRLXML() {
 
 async function loadXBRLSavedReports() {
     try {
-        const res = await fetch('/api/xbrl/reports');
+        const res = await apiRequest('/api/xbrl/reports');
         const data = await res.json();
         if (!data.success) return;
 
@@ -11372,7 +11399,7 @@ async function loadXBRLSavedReports() {
 
 async function downloadSavedXBRL(reportId) {
     try {
-        const res = await fetch(`/api/xbrl/reports/${reportId}`);
+        const res = await apiRequest(`/api/xbrl/reports/${reportId}`);
         const data = await res.json();
         if (!data.success || !data.report.xbrl_xml) {
             alert('❌ لا يمكن تحميل التقرير');
@@ -11398,7 +11425,7 @@ console.log('[XBRL/IFRS] Loaded ✅');
 
 async function loadShiftsForUserForm() {
     try {
-        const response = await fetch(`${API_URL}/api/shifts`);
+        const response = await apiRequest(`${API_URL}/api/shifts`);
         const data = await response.json();
         if (data.success) {
             const select = document.getElementById('userShift');
@@ -11425,7 +11452,7 @@ function closeShiftsManagement() {
 
 async function loadShiftsList() {
     try {
-        const response = await fetch(`${API_URL}/api/shifts`);
+        const response = await apiRequest(`${API_URL}/api/shifts`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
@@ -11482,7 +11509,7 @@ async function addNewShift() {
     const autoLock = document.getElementById('newShiftAutoLock')?.checked ? 1 : 0;
 
     try {
-        const response = await fetch(`${API_URL}/api/shifts`, {
+        const response = await apiRequest(`${API_URL}/api/shifts`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ name, start_time: startTime, end_time: endTime, auto_lock: autoLock })
@@ -11504,7 +11531,7 @@ async function addNewShift() {
 
 async function toggleShiftActive(id, name, startTime, endTime, newActive, autoLock) {
     try {
-        const response = await fetch(`${API_URL}/api/shifts/${id}`, {
+        const response = await apiRequest(`${API_URL}/api/shifts/${id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ name, start_time: startTime, end_time: endTime, is_active: newActive, auto_lock: autoLock || 0 })
@@ -11519,12 +11546,12 @@ async function toggleShiftActive(id, name, startTime, endTime, newActive, autoLo
 async function toggleShiftAutoLock(id, newAutoLock) {
     try {
         // جلب بيانات الشفت أولاً
-        const res = await fetch(`${API_URL}/api/shifts`);
+        const res = await apiRequest(`${API_URL}/api/shifts`);
         const sData = await res.json();
         const shift = sData.shifts?.find(s => s.id === id);
         if (!shift) return;
 
-        const response = await fetch(`${API_URL}/api/shifts/${id}`, {
+        const response = await apiRequest(`${API_URL}/api/shifts/${id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -11545,7 +11572,7 @@ async function toggleShiftAutoLock(id, newAutoLock) {
 async function deleteShift(id) {
     if (!confirm('هل أنت متأكد من حذف هذا الشفت؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/shifts/${id}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/shifts/${id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) loadShiftsList();
         else alert('خطأ: ' + data.error);
@@ -11588,7 +11615,7 @@ async function checkShiftLock() {
     if (currentUser.role === 'admin') return;
 
     try {
-        const response = await fetch(`${API_URL}/api/shifts/check-lock`, {
+        const response = await apiRequest(`${API_URL}/api/shifts/check-lock`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ shift_id: currentUser.shift_id })
@@ -11778,7 +11805,7 @@ async function saveEditedInvoice() {
     };
 
     try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}/edit`, {
+        const response = await apiRequest(`${API_URL}/api/invoices/${invoiceId}/edit`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(editData)
@@ -11807,7 +11834,7 @@ async function loadAdminDashShiftPerformance() {
     if (!container) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/admin-dashboard/shift-performance`);
+        const response = await apiRequest(`${API_URL}/api/admin-dashboard/shift-performance`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
@@ -11941,7 +11968,7 @@ async function loadStockTransfers() {
         if (statusFilter) params.set('status', statusFilter);
         if (branchFilter) params.set('branch_id', branchFilter);
 
-        const response = await fetch(`${API_URL}/api/stock-transfers?${params.toString()}`);
+        const response = await apiRequest(`${API_URL}/api/stock-transfers?${params.toString()}`);
         const data = await response.json();
 
         // تحميل قائمة الفروع للفلتر
@@ -12018,7 +12045,7 @@ async function loadStockTransfers() {
 
 async function _loadTransferBranchesFilter() {
     try {
-        const res = await fetch(`${API_URL}/api/branches`);
+        const res = await apiRequest(`${API_URL}/api/branches`);
         const data = await res.json();
         if (data.success) {
             _transferBranches = data.branches || [];
@@ -12047,8 +12074,8 @@ async function showCreateTransfer() {
     // تحميل الفروع + المنتجات بالتوازي
     try {
         const [branchRes, invRes] = await Promise.all([
-            fetch(`${API_URL}/api/branches`),
-            fetch(`${API_URL}/api/inventory`)
+            apiRequest(`${API_URL}/api/branches`),
+            apiRequest(`${API_URL}/api/inventory`)
         ]);
         const branchData = await branchRes.json();
         const invData = await invRes.json();
@@ -12170,7 +12197,7 @@ async function submitTransferRequest() {
     if (_transferItems.length === 0) { alert('أضف صنف واحد على الأقل'); return; }
 
     try {
-        const response = await fetch(`${API_URL}/api/stock-transfers`, {
+        const response = await apiRequest(`${API_URL}/api/stock-transfers`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -12207,7 +12234,7 @@ async function submitTransferRequest() {
 async function viewTransferDetails(transferId) {
     if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
+        const response = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}`);
         const data = await response.json();
         if (!data.success) { alert('خطأ: ' + data.error); return; }
 
@@ -12324,7 +12351,7 @@ async function approveTransferPrompt(transferId) {
 
     try {
         // جلب العناصر لتعيين الكميات المعتمدة
-        const res = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
+        const res = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}`);
         const tData = await res.json();
         if (!tData.success) { alert('خطأ: ' + tData.error); return; }
 
@@ -12333,7 +12360,7 @@ async function approveTransferPrompt(transferId) {
             quantity_approved: item.quantity_requested
         }));
 
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/approve`, {
+        const response = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}/approve`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -12363,7 +12390,7 @@ async function rejectTransferPrompt(transferId) {
     if (reason === null) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/reject`, {
+        const response = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}/reject`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -12394,7 +12421,7 @@ async function pickupTransferPrompt(transferId) {
     if (!driverName.trim()) { alert('يجب إدخال اسم السائق'); return; }
 
     try {
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/pickup`, {
+        const response = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}/pickup`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -12423,7 +12450,7 @@ async function receiveTransferPrompt(transferId) {
 
     try {
         // جلب العناصر لتعيين الكميات المستلمة
-        const res = await fetch(`${API_URL}/api/stock-transfers/${transferId}`);
+        const res = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}`);
         const tData = await res.json();
         if (!tData.success) { alert('خطأ: ' + tData.error); return; }
 
@@ -12432,7 +12459,7 @@ async function receiveTransferPrompt(transferId) {
             quantity_received: item.quantity_approved || item.quantity_requested
         }));
 
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}/receive`, {
+        const response = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}/receive`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -12461,7 +12488,7 @@ async function deleteTransferPrompt(transferId) {
     if (!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/stock-transfers/${transferId}?user_branch_id=${currentUser.branch_id}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/stock-transfers/${transferId}?user_branch_id=${currentUser.branch_id}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) {
             logAction('delete_transfer', `حذف طلب نقل #${transferId}`, transferId);
@@ -12495,7 +12522,7 @@ async function loadSubscriptions() {
     }
     try {
         const statusFilter = document.getElementById('subStatusFilter')?.value || '';
-        const response = await fetch(`${API_URL}/api/customer-subscriptions?status=${statusFilter}`);
+        const response = await apiRequest(`${API_URL}/api/customer-subscriptions?status=${statusFilter}`);
         const data = await response.json();
         if (data.success) {
             _allSubscriptions = data.subscriptions;
@@ -12504,7 +12531,7 @@ async function loadSubscriptions() {
             if (_allPlans.length > 0) renderCategoryDashboard();
             else {
                 try {
-                    const pRes = await fetch(`${API_URL}/api/subscription-plans`);
+                    const pRes = await apiRequest(`${API_URL}/api/subscription-plans`);
                     const pData = await pRes.json();
                     if (pData.success) { _allPlans = pData.plans; renderCategoryDashboard(); }
                 } catch(e) {}
@@ -12631,7 +12658,7 @@ function showSubscriptionDetail(subId) {
 async function loadRedemptionHistory(subId) {
     if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
-        const response = await fetch(`${API_URL}/api/subscription-redemptions/${subId}`);
+        const response = await apiRequest(`${API_URL}/api/subscription-redemptions/${subId}`);
         const data = await response.json();
         const container = document.getElementById('redemptionHistoryContainer');
         if (!data.success || !data.redemptions || data.redemptions.length === 0) {
@@ -12674,7 +12701,7 @@ function closePlansModal() {
 async function loadProductsForPlanPicker() {
     try {
         const branchId = (currentUser && currentUser.branch_id) ? currentUser.branch_id : 1;
-        const response = await fetch(`${API_URL}/api/products?branch_id=${branchId}`);
+        const response = await apiRequest(`${API_URL}/api/products?branch_id=${branchId}`);
         const data = await response.json();
         if (data.success && data.products) {
             const select = document.getElementById('planProductSelect');
@@ -12740,7 +12767,7 @@ function renderPlanItems() {
 
 async function loadPlansList() {
     try {
-        const response = await fetch(`${API_URL}/api/subscription-plans`);
+        const response = await apiRequest(`${API_URL}/api/subscription-plans`);
         const data = await response.json();
         if (data.success) {
             _allPlans = data.plans;
@@ -12958,7 +12985,7 @@ async function savePlan() {
     if (_planItems.length === 0) { alert('يجب إضافة منتج واحد على الأقل للفئة'); return; }
 
     try {
-        const response = await fetch(`${API_URL}/api/subscription-plans`, {
+        const response = await apiRequest(`${API_URL}/api/subscription-plans`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -12994,7 +13021,7 @@ async function togglePlan(planId, currentActive) {
     try {
         const plan = _allPlans.find(p => p.id === planId);
         if (!plan) return;
-        const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, {
+        const response = await apiRequest(`${API_URL}/api/subscription-plans/${planId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({...plan, is_active: currentActive ? 0 : 1})
@@ -13008,7 +13035,7 @@ async function deletePlan(planId) {
     if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('حذف هذه الفئة ومنتجاتها؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/subscription-plans/${planId}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/subscription-plans/${planId}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) await loadPlansList();
         else alert('خطأ: ' + data.error);
@@ -13022,8 +13049,8 @@ async function showAddSubscription() {
     if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     try {
         const [custRes, planRes] = await Promise.all([
-            fetch(`${API_URL}/api/customers`),
-            fetch(`${API_URL}/api/subscription-plans`)
+            apiRequest(`${API_URL}/api/customers`),
+            apiRequest(`${API_URL}/api/subscription-plans`)
         ]);
         const custData = await custRes.json();
         const planData = await planRes.json();
@@ -13093,7 +13120,7 @@ async function submitSubscription() {
     if (!customerId || !planId || !code) { alert('يجب تعبئة العميل والفئة والكود'); return; }
 
     try {
-        const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
+        const response = await apiRequest(`${API_URL}/api/customer-subscriptions`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -13122,7 +13149,7 @@ async function cancelSubscription(subId) {
     if (!confirm('إلغاء هذا الاشتراك؟')) return;
     try {
         const sub = _allSubscriptions.find(s => s.id === subId);
-        const response = await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, {
+        const response = await apiRequest(`${API_URL}/api/customer-subscriptions/${subId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ status: 'cancelled', notes: sub?.notes || '', end_date: sub?.end_date })
@@ -13136,7 +13163,7 @@ async function deleteSubscription(subId) {
     if (!_realOnlineStatus) { alert('غير متصل بالإنترنت'); return; }
     if (!confirm('حذف هذا الاشتراك نهائياً؟')) return;
     try {
-        const response = await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, { method: 'DELETE' });
+        const response = await apiRequest(`${API_URL}/api/customer-subscriptions/${subId}`, { method: 'DELETE' });
         const data = await response.json();
         if (data.success) { loadSubscriptions(); logAction('delete_subscription', `حذف اشتراك #${subId}`, subId); }
     } catch (error) { alert('خطأ: ' + error.message); }
@@ -13149,14 +13176,14 @@ async function renewSubscription(subId, customerId, planId) {
         const sub = _allSubscriptions.find(s => s.id === subId);
         let plan = _allPlans.find(p => p.id === planId);
         if (!plan) {
-            const planRes = await fetch(`${API_URL}/api/subscription-plans`);
+            const planRes = await apiRequest(`${API_URL}/api/subscription-plans`);
             const planData = await planRes.json();
             if (planData.success) { _allPlans = planData.plans; }
             plan = _allPlans.find(p => p.id === planId);
             if (!plan) { alert('الفئة غير موجودة'); return; }
         }
         const startDate = new Date().toISOString().split('T')[0];
-        const response = await fetch(`${API_URL}/api/customer-subscriptions`, {
+        const response = await apiRequest(`${API_URL}/api/customer-subscriptions`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -13172,7 +13199,7 @@ async function renewSubscription(subId, customerId, planId) {
         });
         const data = await response.json();
         if (data.success) {
-            await fetch(`${API_URL}/api/customer-subscriptions/${subId}`, {
+            await apiRequest(`${API_URL}/api/customer-subscriptions/${subId}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ status: 'expired', notes: sub?.notes || '', end_date: sub?.end_date })
@@ -13275,7 +13302,7 @@ async function submitRedemption() {
     if (!confirm(`تأكيد استلام ${items.length} منتج؟`)) return;
 
     try {
-        const response = await fetch(`${API_URL}/api/subscription-redemptions`, {
+        const response = await apiRequest(`${API_URL}/api/subscription-redemptions`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -13307,7 +13334,7 @@ async function submitRedemption() {
 
 async function checkCustomerSubscription(customerId) {
     try {
-        const response = await fetch(`${API_URL}/api/customer-subscriptions/check?customer_id=${customerId}`);
+        const response = await apiRequest(`${API_URL}/api/customer-subscriptions/check?customer_id=${customerId}`);
         const data = await response.json();
         if (data.success && data.active && data.subscription) {
             window._activeSubscription = data.subscription;
@@ -13604,7 +13631,7 @@ async function testServerConnection() {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(`${url}/api/sync/status`, {
+        const response = await apiRequest(`${url}/api/sync/status`, {
             method: 'GET',
             signal: controller.signal,
             cache: 'no-store'
@@ -13641,7 +13668,7 @@ async function testServerConnection() {
         let errMsg = 'فشل الاتصال';
         if (e.name === 'AbortError') {
             errMsg += ' - انتهت المهلة (5 ثواني)';
-        } else if (e.message.includes('Failed to fetch')) {
+        } else if (e.message.includes('Failed to apiRequest')) {
             errMsg += ' - تأكد من الرابط والشبكة (CORS أو سيرفر مغلق)';
         } else {
             errMsg += ` - ${e.message}`;
@@ -13762,7 +13789,7 @@ function saveSyncModeSettings() {
         localStorage.setItem('pos_server_url', serverUrl);
 
         // حفظ عنوان الخادم في قاعدة البيانات المحلية لاستخدامه من Electron
-        fetch(`${API_URL}/api/settings`, {
+        apiRequest(`${API_URL}/api/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ flask_server_url: serverUrl })
@@ -13821,7 +13848,7 @@ async function testSyncServer() {
         try {
             const ctrl = new AbortController();
             const t = setTimeout(() => ctrl.abort(), 5000);
-            const resp = await fetch(`${serverUrl}${ep.path}`, {
+            const resp = await apiRequest(`${serverUrl}${ep.path}`, {
                 method: 'GET', signal: ctrl.signal, cache: 'no-store'
             });
             clearTimeout(t);
@@ -13906,7 +13933,7 @@ async function testSyncServer() {
         let errMsg = `<strong>فشل الاتصال بالسيرفر</strong><br>`;
         if (firstErr === 'timeout') {
             errMsg += `<span style="font-size: 12px;">انتهت المهلة (5 ثواني) - السيرفر بطيء أو مغلق</span>`;
-        } else if (firstErr.includes('Failed to fetch') || firstErr.includes('NetworkError')) {
+        } else if (firstErr.includes('Failed to apiRequest') || firstErr.includes('NetworkError')) {
             errMsg += `<span style="font-size: 12px;">خطأ شبكة - تأكد من:<br>• العنوان صحيح<br>• السيرفر شغال<br>• CORS مفعل على السيرفر<br>• الشبكة متصلة</span>`;
         } else {
             errMsg += `<span style="font-size: 12px;">${escHTML(firstErr)}</span>`;
