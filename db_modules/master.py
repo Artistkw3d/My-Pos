@@ -82,10 +82,18 @@ def init_master_db(master_db_path, hash_password):
         pass
 
     # Create default Super Admin account if none exists
-    cursor.execute(
-        "INSERT OR IGNORE INTO super_admins (username, password, full_name) VALUES (?, ?, ?)",
-        ('superadmin', hash_password('admin123'), '\u0645\u062f\u064a\u0631 \u0627\u0644\u0646\u0638\u0627\u0645')
-    )
+    cursor.execute("SELECT COUNT(*) FROM super_admins")
+    admin_count = cursor.fetchone()[0]
+    if admin_count == 0:
+        import os
+        default_pw = os.environ.get('POS_SUPERADMIN_PASSWORD', 'admin123')
+        cursor.execute(
+            "INSERT OR IGNORE INTO super_admins (username, password, full_name) VALUES (?, ?, ?)",
+            ('superadmin', hash_password(default_pw), '\u0645\u062f\u064a\u0631 \u0627\u0644\u0646\u0638\u0627\u0645')
+        )
+        if default_pw == 'admin123':
+            print("[SECURITY WARNING] Super admin created with default password 'admin123'. Change it immediately!")
+            print("[SECURITY WARNING] Set POS_SUPERADMIN_PASSWORD env var or change password after first login.")
 
     conn.commit()
     conn.close()
