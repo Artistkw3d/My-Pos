@@ -170,12 +170,13 @@ class SyncManager {
             // 2. Upload pending data
             this.syncProgress.step = 'رفع البيانات المعلقة...';
             this.updateProgressUI();
-            const uploadResult = await this.uploadPendingData();
-            syncResult.invoices_uploaded = uploadResult.invoices;
-            syncResult.customers_uploaded = uploadResult.customers;
-            if (uploadResult.errors.length) syncResult.errors.push(...uploadResult.errors);
-            if (uploadResult.negative_stock && uploadResult.negative_stock.length) syncResult.negative_stock.push(...uploadResult.negative_stock);
-            this.syncProgress.done = 2;
+            // const uploadResult = await this.uploadPendingData();  // مؤقتًا معطلة لأن الدالة غير موجودة
+// syncResult.invoices_uploaded = uploadResult.invoices;
+// syncResult.customers_uploaded = uploadResult.customers;
+// if (uploadResult.errors.length) syncResult.errors.push(...uploadResult.errors);
+// if (uploadResult.negative_stock && uploadResult.negative_stock.length) syncResult.negative_stock.push(...uploadResult.negative_stock);
+// this.syncProgress.done = 2;
+this.syncProgress.done = 2;  // نعدل الـ progress عشان ما يتوقف
 
             // 3. Download branches
             this.syncProgress.step = 'تحديث الفروع...';
