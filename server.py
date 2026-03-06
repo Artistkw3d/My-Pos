@@ -287,7 +287,7 @@ def add_security_headers(response):
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self'" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
+        "connect-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
         "frame-ancestors 'none'"
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
