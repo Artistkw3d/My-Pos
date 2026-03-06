@@ -25,7 +25,7 @@ import html
 import jwt
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
-
+from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, JWTManager
 
 
 
