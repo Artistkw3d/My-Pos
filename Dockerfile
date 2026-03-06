@@ -4,8 +4,10 @@ FROM python:3.11-slim
 # تعيين مجلد العمل
 WORKDIR /app
 
-# إنشاء مستخدم غير root للأمان
-RUN groupadd -r posapp && useradd -r -g posapp -d /app -s /sbin/nologin posapp
+# إنشاء مستخدم غير root للأمان + تنصيب gosu
+RUN groupadd -r posapp && useradd -r -g posapp -d /app -s /sbin/nologin posapp \
+    && apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
 
 # نسخ ملفات المتطلبات أولاً (للاستفادة من cache)
 COPY requirements.txt .
@@ -17,8 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY server.py .
 COPY setup_database.py .
 COPY frontend/ ./frontend/
-COPY database/ ./database/
 COPY db_modules/ ./db_modules/
+
+# نسخ سكريبت البدء
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # إنشاء المجلدات اللازمة وتعيين الصلاحيات
 RUN mkdir -p /app/database/backups /app/database/tenants \
@@ -27,12 +32,10 @@ RUN mkdir -p /app/database/backups /app/database/tenants \
 # فتح المنفذ 5000
 EXPOSE 5000
 
-# التشغيل كمستخدم غير root
-USER posapp
-
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/version')" || exit 1
 
-# تهيئة قاعدة البيانات ثم تشغيل الخادم
+# استخدام entrypoint لإصلاح الصلاحيات ثم التشغيل كمستخدم غير root
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["sh", "-c", "python setup_database.py && gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 server:app"]
