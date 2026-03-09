@@ -36,6 +36,7 @@ from db_modules.schema import create_all_tables, create_indexes, insert_default_
 from db_modules.master import init_master_db as _init_master_db
 from db_modules.migrate import migrate_database as _migrate_database
 from db_modules.encryption import encrypt_value, decrypt_value, SENSITIVE_KEYS
+from database.migration_runner import run_migrations, get_db_version
 
 # === Secure Logging Setup (Phase 5) ===
 logging.basicConfig(
@@ -372,14 +373,18 @@ def migrate_database(db_path=None):
     target_path = db_path or DB_PATH
     _migrate_database(target_path)
 
-# ترقية قاعدة البيانات الافتراضية
+# ترقية قاعدة البيانات الافتراضية (نظام الترقية المتسلسل)
 migrate_database()
+run_migrations(DB_PATH)
+run_migrations(MASTER_DB_PATH, master=True)
 
 # ترقية جميع قواعد بيانات المستأجرين
 if os.path.exists(TENANTS_DB_DIR):
     for f in os.listdir(TENANTS_DB_DIR):
         if f.endswith('.db'):
-            migrate_database(os.path.join(TENANTS_DB_DIR, f))
+            tenant_path = os.path.join(TENANTS_DB_DIR, f)
+            migrate_database(tenant_path)
+            run_migrations(tenant_path)
 
 def get_tenant_slug():
     """استخراج معرف المستأجر من الطلب"""

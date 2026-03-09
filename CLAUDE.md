@@ -15,7 +15,7 @@ My-Pos is the Docker/server deployment version of the POS Offline system. It is 
 **CRITICAL: On every change, you MUST ask the user:**
 
 > "This change affects [describe scope]. Should I also apply it to:"
-> 1. **Pos-Offline repo** (main repo at `C:\Users\em6er\Desktop\my-project`)?
+> 1. **Pos-Offline repo** (main repo at `/home/artistkw/Pos-Offline`)?
 > 2. **Electron/Windows desktop app** (electron/server.js + routes/*.js in Pos-Offline)?
 > 3. **Android/Capacitor app** (rebuild APK in Pos-Offline)?
 
@@ -119,6 +119,45 @@ docker build -t my-pos .              # Build image
 docker run -d -p 5000:5000 my-pos     # Run container
 docker compose up -d                  # Run with docker-compose
 ```
+
+## Modular Architecture & Feature Flags (Planned Restructure)
+
+### Overview
+The codebase is being restructured from monolithic files into a modular, plugin-based architecture with a feature flags system controlled by Super Admin per tenant. See Pos-Offline CLAUDE.md for full architecture details.
+
+### Database Migration System
+Instead of scattered `ALTER TABLE ... ADD COLUMN` in try/except blocks, use a versioned migration system:
+- Migration files in `database/migrations/NNN_description.sql`
+- A `db_version` table tracks applied migrations
+- On server startup: check version -> run only NEW migrations
+- Migrations only ADD — never delete or rename existing data
+- In My-Pos, migration logic lives in `db_modules/migrate.py`
+
+### Feature Flags System (Per-Tenant)
+A `tenant_features` table in `master.db` controls which features are enabled per store:
+```sql
+CREATE TABLE tenant_features (
+    tenant_id TEXT,
+    feature_key TEXT,
+    enabled INTEGER DEFAULT 0,
+    enabled_at TEXT,
+    PRIMARY KEY (tenant_id, feature_key)
+);
+```
+- Super Admin UI toggles features per store
+- Backend blocks API calls for disabled features (403)
+- Data is NEVER deleted when a feature is toggled off
+
+### Plugin vs System Update Rule
+**CRITICAL: When adding ANY new feature, you MUST ask the user:**
+
+> "Is this a **plugin** (feature flag) or a **system update**?"
+
+- **Plugin (user says "yes")**: Toggleable module. Super Admin controls per store.
+- **System Update (user says "no")**: Core change. Applies to ALL stores. Always active.
+
+### Frontend Modules
+Frontend is being split from monolithic `app.js` into `frontend/modules/` folders. Each module = self-contained feature with its own JS + HTML. See Pos-Offline CLAUDE.md for full directory structure.
 
 ## Important Files to Change Together
 
