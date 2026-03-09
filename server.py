@@ -8136,7 +8136,7 @@ def sync_full_download():
 @app.route('/api/version', methods=['GET'])
 def get_version():
     """جلب رقم الإصدار"""
-    return jsonify({'success': True, 'version': '1.4.0'})
+    return jsonify({'success': True, 'version': '1.4.1'})
 
 
 if __name__ == '__main__':
