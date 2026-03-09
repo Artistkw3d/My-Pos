@@ -36,7 +36,11 @@ from db_modules.schema import create_all_tables, create_indexes, insert_default_
 from db_modules.master import init_master_db as _init_master_db
 from db_modules.migrate import migrate_database as _migrate_database
 from db_modules.encryption import encrypt_value, decrypt_value, SENSITIVE_KEYS
-from database.migration_runner import run_migrations, get_db_version
+try:
+    from database.migration_runner import run_migrations, get_db_version
+except ImportError:
+    def run_migrations(*args, **kwargs): pass
+    def get_db_version(*args, **kwargs): return 0
 
 # === Secure Logging Setup (Phase 5) ===
 logging.basicConfig(
