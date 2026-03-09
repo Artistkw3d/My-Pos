@@ -20,6 +20,9 @@ COPY server.py .
 COPY setup_database.py .
 COPY frontend/ ./frontend/
 COPY db_modules/ ./db_modules/
+COPY database/__init__.py ./database/
+COPY database/migration_runner.py ./database/
+COPY database/migrations/ ./database/migrations/
 
 # نسخ سكريبت البدء
 COPY entrypoint.sh /entrypoint.sh
