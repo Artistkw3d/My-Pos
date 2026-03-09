@@ -8135,15 +8135,8 @@ def sync_full_download():
 
 @app.route('/api/version', methods=['GET'])
 def get_version():
-    """جلب تاريخ آخر تحديث"""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    try:
-        # تاريخ آخر تعديل لملف server.py
-        mtime = os.path.getmtime(os.path.join(base_dir, 'server.py'))
-        last_update = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
-        return jsonify({'success': True, 'version': last_update})
-    except:
-        return jsonify({'success': True, 'version': datetime.now().strftime('%Y-%m-%d')})
+    """جلب رقم الإصدار"""
+    return jsonify({'success': True, 'version': '1.3.2'})
 
 
 if __name__ == '__main__':
