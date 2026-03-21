@@ -442,7 +442,15 @@ def dict_from_row(row):
 def create_tenant_database(slug):
     """إنشاء قاعدة بيانات كاملة لمستأجر جديد"""
     db_path = get_tenant_db_path(slug)
-    conn = sqlite3.connect(db_path)
+    # Delete leftover DB from previous failed attempt
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        # Also remove WAL/SHM files if they exist
+        for ext in ['-wal', '-shm']:
+            if os.path.exists(db_path + ext):
+                os.remove(db_path + ext)
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute('PRAGMA journal_mode=WAL')
     cursor = conn.cursor()
     create_all_tables(cursor)
     insert_default_settings(cursor, all_settings=False)
@@ -4041,7 +4049,7 @@ def create_tenant():
         t_conn = sqlite3.connect(db_path, timeout=30)
         t_cursor = t_conn.cursor()
         t_cursor.execute('''
-            INSERT INTO users (username, password, full_name, role, invoice_prefix, is_active, branch_id)
+            INSERT OR REPLACE INTO users (username, password, full_name, role, invoice_prefix, is_active, branch_id)
             VALUES (?, ?, ?, 'admin', 'INV', 1, 1)
         ''', (admin_username, hash_password(admin_password), owner_name))
         t_conn.commit()
