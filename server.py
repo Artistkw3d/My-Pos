@@ -293,10 +293,10 @@ def add_security_headers(response):
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
         "connect-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com https://cloudflareinsights.com" + (" " + " ".join(ALLOWED_ORIGINS) if ALLOWED_ORIGINS else "") + "; "
-        "frame-ancestors 'none'"
+        "frame-ancestors 'self'"
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
