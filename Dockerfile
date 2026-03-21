@@ -41,4 +41,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 
 # استخدام entrypoint لإصلاح الصلاحيات ثم التشغيل كمستخدم غير root
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["sh", "-c", "python setup_database.py && gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 server:app"]
+CMD ["sh", "-c", "python setup_database.py && gunicorn --bind 0.0.0.0:5000 --workers 1 --threads 4 --timeout 120 server:app"]
