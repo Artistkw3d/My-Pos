@@ -102,6 +102,8 @@ def init_master_db(master_db_path, hash_password, verify_password=None):
             cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_amount REAL DEFAULT 0")
         if 'subscription_period' not in cols:
             cursor.execute("ALTER TABLE tenants ADD COLUMN subscription_period INTEGER DEFAULT 30")
+        if 'expires_at' not in cols:
+            cursor.execute("ALTER TABLE tenants ADD COLUMN expires_at TEXT")
         if 'mode' not in cols:
             cursor.execute("ALTER TABLE tenants ADD COLUMN mode TEXT DEFAULT 'online'")
     except:
