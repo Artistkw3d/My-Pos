@@ -430,7 +430,8 @@ def get_db():
 
 def get_master_db():
     """الاتصال بقاعدة البيانات الرئيسية"""
-    conn = sqlite3.connect(MASTER_DB_PATH)
+    conn = sqlite3.connect(MASTER_DB_PATH, timeout=30)
+    conn.execute('PRAGMA journal_mode=WAL')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -4031,12 +4032,13 @@ def create_tenant():
         if cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'هذا المعرف مستخدم بالفعل'}), 400
+        conn.close()
 
         # إنشاء قاعدة بيانات المستأجر
         create_tenant_database(slug)
 
         # إضافة مستخدم أدمن للمستأجر
-        t_conn = sqlite3.connect(db_path)
+        t_conn = sqlite3.connect(db_path, timeout=30)
         t_cursor = t_conn.cursor()
         t_cursor.execute('''
             INSERT INTO users (username, password, full_name, role, invoice_prefix, is_active, branch_id)
@@ -4053,6 +4055,8 @@ def create_tenant():
             expires_at = (date.today() + td(days=sub_days)).isoformat()
 
         # تسجيل المستأجر في القاعدة الرئيسية
+        conn = get_master_db()
+        cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO tenants (name, slug, owner_name, owner_email, owner_phone, db_path, plan, max_users, max_branches, subscription_amount, subscription_period, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
