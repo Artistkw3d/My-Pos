@@ -4048,8 +4048,9 @@ def create_tenant():
         # حساب تاريخ انتهاء الاشتراك
         from datetime import date, timedelta as td
         expires_at = None
-        if subscription_period and int(subscription_period) > 0:
-            expires_at = (date.today() + td(days=int(subscription_period))).isoformat()
+        sub_days = min(int(subscription_period or 0), 3650000)  # max ~10000 years
+        if sub_days > 0:
+            expires_at = (date.today() + td(days=sub_days)).isoformat()
 
         # تسجيل المستأجر في القاعدة الرئيسية
         cursor.execute('''
@@ -4063,7 +4064,9 @@ def create_tenant():
         return jsonify({'success': True, 'id': tenant_id, 'slug': slug, 'expires_at': expires_at})
     except Exception as e:
         logger.error(f"API error [{request.path}]: {e}")
-        return jsonify({'success': False, 'error': 'حدث خطأ في النظام'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'حدث خطأ في النظام: {str(e)}'}), 500
 
 @app.route('/api/super-admin/tenants/<int:tenant_id>', methods=['PUT'])
 def update_tenant(tenant_id):
